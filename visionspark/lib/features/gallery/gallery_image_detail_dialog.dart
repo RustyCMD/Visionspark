@@ -16,6 +16,29 @@ class GalleryImageDetailDialog extends StatefulWidget {
 
   const GalleryImageDetailDialog({super.key, required this.galleryItem});
 
+  static Future<void> show(BuildContext context, GalleryImage galleryItem) {
+    return showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: GalleryImageDetailDialog(galleryItem: galleryItem),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: child,
+        );
+      },
+    );
+  }
+
   @override
   State<GalleryImageDetailDialog> createState() => _GalleryImageDetailDialogState();
 }
@@ -178,90 +201,93 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
   Widget build(BuildContext context) {
     const Color lilacPurple = Color(0xFFD0B8E1);
     const Color darkText = Color(0xFF22223B);
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(16.0),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-        child: Container(
-          padding: const EdgeInsets.all(24.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: lilacPurple.withValues(alpha: 25),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: InteractiveViewer(
-                      panEnabled: true,
-                      minScale: 0.5,
-                      maxScale: 4,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Image.network(
-                          widget.galleryItem.imageUrl,
-                          fit: BoxFit.contain,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return const Center(child: CircularProgressIndicator());
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(child: Icon(Icons.broken_image, size: 60));
-                          },
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85, maxWidth: 500),
+          child: Container(
+            padding: const EdgeInsets.all(24.0),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: lilacPurple.withValues(alpha: 25),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: InteractiveViewer(
+                        panEnabled: true,
+                        minScale: 0.5,
+                        maxScale: 4,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.network(
+                            widget.galleryItem.imageUrl,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Center(child: Icon(Icons.broken_image, size: 60));
+                            },
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0, bottom: 10.0),
-                      child: Text(
-                        'Prompt: ${widget.galleryItem.prompt}',
-                        style: TextStyle(fontSize: 15, color: darkText.withValues(alpha: 204)),
-                        textAlign: TextAlign.center,
+                    if (widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16.0, bottom: 10.0),
+                        child: Text(
+                          'Prompt: ${widget.galleryItem.prompt}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    const SizedBox(height: 18),
+                    ElevatedButton.icon(
+                      onPressed: _isSaving ? null : _saveImageFromUrl,
+                      icon: _isSaving
+                          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: lilacPurple))
+                          : const Icon(Icons.save_alt),
+                      label: const Text('Save to Device'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: lilacPurple,
+                        foregroundColor: darkText,
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        elevation: 2,
                       ),
                     ),
-                  const SizedBox(height: 18),
-                  ElevatedButton.icon(
-                    onPressed: _isSaving ? null : _saveImageFromUrl,
-                    icon: _isSaving
-                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: lilacPurple))
-                        : const Icon(Icons.save_alt),
-                    label: const Text('Save to Device'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: lilacPurple,
-                      foregroundColor: darkText,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      elevation: 2,
-                    ),
-                  ),
-                ],
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: IconButton(
-                  icon: Icon(Icons.close, color: darkText.withValues(alpha: 153)),
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: 'Close',
+                  ],
                 ),
-              ),
-            ],
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: IconButton(
+                    icon: Icon(Icons.close, color: darkText.withValues(alpha: 153)),
+                    onPressed: () => Navigator.of(context).pop(),
+                    tooltip: 'Close',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
