@@ -1,0 +1,1 @@
+import { corsHeaders } from "./cors.ts"; 

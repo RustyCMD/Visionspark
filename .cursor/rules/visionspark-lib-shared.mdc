@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Shared Directory Guide
+
+The [visionspark/lib/shared/](mdc:visionspark/lib/shared) directory contains shared widgets and utilities used across multiple features.
+
+- [main_scaffold.dart](mdc:visionspark/lib/shared/main_scaffold.dart): Provides the main scaffold widget for the app layout.
+

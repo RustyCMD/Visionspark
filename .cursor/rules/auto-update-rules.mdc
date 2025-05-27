@@ -1,0 +1,17 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Auto-Update Cursor Rules Guide
+
+Whenever you make changes to the project structure, add, remove, or rename files or directories, or introduce new features or modules, you should update the relevant Cursor rules in the `.cursor/rules` directory. This ensures that the rules always accurately reflect the current state of the codebase and help with navigation and understanding.
+
+- Update rules when:
+  - New files or directories are added
+  - Files or directories are removed or renamed
+  - Significant changes are made to the structure or purpose of existing files
+  - New features, modules, or migrations are introduced
+
+Keep rules concise, accurate, and reference files using the `[filename.ext](mdc:filename.ext)` format as required by Cursor.
+

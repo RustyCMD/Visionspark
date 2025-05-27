@@ -1,0 +1,7 @@
+<dict>
+    <!-- Permission to save images to the photo library -->
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Visionspark needs access to your photo library to save generated images.</string>
+ 
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+</dict> 
