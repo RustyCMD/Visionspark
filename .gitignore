@@ -15,7 +15,6 @@ build/
 
 # Android
 android/app/build/
-android/local.properties
 android/.gradle/
 android/build/
 android/.kotlin/
@@ -52,6 +51,22 @@ visionspark/node_modules/
 # Secrets
 .env
 google-services.json
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p7b
+*.p7c
+*.p7s
+*.pfx
+*.p12
+*.key.properties
+*.keystore.properties
 
 # Project-specific
 visionspark/.dart_tool/

@@ -123,8 +123,8 @@ class _AuthScreenState extends State<AuthScreen> {
       appBar: AppBar(
         title: const Text('Log In / Sign Up'),
         centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: darkText,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 0,
       ),
       body: Center(
@@ -132,8 +132,8 @@ class _AuthScreenState extends State<AuthScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Card(
             elevation: 6,
-            color: Colors.white,
-            shadowColor: lilacPurple.withValues(alpha: 31),
+            color: Theme.of(context).colorScheme.surface,
+            shadowColor: Theme.of(context).shadowColor.withOpacity(0.15),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(32),
             ),
@@ -155,30 +155,43 @@ class _AuthScreenState extends State<AuthScreen> {
                   Text(
                     'Please sign in or create an account.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: darkText.withValues(alpha: 179)),
+                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
                   ),
                   const SizedBox(height: 36),
                   TextFormField(
                     controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surface,
+                      labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: _passwordController,
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
+                      prefixIcon: Icon(Icons.lock_outlined, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
                         onPressed: () {
                           setState(() {
                             _obscurePassword = !_obscurePassword;
                           });
                         },
                       ),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surface,
+                      labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     obscureText: _obscurePassword,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                   ),
                   // Add Forgot Password link
                   Align(

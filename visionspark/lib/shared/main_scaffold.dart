@@ -4,6 +4,7 @@ import '../features/account/account_section.dart'; // Will be created
 import '../features/gallery/gallery_screen.dart'; // Import GalleryScreen
 import '../features/support/support_screen.dart'; // Import the new SupportScreen
 import '../features/settings/settings_screen.dart'; // Import the real SettingsScreen
+import '../features/subscriptions/subscriptions_screen.dart'; // Import the new SubscriptionsScreen
 
 class MainScaffold extends StatefulWidget {
   final int selectedIndex;
@@ -20,6 +21,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     'Image',
     'Video',
     'Gallery',
+    'Subscriptions',
     'Settings',
     'Support',
     'Account',
@@ -40,10 +42,12 @@ class _MainScaffoldState extends State<MainScaffold> {
       case 2:
         return const GalleryScreen(); // New GalleryScreen
       case 3:
-        return const SettingsScreen(); // Use the real SettingsScreen
+        return const SubscriptionsScreen();
       case 4:
-        return const SupportScreen(); // Show the real SupportScreen
+        return const SettingsScreen(); // Use the real SettingsScreen
       case 5:
+        return const SupportScreen(); // Show the real SupportScreen
+      case 6:
         return const AccountSection();
       default:
         return const SizedBox.shrink();
@@ -128,13 +132,14 @@ class _MainScaffoldState extends State<MainScaffold> {
             _drawerItem(Icons.image, 'Image', 0, colorScheme),
             _drawerItem(Icons.videocam, 'Video', 1, colorScheme),
             _drawerItem(Icons.photo_library, 'Gallery', 2, colorScheme),
+            _drawerItem(Icons.subscriptions, 'Subscriptions', 3, colorScheme),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
               child: Divider(color: colorScheme.error.withOpacity(0.12), thickness: 2, height: 24),
             ),
-            _drawerItem(Icons.settings, 'Settings', 3, colorScheme),
-            _drawerItem(Icons.support_agent, 'Support', 4, colorScheme),
-            _drawerItem(Icons.account_circle, 'Account', 5, colorScheme),
+            _drawerItem(Icons.settings, 'Settings', 4, colorScheme),
+            _drawerItem(Icons.support_agent, 'Support', 5, colorScheme),
+            _drawerItem(Icons.account_circle, 'Account', 6, colorScheme),
             const SizedBox(height: 16),
           ],
         ),
