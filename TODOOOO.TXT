@@ -1,16 +1,16 @@
-# Planned Features
-- [ ] Video Generation (Temporarily paused)
-- [ ] Monetization: Implement $6.99 subscription for unlimited generations
-- [ ] Administration: Create local admin dashboard with action logging
-- [ ] Promotions: "Review for Refill" - 3 free generations for a review
-- [ ] Gallery Overlay Image When Clicked: The overlay is still white even though dark mode is on (NEEDS FIXING)
-
 # Completed Features
-- [x] My Creations tab in gallery
-- [x] Username change functionality
-- [x] Account page join date display
-- [x] Offline mode with retry button
 - [x] Account deletion option
-- [x] Engagement: Add "liking" feature for gallery items and comments
-- [x] Image Loading Performance: Improve performance, signed urls, and edge function
+- [x] Account page join date display
 - [x] Dark / Light mode toggle in settings: Have a toggle option for dark and light mode in settings tab
+- [x] Engagement: Add "liking" feature for gallery items and comments
+- [x] Gallery Overlay Image When Clicked: The overlay is still white even though dark mode is on (NEEDS FIXING)
+- [x] Image Loading Performance: Improve performance, signed urls, and edge function
+- [x] My Creations tab in gallery
+- [x] Offline mode with retry button
+- [x] Username change functionality
+
+# Planned Features
+- [ ] Administration: Create local admin dashboard with action logging
+- [ ] Monetization: Implement $6.99 subscription for unlimited generations
+- [ ] Promotions: "Review for Refill" - 3 free generations for a review
+- [ ] Video Generation (Temporarily paused)
