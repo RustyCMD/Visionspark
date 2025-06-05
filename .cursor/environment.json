@@ -1,0 +1,5 @@
+{
+  "agentCanUpdateSnapshot": true,
+  "install": "flutter pub get",
+  "start": "flutter run"
+}
