@@ -17,7 +17,7 @@
         android:icon="@mipmap/ic_launcher"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name="app.visionspark.app.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

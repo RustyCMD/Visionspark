@@ -23,7 +23,6 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _error;
   String? _success;
   List<ProductDetails> _products = [];
-  // TODO: Replace with your actual product IDs from Google Play Console
   static const String monthly30Id = 'monthly_30_generations';
   static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
 
