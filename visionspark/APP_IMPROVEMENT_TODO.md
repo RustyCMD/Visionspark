@@ -6,7 +6,7 @@ A curated list of actionable tasks to enhance the app's quality of life (QOL) an
 
 ## 🚀 Quality of Life (QOL) Improvements
 
-- [ ] **Minimize Widget Rebuilds** _(Easy)_
+- [x] **Minimize Widget Rebuilds** _(Easy)_
   - Use `const` constructors and avoid unnecessary logic in `build()` methods.
 - [ ] **Reduce App Size** _(Easy)_
   - Use deferred loading/code splitting and `flutter build apk --split-per-abi`.

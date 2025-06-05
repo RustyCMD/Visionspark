@@ -40,13 +40,13 @@ class _MainScaffoldState extends State<MainScaffold> {
       case 1:
         return _wipSection('Video');
       case 2:
-        return const GalleryScreen(); // New GalleryScreen
+        return const GalleryScreen();
       case 3:
         return const SubscriptionsScreen();
       case 4:
-        return const SettingsScreen(); // Use the real SettingsScreen
+        return const SettingsScreen();
       case 5:
-        return const SupportScreen(); // Show the real SupportScreen
+        return const SupportScreen();
       case 6:
         return const AccountSection();
       default:

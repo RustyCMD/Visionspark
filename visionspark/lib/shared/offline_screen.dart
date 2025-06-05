@@ -14,7 +14,7 @@ class OfflineScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.wifi_off, size: 64, color: Colors.grey[400]),
+              const Icon(Icons.wifi_off, size: 64, color: Colors.grey),
               const SizedBox(height: 24),
               const Text(
                 'No internet connection.\nPlease turn on WiFi or mobile data.',
