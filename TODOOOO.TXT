@@ -3,14 +3,34 @@
 - [x] Account page join date display
 - [x] Dark / Light mode toggle in settings: Have a toggle option for dark and light mode in settings tab
 - [x] Engagement: Add "liking" feature for gallery items and comments
-- [x] Gallery Overlay Image When Clicked: The overlay is still white even though dark mode is on (NEEDS FIXING)
+- [x] Free Generations Glitch: In the generate-image-proxy function, the user's generation count is only updated after a successful response from the OpenAI API. If the supabaseClient.from("profiles").update() call fails for any reason (e.g., a network blip), the user will receive their generated image without their daily limit being decremented, effectively granting them a free generation.
+- [x] Gallery Overlay Image When Clicked: The overlay is still white even though dark mode is on.
 - [x] Image Loading Performance: Improve performance, signed urls, and edge function
+- [x] Insecure Direct API Calls: The Flutter app directly calls Supabase Edge Functions using http with hardcoded URLs (e.g., in image_generator_screen.dart and gallery_screen.dart). You should use the official Supabase client library (Supabase.instance.client.functions.invoke()) for these calls. This ensures proper authentication, error handling, and avoids exposing function URLs directly in the client code.
 - [x] My Creations tab in gallery
 - [x] Offline mode with retry button
 - [x] Username change functionality
 
 # Planned Features
 - [ ] Administration: Create local admin dashboard with action logging
-- [ ] Monetization: Implement $6.99 subscription for unlimited generations
 - [ ] Promotions: "Review for Refill" - 3 free generations for a review
-- [ ] Video Generation (Temporarily paused)
+
+## Critical Bugs & Logic Flaws
+- [ ] Account Deletion Incompleteness: The delete-account function deletes the user's record from auth.users, profiles, and gallery_images. However, it fails to delete the user's profile picture from Supabase Storage. This will leave orphaned files in your storage bucket.
+
+## 📟 Backend & Function Issues
+- [ ] Brittle Thumbnail Logic: The get-gallery-feed function assumes thumbnails are created by replacing a file extension (e.g., .png with _thumb.png). This is unreliable as filenames can contain multiple dots. A more robust approach would be to store the thumbnail path in a separate database column.
+- [ ] Timezone-Related Daily Limit Flaw: In the generate-image-proxy function, the logic to reset the daily generation limit relies on comparing date strings (nowDayStr > lastGenDayStr). Timezone conversions are notoriously complex, and this string-based comparison is a potential source of off-by-one errors, especially around midnight or for users who change timezones.
+- [ ] Rate Limiting Flaw: The report-support-issue function uses an in-memory queue to rate-limit Discord webhook posts. Because Supabase Edge Functions are stateless, this queue will be reset with every new instance of the function, making the rate limiting ineffective. A better solution would be to use a persistent store like a database table to track the last sent time.
+
+## 📱 Android-Specific Bugs
+- [ ] Outdated Storage Permissions: The AndroidManifest.xml file requests WRITE_EXTERNAL_STORAGE with a maxSdkVersion="32". This permission is deprecated and not needed for modern Android versions (API 30+). The current implementation in gallery_image_detail_dialog.dart and MainActivity.kt correctly uses the MediaStore API, making this permission redundant and potentially confusing for users.
+- [ ] Hardcoded Album Name: In MainActivity.kt, the method saveImageToGallery saves images to the Environment.DIRECTORY_DCIM + "/Camera" folder. This is not ideal, as it places app-generated content directly in the user's main camera roll. It should save to a dedicated app album as the albumName parameter suggests, but this parameter is ultimately ignored in favor of the hardcoded "Camera" directory.
+
+## 🎨 Frontend & UI Issues
+- [ ] State Management in image_generator_screen.dart: There's a potential for inconsistent state. If a user triggers _generateImage and then quickly triggers _improvePrompt, the loading states (_isLoading, _isImproving) could conflict, leading to a confusing UI.
+- [ ] Error Handling Mismatch: Error feedback is inconsistent.
+    - account_section.dart uses ScaffoldMessenger for some errors and a separate _error state variable for others.
+    - image_generator_screen.dart uses an _errorMessage state variable.
+    - This inconsistency leads to different UI/UX for displaying errors across the app.
+- [ ] Redundant Code in settings_screen.dart: The file defines several brand color constants that are commented out or unused because the UI now correctly uses the theme's colorScheme. This leftover code should be removed.

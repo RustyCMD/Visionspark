@@ -2,10 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import './gallery_image_detail_dialog.dart'; // Import the new dialog
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:convert';
 
 class GalleryImage {
   final String id;
@@ -106,26 +103,27 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      final jwt = Supabase.instance.client.auth.currentSession?.accessToken;
-      if (user == null || jwt == null) throw Exception('Not authenticated');
+      if (user == null) throw Exception('Not authenticated');
+      
       final isMyCreations = _tabController.index == 1;
-      final projectUrl = dotenv.env['SUPABASE_URL']!;
-      final uri = Uri.parse('$projectUrl/functions/v1/get-gallery-feed?limit=50&offset=0');
-      final response = await http.get(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $jwt',
-          'Content-Type': 'application/json',
-        },
+      
+      final response = await Supabase.instance.client.functions.invoke(
+        'get-gallery-feed',
       );
-      if (response.statusCode != 200) {
-        throw Exception('Failed to fetch gallery: ${response.body}');
+
+      if (response.data == null) {
+        throw Exception('No data received from gallery feed function.');
       }
-      final data = jsonDecode(response.body);
+
+      final data = response.data;
+
+      if (data['error'] != null) {
+        throw Exception('Failed to fetch gallery: ${data['error']}');
+      }
+
       final List images = data['images'] ?? [];
       List<GalleryImage> fetchedImages = [];
       for (var img in images) {
-        // If "My Creations" tab, filter by user_id
         if (isMyCreations && img['user_id'] != user.id) continue;
         if (img['image_url'] == null) continue;
         fetchedImages.add(GalleryImage(
@@ -143,11 +141,19 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
           _galleryImages = fetchedImages;
         });
       }
+    } on FunctionsException catch (e) {
+      debugPrint('Error fetching gallery images (FunctionsException): ${e.message}, Details: ${e.details}');
+      if (mounted) {
+        final errorDetails = e.details is Map ? e.details as Map : {};
+        setState(() {
+          _errorMessage = 'Failed to fetch gallery: ${errorDetails['error'] ?? e.message}';
+        });
+      }
     } catch (e) {
-      debugPrint('Error fetching gallery images: $e');
+      debugPrint('Error fetching gallery images (General): $e');
       if (mounted) {
         setState(() {
-          _errorMessage = 'Failed to fetch gallery images: $e';
+          _errorMessage = 'Failed to fetch gallery images: ${e.toString()}';
         });
       }
     }

@@ -3,8 +3,6 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -62,53 +60,37 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     });
 
     try {
-      final accessToken = Supabase.instance.client.auth.currentSession?.accessToken;
-      if (accessToken == null) {
-        setStateIfMounted(() {
-          _statusErrorMessage = "User not authenticated. Please sign in again.";
-          _isLoadingStatus = false;
-        });
-        return;
-      }
+      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
 
-      final String supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
-      const String projectRef = 'wufjuulwrcwxrpriytmg';
-      final url = Uri.parse(
-          'https://$projectRef.supabase.co/functions/v1/get-generation-status');
-
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-          'apikey': supabaseAnonKey,
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setStateIfMounted(() {
-          _generationLimit = data['limit'] ?? 3;
-          _generationsToday = data['generations_today'] ?? 0;
-          _remainingGenerations = data['remaining'] ?? _generationLimit - _generationsToday;
-          _resetsAtUtcIso = data['resets_at_utc_iso'];
-          _updateResetsAtDisplay();
-        });
-      } else {
-        String errorMsg = 'Failed to fetch generation status.';
-        try {
-          final errorData = jsonDecode(response.body);
-          errorMsg = errorData['error'] ?? errorMsg;
-        } catch (_) {
-          // Ignore JSON parsing error, use default message
+      if (response.data != null) {
+        final data = response.data;
+        if (data['error'] != null) { // Check for application-level error in response data
+          setStateIfMounted(() {
+            _statusErrorMessage = data['error'].toString();
+          });
+        } else {
+          setStateIfMounted(() {
+            _generationLimit = data['limit'] ?? 3;
+            _generationsToday = data['generations_today'] ?? 0;
+            _remainingGenerations = data['remaining'] ?? _generationLimit - _generationsToday;
+            _resetsAtUtcIso = data['resets_at_utc_iso'];
+            _updateResetsAtDisplay();
+          });
         }
+      } else {
+        // This case should ideally be caught by FunctionsException if the function truly fails
+        // or doesn't return data, but as a fallback.
         setStateIfMounted(() {
-          _statusErrorMessage = '$errorMsg (Code: ${response.statusCode})';
+          _statusErrorMessage = 'Failed to fetch generation status: No data received.';
         });
       }
+    } on FunctionsException catch (e) {
+      setStateIfMounted(() {
+        _statusErrorMessage = 'Error fetching status: ${e.message} ${e.details != null ? (e.details as Map)['error'] ?? '' : ''}';
+      });
     } catch (e) {
       setStateIfMounted(() {
-        _statusErrorMessage = 'An error occurred: $e';
+        _statusErrorMessage = 'An unexpected error occurred: ${e.toString()}';
       });
     }
     setStateIfMounted(() {
@@ -129,7 +111,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       final difference = resetTime.difference(now);
 
       if (difference.isNegative) {
-        _fetchGenerationStatus(); // Refresh status if time has passed
+        _fetchGenerationStatus(); 
         setStateIfMounted(() {
           _timeUntilReset = "Limit has reset or resetting now...";
         });
@@ -154,15 +136,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       return;
     }
 
-    final accessToken = Supabase.instance.client.auth.currentSession?.accessToken;
-    if (accessToken == null) {
-      setStateIfMounted(() {
-        _errorMessage = "User not authenticated. Please sign in again.";
-        _isLoading = false;
-      });
-      return;
-    }
-
     setStateIfMounted(() {
       _isLoading = true;
       _errorMessage = null;
@@ -170,54 +143,63 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     });
 
     try {
-      final String supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
-      const String projectRef = 'wufjuulwrcwxrpriytmg';
-      final url = Uri.parse(
-          'https://$projectRef.supabase.co/functions/v1/generate-image-proxy');
-
-      final response = await http.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-          'apikey': supabaseAnonKey,
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'prompt': _promptController.text,
-        }),
+      final response = await Supabase.instance.client.functions.invoke(
+        'generate-image-proxy',
+        body: {'prompt': _promptController.text},
       );
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        setStateIfMounted(() {
-          _generatedImageUrl = data['data'][0]['url'];
-        });
-        _fetchGenerationStatus(); // Refresh status after successful generation
-        if (_autoUploadToGallery) {
-          await _shareToGallery();
+      if (response.data != null) {
+        final data = response.data;
+        if (data['error'] != null) {
+          String errorMsg = data['error'] is Map ? data['error']['message'] ?? data['error'].toString() : data['error'].toString();
+          if (data['resets_at_utc_iso'] != null) {
+            _resetsAtUtcIso = data['resets_at_utc_iso'];
+            _updateResetsAtDisplay();
+            errorMsg = "Daily generation limit reached.";
+          }
+          setStateIfMounted(() {
+            _errorMessage = errorMsg;
+          });
+        } else if (data['data'] != null && data['data'][0]['url'] != null) {
+          setStateIfMounted(() {
+            _generatedImageUrl = data['data'][0]['url'];
+          });
+          _fetchGenerationStatus(); 
+          if (_autoUploadToGallery) {
+            await _shareToGallery();
+          }
+          setStateIfMounted(() {
+            _promptController.clear();
+          });
+        } else {
+          setStateIfMounted(() {
+            _errorMessage = 'Failed to parse image URL from response.';
+          });
         }
-        setStateIfMounted(() {
-          _promptController.clear();
-        });
       } else {
-        String errorMsg = data['error']?['message'] ?? data['error'] ?? 'Failed to generate image';
-        if (response.statusCode == 429 && data['resets_at_utc_iso'] != null) {
-          _resetsAtUtcIso = data['resets_at_utc_iso'];
-          _updateResetsAtDisplay();
-        } else if (response.statusCode == 429) {
-          errorMsg = "Daily generation limit reached.";
-        }
         setStateIfMounted(() {
-          _errorMessage = '$errorMsg (Code: ${response.statusCode})';
+          _errorMessage = 'No data received from image generation.';
         });
       }
+    } on FunctionsException catch (e) {
+      final errorDetails = e.details is Map ? e.details as Map : {};
+      String errorMsg = errorDetails['error'] ?? e.message;
+      if (e.status == 429) {
+        errorMsg = errorDetails['error'] ?? "Daily generation limit reached.";
+        if (errorDetails['resets_at_utc_iso'] != null) {
+          _resetsAtUtcIso = errorDetails['resets_at_utc_iso'];
+          _updateResetsAtDisplay();
+        }
+      }
+      setStateIfMounted(() {
+        _errorMessage = errorMsg;
+      });
     } catch (e) {
       setStateIfMounted(() {
-        _errorMessage = 'An error occurred: $e';
+        _errorMessage = 'An unexpected error occurred: ${e.toString()}';
       });
     }
-     setStateIfMounted(() {
+    setStateIfMounted(() {
       _isLoading = false;
     });
   }
@@ -226,15 +208,15 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
     if (sdkInt >= 33) {
-      return Permission.photos; // Android 13+ uses MediaStore API, needs Photos permission
+      return Permission.photos;
     } else {
-      return Permission.storage; // Older Android versions need Storage permission
+      return Permission.storage; 
     }
   }
 
   Future<PermissionStatus> _getStoragePermissionStatus() async {
     if (Platform.isIOS) {
-      return await Permission.photos.status; // iOS uses Photos permission
+      return await Permission.photos.status;
     } else if (Platform.isAndroid) {
       final permission = await _getAndroidStoragePermission();
       return await permission.status;
@@ -277,11 +259,9 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       }
 
       if (status.isGranted) {
-        final http.Response response = await http.get(Uri.parse(_generatedImageUrl!));
-        if (response.statusCode != 200) {
-          throw Exception('Failed to download image. Status: ${response.statusCode}');
-        }
-        final Uint8List bytes = response.bodyBytes;
+        final ByteData imageData = await NetworkAssetBundle(Uri.parse(_generatedImageUrl!)).load('');
+        final Uint8List bytes = imageData.buffer.asUint8List();
+
         final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
         final String filename = 'Visionspark_$timestamp.png';
 
@@ -292,11 +272,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             'albumName': 'Visionspark'
           });
 
-          if (saveSuccess == true) {
-              _showSnackBar('Image saved to Gallery as $filename');
-          } else {
-            _showSnackBar('Failed to save image via native code.');
-          }
+          _showSnackBar(saveSuccess == true ? 'Image saved to Gallery as $filename' : 'Failed to save image via native code.');
         } on PlatformException catch (e) {
             _showSnackBar('Failed to save image: ${e.message}');
         }
@@ -333,11 +309,9 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     });
 
     try {
-      final http.Response imageResponse = await http.get(Uri.parse(_generatedImageUrl!));
-      if (imageResponse.statusCode != 200) {
-        throw Exception('Failed to download image from source URL.');
-      }
-      final Uint8List imageBytes = imageResponse.bodyBytes;
+      final ByteData imageData = await NetworkAssetBundle(Uri.parse(_generatedImageUrl!)).load('');
+      final Uint8List imageBytes = imageData.buffer.asUint8List();
+      
       final String fileName = 'public/${user.id}_${DateTime.now().millisecondsSinceEpoch}.png';
 
       await Supabase.instance.client.storage
@@ -351,7 +325,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       await Supabase.instance.client.from('gallery_images').insert({
         'user_id': user.id,
         'image_path': fileName,
-        'prompt': _promptController.text,
+        'prompt': _promptController.text, // Assuming prompt is still in controller
       });
       _showSnackBar('Image shared to gallery successfully!');
     } catch (e) {
@@ -379,53 +353,39 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       _errorMessage = null;
     });
 
-    final accessToken = Supabase.instance.client.auth.currentSession?.accessToken;
-    if (accessToken == null) {
-      setStateIfMounted(() {
-        _errorMessage = "User not authenticated. Please sign in again.";
-        _isImproving = false;
-      });
-      return;
-    }
-
     try {
-      final String supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
-      const String projectRef = 'wufjuulwrcwxrpriytmg';
-      final url = Uri.parse(
-          'https://$projectRef.supabase.co/functions/v1/improve-prompt-proxy');
-
-      final response = await http.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-          'apikey': supabaseAnonKey,
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'prompt': prompt}),
+      final response = await Supabase.instance.client.functions.invoke(
+        'improve-prompt-proxy',
+        body: {'prompt': prompt},
       );
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        final improved = data['improved_prompt'];
-        if (improved != null) {
-            setStateIfMounted(() {
-            _promptController.text = improved.trim();
-            });
+      if (response.data != null) {
+        final data = response.data;
+        if (data['error'] != null) {
+          setStateIfMounted(() {
+            _errorMessage = data['error'].toString();
+          });
+        } else if (data['improved_prompt'] != null) {
+          setStateIfMounted(() {
+            _promptController.text = data['improved_prompt'].trim();
+          });
         } else {
-            setStateIfMounted(() {
-            _errorMessage = 'Edge function did not return an improved prompt.';
-            });
+          setStateIfMounted(() {
+            _errorMessage = 'Edge function did not return an improved prompt or an error.';
+          });
         }
       } else {
         setStateIfMounted(() {
-          _errorMessage =
-              data['error'] ?? 'Failed to improve prompt via Edge Function. Status: ${response.statusCode}';
+          _errorMessage = 'Failed to improve prompt: No data received.';
         });
       }
+    } on FunctionsException catch (e) {
+       setStateIfMounted(() {
+        _errorMessage = 'Error improving prompt: ${e.message} ${e.details != null ? (e.details as Map)['error'] ?? '' : ''}';
+      });
     } catch (e) {
       setStateIfMounted(() {
-        _errorMessage = 'An error occurred calling improve-prompt-proxy: $e';
+        _errorMessage = 'An unexpected error occurred: ${e.toString()}';
       });
     }
     setStateIfMounted(() {
