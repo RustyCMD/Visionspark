@@ -1,3 +1,5 @@
+/// <reference types="https://deno.land/x/service_worker@0.1.0/window.d.ts" />
+// Add Deno types reference for linter
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 

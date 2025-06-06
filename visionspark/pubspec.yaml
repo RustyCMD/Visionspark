@@ -31,6 +31,7 @@ dependencies:
   internet_connection_checker: ^1.0.0+1
   provider: ^6.1.2
   in_app_purchase: ^3.2.3
+  image: ^4.1.7
 
 dev_dependencies:
   flutter_test:

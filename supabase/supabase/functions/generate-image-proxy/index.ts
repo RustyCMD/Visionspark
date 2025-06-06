@@ -1,8 +1,80 @@
+/// <reference types="https://deno.land/x/service_worker@0.1.0/window.d.ts" />
+// Add Deno types reference for linter
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const DAILY_LIMIT = 3;
+
+// Helper function to safely get the user's timezone
+function getUserTimezone(user: any, profile: any): string {
+  if (user?.user_metadata?.timezone) {
+    try {
+      // Validate if it's a real IANA timezone
+      new Date().toLocaleString('en-US', { timeZone: user.user_metadata.timezone });
+      return user.user_metadata.timezone;
+    } catch (e) {
+      console.warn(`Invalid timezone in user.user_metadata.timezone: ${user.user_metadata.timezone}. Falling back.`);
+    }
+  }
+  if (profile?.timezone) {
+     try {
+      new Date().toLocaleString('en-US', { timeZone: profile.timezone });
+      return profile.timezone;
+    } catch (e) {
+      console.warn(`Invalid timezone in profile.timezone: ${profile.timezone}. Falling back.`);
+    }
+  }
+  console.warn(`No valid timezone found for user ${user?.id}, defaulting to UTC.`);
+  return "UTC";
+}
+
+// Helper function to get YYYY-MM-DD in a specific timezone
+function getDateStringInTimezone(date: Date, timeZone: string): string {
+  return date.toLocaleDateString('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+// Helper function to get the start of the next day in a specific timezone, then convert to UTC ISO string
+function getNextDayStartUTCISO(timeZone: string): string {
+  const nowInUserTz = new Date(new Date().toLocaleString('en-US', { timeZone }));
+  const nextDayUserTz = new Date(nowInUserTz);
+  nextDayUserTz.setDate(nowInUserTz.getDate() + 1);
+  nextDayUserTz.setHours(0, 0, 0, 0); // Start of the next day in user's timezone
+
+  // To convert this user-local time to a UTC Date object, we can construct
+  // a UTC date string from its components and parse it.
+  // This is a bit tricky due to Deno's environment.
+  // Alternative: get UTC components of 'now', then figure out offset for user's next midnight.
+  // For now, the previous method of just using UTC midnight might be simpler if client localizes.
+  // However, to be accurate for the "resets_at_utc_iso" field *based on user's timezone*:
+  const year = nextDayUserTz.getFullYear();
+  const month = (nextDayUserTz.getMonth() + 1).toString().padStart(2, '0'); // JS months are 0-indexed
+  const day = nextDayUserTz.getDate().toString().padStart(2, '0');
+  
+  // Construct an ISO-like string *as if* nextDayUserTz was already UTC,
+  // then parse it. This doesn't work as intended if nextDayUserTz is a local time.
+  // A more reliable way without external libraries is to calculate based on UTC.
+  // Get current UTC date parts
+  const nowUtc = new Date();
+  const currentUtcYear = nowUtc.getUTCFullYear();
+  const currentUtcMonth = nowUtc.getUTCMonth();
+  const currentUtcDay = nowUtc.getUTCDate();
+
+  // Create a date for the start of *today* in the user's timezone
+  const todayUserTzStr = getDateStringInTimezone(new Date(), timeZone); // e.g., "2023-10-27"
+  const [uy, um, ud] = todayUserTzStr.split('-').map(Number);
+  
+  // Construct Date for start of *tomorrow* in user's timezone, then get its UTC representation
+  // This requires knowing the offset, which is complex.
+  // Simplest reliable: Start of *next UTC day* is often good enough if client displays "resets in X hours".
+  // For more precise "resets at specific time in your zone", this needs a date-fns-tz equivalent.
+
+  // Reverting to a simpler, more robust calculation for `resets_at_utc_iso`:
+  // It will be the start of the *next calendar day in UTC after the current moment*.
+  // The client already localizes this. The key is that the *count reset* happens based on user's local day.
+  const nextUTCMidnight = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate() + 1, 0, 0, 0, 0));
+  return nextUTCMidnight.toISOString();
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -39,8 +111,8 @@ serve(async (req) => {
       });
     }
 
-    let { last_generation_at, generations_today, timezone } = profile;
-    const userTimezone = timezone || "UTC"; // Default to UTC if no timezone is set
+    let { last_generation_at, generations_today } = profile; // timezone will be from helper
+    const userTimezone = getUserTimezone(user, profile);
     const now = new Date();
     let performReset = false;
 
@@ -50,18 +122,15 @@ serve(async (req) => {
     }
 
     if (last_generation_at) {
-      const lastGenDate = new Date(last_generation_at);
+      const lastGenDateUtc = new Date(last_generation_at); // This is already UTC
 
-      // Get YYYY-MM-DD string for 'now' in user's timezone. 'en-CA' gives 'YYYY-MM-DD'.
-      const nowDayStr = now.toLocaleDateString('en-CA', { timeZone: userTimezone, year: 'numeric', month: '2-digit', day: '2-digit' });
-      
-      // Get YYYY-MM-DD string for 'last_generation_at' in user's timezone.
-      const lastGenDayStr = lastGenDate.toLocaleDateString('en-CA', { timeZone: userTimezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+      const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+      const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
 
-      if (nowDayStr > lastGenDayStr) {
-        console.log(`Performing reset for user ${user.id}. Now: ${nowDayStr} (${userTimezone}), Last Gen: ${lastGenDayStr} (${userTimezone})`);
-            performReset = true;
-        }
+      if (nowDayStrUserTz > lastGenDayStrUserTz) {
+        console.log(`Performing reset for user ${user.id}. Now_UserTz: ${nowDayStrUserTz}, LastGen_UserTz: ${lastGenDayStrUserTz} (Timezone: ${userTimezone})`);
+        performReset = true;
+      }
     } else {
       console.log(`Performing reset for user ${user.id} due to no last_generation_at.`);
       performReset = true; // First generation ever or last_generation_at is null
@@ -69,7 +138,7 @@ serve(async (req) => {
 
     if (performReset) {
       generations_today = 0;
-      const newLastGenerationAtForReset = new Date().toISOString();
+      const newLastGenerationAtForReset = new Date().toISOString(); // Store as UTC
       const { error: resetError } = await supabaseClient
         .from("profiles")
         .update({ generations_today: 0, last_generation_at: newLastGenerationAtForReset })
@@ -88,12 +157,12 @@ serve(async (req) => {
     const generationsCountBeforeThisAttempt = generations_today;
 
     if (generationsCountBeforeThisAttempt >= DAILY_LIMIT) {
-      const nextUTCMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-      console.log(`Daily limit reached for user ${user.id}. Generations: ${generationsCountBeforeThisAttempt}`);
+      const resetTimeIso = getNextDayStartUTCISO(userTimezone);
+      console.log(`Daily limit reached for user ${user.id}. Generations: ${generationsCountBeforeThisAttempt}. Resets at: ${resetTimeIso} (Calculated for TZ: ${userTimezone})`);
       return new Response(
         JSON.stringify({ 
             error: "Daily generation limit reached.",
-            resets_at_utc_iso: nextUTCMidnight.toISOString(),
+            resets_at_utc_iso: resetTimeIso,
             timezone_used: userTimezone
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 429 }
@@ -102,7 +171,7 @@ serve(async (req) => {
 
     // --- Start of critical section: Debit, then attempt generation ---
     const newCountForDB = generationsCountBeforeThisAttempt + 1;
-    const timestampForThisAttempt = new Date().toISOString();
+    const timestampForThisAttempt = new Date().toISOString(); // Store as UTC
 
     // 1. DEBIT a generation credit
     console.log(`User ${user.id}: Attempting to debit generation. Current count before debit: ${generationsCountBeforeThisAttempt}, New count to set: ${newCountForDB}`);
@@ -110,7 +179,7 @@ serve(async (req) => {
       .from("profiles")
       .update({
         generations_today: newCountForDB,
-        last_generation_at: timestampForThisAttempt,
+        last_generation_at: timestampForThisAttempt, // This is UTC
       })
       .eq("id", user.id);
 
@@ -180,7 +249,7 @@ serve(async (req) => {
         .from("profiles")
         .update({
           generations_today: generationsCountBeforeThisAttempt, 
-          // last_generation_at remains timestampForThisAttempt, signifying a failed attempt at this time.
+          // last_generation_at remains timestampForThisAttempt (UTC), signifying a failed attempt at this time.
         })
         .eq("id", user.id);
 

@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image/image.dart' as img;
 
 class ImageGeneratorScreen extends StatefulWidget {
   const ImageGeneratorScreen({super.key});
@@ -58,13 +59,11 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       _isLoadingStatus = true;
       _statusErrorMessage = null;
     });
-
     try {
       final response = await Supabase.instance.client.functions.invoke('get-generation-status');
-
       if (response.data != null) {
         final data = response.data;
-        if (data['error'] != null) { // Check for application-level error in response data
+        if (data['error'] != null) {
           setStateIfMounted(() {
             _statusErrorMessage = data['error'].toString();
           });
@@ -78,19 +77,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           });
         }
       } else {
-        // This case should ideally be caught by FunctionsException if the function truly fails
-        // or doesn't return data, but as a fallback.
         setStateIfMounted(() {
           _statusErrorMessage = 'Failed to fetch generation status: No data received.';
         });
       }
-    } on FunctionsException catch (e) {
-      setStateIfMounted(() {
-        _statusErrorMessage = 'Error fetching status: ${e.message} ${e.details != null ? (e.details as Map)['error'] ?? '' : ''}';
-      });
     } catch (e) {
       setStateIfMounted(() {
-        _statusErrorMessage = 'An unexpected error occurred: ${e.toString()}';
+        _statusErrorMessage = 'Error fetching status: ${e.toString()}';
       });
     }
     setStateIfMounted(() {
@@ -135,19 +128,16 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       setStateIfMounted(() => _errorMessage = 'Please enter a prompt');
       return;
     }
-
     setStateIfMounted(() {
       _isLoading = true;
       _errorMessage = null;
       _generatedImageUrl = null;
     });
-
     try {
       final response = await Supabase.instance.client.functions.invoke(
         'generate-image-proxy',
         body: {'prompt': _promptController.text},
       );
-
       if (response.data != null) {
         final data = response.data;
         if (data['error'] != null) {
@@ -155,7 +145,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           if (data['resets_at_utc_iso'] != null) {
             _resetsAtUtcIso = data['resets_at_utc_iso'];
             _updateResetsAtDisplay();
-            errorMsg = "Daily generation limit reached.";
           }
           setStateIfMounted(() {
             _errorMessage = errorMsg;
@@ -181,22 +170,9 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           _errorMessage = 'No data received from image generation.';
         });
       }
-    } on FunctionsException catch (e) {
-      final errorDetails = e.details is Map ? e.details as Map : {};
-      String errorMsg = errorDetails['error'] ?? e.message;
-      if (e.status == 429) {
-        errorMsg = errorDetails['error'] ?? "Daily generation limit reached.";
-        if (errorDetails['resets_at_utc_iso'] != null) {
-          _resetsAtUtcIso = errorDetails['resets_at_utc_iso'];
-          _updateResetsAtDisplay();
-        }
-      }
-      setStateIfMounted(() {
-        _errorMessage = errorMsg;
-      });
     } catch (e) {
       setStateIfMounted(() {
-        _errorMessage = 'An unexpected error occurred: ${e.toString()}';
+        _errorMessage = 'Image generation error: ${e.toString()}';
       });
     }
     setStateIfMounted(() {
@@ -308,24 +284,52 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       _errorMessage = null;
     });
 
+    String? mainImageStoragePath;
+    String? thumbnailStoragePath;
+
     try {
       final ByteData imageData = await NetworkAssetBundle(Uri.parse(_generatedImageUrl!)).load('');
       final Uint8List imageBytes = imageData.buffer.asUint8List();
       
-      final String fileName = 'public/${user.id}_${DateTime.now().millisecondsSinceEpoch}.png';
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      mainImageStoragePath = 'public/${user.id}_${timestamp}.png';
 
       await Supabase.instance.client.storage
           .from('imagestorage')
           .uploadBinary(
-            fileName,
+            mainImageStoragePath,
             imageBytes,
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
 
+      try {
+        final decodedImage = img.decodeImage(imageBytes);
+        if (decodedImage != null) {
+          final thumbnailImage = img.copyResize(decodedImage, width: 200);
+          final thumbnailBytes = Uint8List.fromList(img.encodePng(thumbnailImage));
+          thumbnailStoragePath = 'public/${user.id}_${timestamp}_thumb.png';
+
+          await Supabase.instance.client.storage
+              .from('imagestorage')
+              .uploadBinary(
+                thumbnailStoragePath,
+                thumbnailBytes,
+                fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+              );
+          debugPrint('Thumbnail uploaded successfully: $thumbnailStoragePath');
+        } else {
+          debugPrint('Failed to decode image for thumbnail generation.');
+        }
+      } catch (thumbError) {
+        debugPrint('Error generating or uploading thumbnail: $thumbError');
+        thumbnailStoragePath = null;
+      }
+
       await Supabase.instance.client.from('gallery_images').insert({
         'user_id': user.id,
-        'image_path': fileName,
-        'prompt': _promptController.text, // Assuming prompt is still in controller
+        'image_path': mainImageStoragePath,
+        'prompt': _promptController.text,
+        'thumbnail_url': thumbnailStoragePath,
       });
       _showSnackBar('Image shared to gallery successfully!');
     } catch (e) {
@@ -352,13 +356,11 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       _isImproving = true;
       _errorMessage = null;
     });
-
     try {
       final response = await Supabase.instance.client.functions.invoke(
         'improve-prompt-proxy',
         body: {'prompt': prompt},
       );
-
       if (response.data != null) {
         final data = response.data;
         if (data['error'] != null) {
@@ -379,13 +381,9 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           _errorMessage = 'Failed to improve prompt: No data received.';
         });
       }
-    } on FunctionsException catch (e) {
-       setStateIfMounted(() {
-        _errorMessage = 'Error improving prompt: ${e.message} ${e.details != null ? (e.details as Map)['error'] ?? '' : ''}';
-      });
     } catch (e) {
       setStateIfMounted(() {
-        _errorMessage = 'An unexpected error occurred: ${e.toString()}';
+        _errorMessage = 'Error improving prompt: ${e.toString()}';
       });
     }
     setStateIfMounted(() {
@@ -433,10 +431,10 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   // --- UI Builder Methods ---
   Widget _buildCard({required Widget child}) {
     final Brightness brightness = Theme.of(context).brightness;
-    final Color cardBackgroundColor = Theme.of(context).colorScheme.surface; // Adapts to theme surface
+    final Color cardBackgroundColor = Theme.of(context).colorScheme.surface;
     final Color shadowColor = brightness == Brightness.light
-        ? Colors.grey.withOpacity(0.1) // Subtle shadow for light mode
-        : Colors.black.withOpacity(0.3); // Darker, more prominent shadow for dark mode to create depth
+        ? Colors.grey.withAlpha((255 * 0.1).round())
+        : Colors.black.withAlpha((255 * 0.3).round());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24.0),
@@ -486,11 +484,11 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               fillColor: textFieldFillColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none, // No border, controlled by fill color
+                borderSide: BorderSide.none,
               ),
-              focusedBorder: OutlineInputBorder( // Add a focus border
+              focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide(color: _lightMutedPeach, width: 2.0), // Accent color on focus
+                borderSide: BorderSide(color: _lightMutedPeach, width: 2.0),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
@@ -527,7 +525,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               decoration: BoxDecoration(
                 color: errorBackgroundColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: errorBackgroundColor.withOpacity(0.5))
+                border: Border.all(color: errorBackgroundColor.withAlpha((255 * 0.5).round()))
               ),
               child: Text(
                 'Error: $_statusErrorMessage',
@@ -540,7 +538,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: _lightMutedPeach.withOpacity(0.1), // This light color with opacity can work in both modes
+                color: _lightMutedPeach.withAlpha((255 * 0.1).round()),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -608,7 +606,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     required Color secondaryContentTextColor,
   }) {
     final Color imagePlaceholderBg = Theme.of(context).colorScheme.surface;
-    final Color imageBorderColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.08);
+    final Color imageBorderColor = Theme.of(context).colorScheme.onSurface.withAlpha((255 * 0.08).round());
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Container(
@@ -762,22 +760,22 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     final Brightness brightness = Theme.of(context).brightness;
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    final Color scaffoldBackgroundColor = colorScheme.background;
+    final Color scaffoldBackgroundColor = colorScheme.surface;
     final Color appBarBackgroundColor = brightness == Brightness.light ? Colors.white : colorScheme.surface;
-    final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
+    final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withAlpha((255 * 0.9).round());
     final Color appBarTitleColor = appBarIconColor;
 
-    final Color primaryContentTextColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
+    final Color primaryContentTextColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withAlpha((255 * 0.9).round());
     final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
 
     final Color onAccentButtonColor = brightness == Brightness.light ? _originalDarkText : Colors.white;
 
-    final Color textFieldFillColor = brightness == Brightness.light ? colorScheme.surface : colorScheme.surfaceVariant.withOpacity(0.3);
+    final Color textFieldFillColor = brightness == Brightness.light ? colorScheme.surface : colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round());
     final Color textFieldHintColor = secondaryContentTextColor;
     final Color textFieldInputColor = primaryContentTextColor;
 
-    final Color errorBackgroundColor = brightness == Brightness.light ? _lightMutedPeach.withOpacity(0.8) : Colors.red.shade900.withOpacity(0.4);
-    final Color errorTextColor = brightness == Brightness.light ? primaryContentTextColor.withOpacity(0.8) : Colors.red.shade100;
+    final Color errorBackgroundColor = brightness == Brightness.light ? _lightMutedPeach.withAlpha((255 * 0.8).round()) : Colors.red.shade900.withAlpha((255 * 0.4).round());
+    final Color errorTextColor = brightness == Brightness.light ? primaryContentTextColor.withAlpha((255 * 0.8).round()) : Colors.red.shade100;
 
 
     return Scaffold(
