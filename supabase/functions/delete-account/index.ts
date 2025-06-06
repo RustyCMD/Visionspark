@@ -34,6 +34,35 @@ serve(async (req) => {
   // Delete from gallery_images
   await adminClient.from('gallery_images').delete().eq('user_id', userId);
 
+  // Delete profile picture from Supabase Storage
+  try {
+    const { data: files, error: listError } = await adminClient.storage
+      .from('profilepictures')
+      .list(userId, { limit: 10 }); // Assuming user won't have many profile pics, limit 10 is generous
+
+    if (listError) {
+      console.error(`Error listing profile pictures for user ${userId}:`, listError.message);
+      // Non-fatal, proceed with account deletion
+    } else if (files && files.length > 0) {
+      const filesToRemove = files.map((file) => `${userId}/${file.name}`);
+      if (filesToRemove.length > 0) {
+        console.log(`Attempting to delete profile pictures for user ${userId}:`, filesToRemove);
+        const { error: removeError } = await adminClient.storage
+          .from('profilepictures')
+          .remove(filesToRemove);
+        if (removeError) {
+          console.error(`Error deleting profile pictures for user ${userId}:`, removeError.message);
+          // Non-fatal, proceed with account deletion
+        } else {
+          console.log(`Successfully deleted profile pictures for user ${userId}:`, filesToRemove);
+        }
+      }
+    }
+  } catch (storageError) {
+    console.error(`Unexpected error during profile picture deletion for user ${userId}:`, storageError.message);
+    // Non-fatal, proceed with account deletion
+  }
+
   // Delete the user from auth.users
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
   if (deleteError) {
