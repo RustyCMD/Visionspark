@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -196,41 +196,102 @@ class _AuthScreenState extends State<AuthScreen> {
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () async {
+                        final TextEditingController emailDialogController = TextEditingController();
+                        // This local variable is captured by the closures below.
+                        // It's used to control the UI state of the dialog via StatefulBuilder.
+                        bool isDialogLoading = false;
+
                         await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text('Reset Password', style: TextStyle(color: colorScheme.onSurface)),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('To reset your password, please join our Discord server and open a "Reset Password Ticket".', style: TextStyle(color: colorScheme.onSurface)),
-                                const SizedBox(height: 16),
-                                GestureDetector(
-                                  onTap: () async {
-                                    // Replace with your actual Discord invite link
-                                    const discordUrl = 'https://discord.gg/EUQh2MQgmm';
-                                    // ignore: deprecated_member_use
-                                    await launchUrl(Uri.parse(discordUrl));
-                                  },
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.link, color: colorScheme.primary),
-                                      const SizedBox(width: 8),
-                                      Text('Join Discord', style: TextStyle(color: colorScheme.primary, decoration: TextDecoration.underline)),
-                                    ],
+                          context: context, // This is AuthScreen's BuildContext
+                          barrierDismissible: !isDialogLoading, // Initial value is true, will not update dynamically with isDialogLoading
+                          builder: (BuildContext dialogContext) { // This is the BuildContext for the AlertDialog itself
+                            return StatefulBuilder(
+                              builder: (BuildContext sbContext, StateSetter setStateDialog) { // sbContext is for StatefulBuilder
+                                return AlertDialog(
+                                  title: Text('Reset Password', style: TextStyle(color: colorScheme.onSurface)),
+                                  content: TextField(
+                                    controller: emailDialogController,
+                                    keyboardType: TextInputType.emailAddress,
+                                    decoration: InputDecoration(
+                                      labelText: 'Enter your email',
+                                      labelStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.7)),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    style: TextStyle(color: colorScheme.onSurface),
+                                    enabled: !isDialogLoading,
                                   ),
-                                ),
-                              ],
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: Text('Close', style: TextStyle(color: colorScheme.primary)),
-                              ),
-                            ],
-                          ),
-                        );
+                                  actions: [
+                                    TextButton(
+                                      onPressed: isDialogLoading ? null : () {
+                                        if (dialogContext.mounted) { // Ensure AlertDialog's context is valid
+                                          Navigator.pop(dialogContext);
+                                        }
+                                      },
+                                      child: Text('Cancel', style: TextStyle(color: colorScheme.primary)),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: isDialogLoading ? null : () async {
+                                        final email = emailDialogController.text.trim();
+                                        if (email.isEmpty) {
+                                          // Show snackbar on AuthScreen's context
+                                          // No need to check this.mounted here as this code path doesn't involve async gaps after dialog display
+                                          showErrorSnackbar(this.context, 'Email cannot be empty.');
+                                          return; // Keep dialog open
+                                        }
+
+                                        // Check if StatefulBuilder's context is still mounted BEFORE calling its setState
+                                        if (!sbContext.mounted) return;
+                                        
+                                        setStateDialog(() {
+                                          isDialogLoading = true;
+                                        });
+
+                                        String? successMessage;
+                                        String? errorMessage;
+
+                                        try {
+                                          await Supabase.instance.client.auth.resetPasswordForEmail(email);
+                                          successMessage = 'Password reset email sent to $email. Please check your inbox.';
+                                        } on AuthException catch (e) {
+                                          errorMessage = e.message;
+                                        } catch (e) {
+                                          errorMessage = 'An unexpected error occurred: \${e.toString()}';
+                                        }
+
+                                        // After async operation, check if AlertDialog's context is still valid before popping
+                                        if (dialogContext.mounted) {
+                                          Navigator.pop(dialogContext);
+                                        }
+
+                                        // Then, check if AuthScreen's context is still valid before showing snackbar
+                                        if (mounted) { // This 'mounted' refers to _AuthScreenState.mounted
+                                          if (successMessage != null) {
+                                            showSuccessSnackbar(this.context, successMessage);
+                                          } else if (errorMessage != null) {
+                                            showErrorSnackbar(this.context, errorMessage);
+                                          }
+                                        }
+                                        // No need to call setStateDialog(isDialogLoading = false) as dialog is popped.
+                                      },
+                                      style: ElevatedButton.styleFrom(backgroundColor: colorScheme.primary),
+                                      child: isDialogLoading 
+                                          ? SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary)),
+                                            )
+                                          : Text('Send Reset Email', style: TextStyle(color: colorScheme.onPrimary)),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ).then((_) {
+                          // Dispose controller after dialog is closed, regardless of how it was closed.
+                          // This runs when the Future from showDialog completes.
+                          emailDialogController.dispose();
+                        });
                       },
                       child: Text('Forgot Password?', style: TextStyle(color: colorScheme.primary)),
                     ),
