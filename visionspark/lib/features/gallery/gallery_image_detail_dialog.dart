@@ -199,8 +199,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const Color lilacPurple = Color(0xFFD0B8E1);
-    const Color darkText = Color(0xFF22223B);
+    final colorScheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -212,7 +211,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
-                  color: lilacPurple.withValues(alpha: 25),
+                  color: colorScheme.primary.withOpacity(0.15),
                   blurRadius: 18,
                   offset: const Offset(0, 8),
                 ),
@@ -261,12 +260,12 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
                     ElevatedButton.icon(
                       onPressed: _isSaving ? null : _saveImageFromUrl,
                       icon: _isSaving
-                          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: lilacPurple))
+                          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary))
                           : const Icon(Icons.save_alt),
                       label: const Text('Save to Device'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: lilacPurple,
-                        foregroundColor: darkText,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                         textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         shape: RoundedRectangleBorder(
@@ -281,7 +280,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
                   top: 0,
                   right: 0,
                   child: IconButton(
-                    icon: Icon(Icons.close, color: darkText.withValues(alpha: 153)),
+                    icon: Icon(Icons.close, color: colorScheme.onSurface.withOpacity(0.6)),
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Close',
                   ),

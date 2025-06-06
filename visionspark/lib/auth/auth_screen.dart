@@ -115,16 +115,14 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const Color lilacPurple = Color(0xFFD0B8E1);
-    const Color softTeal = Color(0xFF87CEEB);
-    const Color darkText = Color(0xFF22223B);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Log In / Sign Up'),
         centerTitle: true,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
         elevation: 0,
       ),
       body: Center(
@@ -132,7 +130,7 @@ class _AuthScreenState extends State<AuthScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Card(
             elevation: 6,
-            color: Theme.of(context).colorScheme.surface,
+            color: colorScheme.surface,
             shadowColor: Theme.of(context).shadowColor.withOpacity(0.15),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(32),
@@ -144,41 +142,41 @@ class _AuthScreenState extends State<AuthScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Icon(Icons.lock_outline, size: 72, color: lilacPurple),
+                  Icon(Icons.lock_outline, size: 72, color: colorScheme.primary),
                   const SizedBox(height: 32),
                   Text(
                     'Welcome to Visionspark',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: lilacPurple),
+                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: colorScheme.primary),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     'Please sign in or create an account.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                    style: TextStyle(fontSize: 16, color: colorScheme.onSurface.withOpacity(0.7)),
                   ),
                   const SizedBox(height: 36),
                   TextFormField(
                     controller: _emailController,
                     decoration: InputDecoration(
                       labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      prefixIcon: Icon(Icons.email_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surface,
-                      labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                      labelStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.7)),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     keyboardType: TextInputType.emailAddress,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(color: colorScheme.onSurface),
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: _passwordController,
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: Icon(Icons.lock_outlined, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      prefixIcon: Icon(Icons.lock_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: colorScheme.onSurface.withOpacity(0.7)),
                         onPressed: () {
                           setState(() {
                             _obscurePassword = !_obscurePassword;
@@ -186,12 +184,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         },
                       ),
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surface,
-                      labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                      fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                      labelStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.7)),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     obscureText: _obscurePassword,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(color: colorScheme.onSurface),
                   ),
                   // Add Forgot Password link
                   Align(
@@ -201,12 +199,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         await showDialog(
                           context: context,
                           builder: (context) => AlertDialog(
-                            title: const Text('Reset Password'),
+                            title: Text('Reset Password', style: TextStyle(color: colorScheme.onSurface)),
                             content: Column(
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('To reset your password, please join our Discord server and open a "Reset Password Ticket".'),
+                                Text('To reset your password, please join our Discord server and open a "Reset Password Ticket".', style: TextStyle(color: colorScheme.onSurface)),
                                 const SizedBox(height: 16),
                                 GestureDetector(
                                   onTap: () async {
@@ -216,10 +214,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                     await launchUrl(Uri.parse(discordUrl));
                                   },
                                   child: Row(
-                                    children: const [
-                                      Icon(Icons.link, color: Colors.blue),
-                                      SizedBox(width: 8),
-                                      Text('Join Discord', style: TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
+                                    children: [
+                                      Icon(Icons.link, color: colorScheme.primary),
+                                      const SizedBox(width: 8),
+                                      Text('Join Discord', style: TextStyle(color: colorScheme.primary, decoration: TextDecoration.underline)),
                                     ],
                                   ),
                                 ),
@@ -228,13 +226,13 @@ class _AuthScreenState extends State<AuthScreen> {
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(context),
-                                child: const Text('Close'),
+                                child: Text('Close', style: TextStyle(color: colorScheme.primary)),
                               ),
                             ],
                           ),
                         );
                       },
-                      child: const Text('Forgot Password?'),
+                      child: Text('Forgot Password?', style: TextStyle(color: colorScheme.primary)),
                     ),
                   ),
                   const SizedBox(height: 36),
@@ -243,8 +241,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       : ElevatedButton(
                           onPressed: _signIn,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: lilacPurple,
-                            foregroundColor: darkText,
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
                             ),
@@ -260,8 +258,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       : OutlinedButton(
                           onPressed: _signUp,
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: softTeal,
-                            side: BorderSide(color: softTeal, width: 1.5),
+                            foregroundColor: colorScheme.secondary,
+                            side: BorderSide(color: colorScheme.secondary, width: 1.5),
                             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),

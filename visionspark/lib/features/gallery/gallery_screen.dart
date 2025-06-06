@@ -366,7 +366,7 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
                         key: ValueKey('${galleryItem.isLikedByCurrentUser}_${galleryItem.likeCount}'),
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: colorScheme.surface,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
@@ -380,17 +380,21 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             _likeProcessing.contains(galleryItem.id)
-                                ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                                ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
                                 : Icon(
                                     galleryItem.isLikedByCurrentUser ? Icons.favorite : Icons.favorite_border,
-                                    color: galleryItem.isLikedByCurrentUser ? Colors.pinkAccent : Colors.grey[400],
+                                    color: galleryItem.isLikedByCurrentUser
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurface.withOpacity(0.6),
                                     size: 22,
                                   ),
                             const SizedBox(width: 4),
                             Text(
                               '${galleryItem.likeCount}',
                               style: TextStyle(
-                                color: galleryItem.isLikedByCurrentUser ? Colors.pinkAccent : Colors.grey[700],
+                                color: galleryItem.isLikedByCurrentUser
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurface.withOpacity(0.8),
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                               ),

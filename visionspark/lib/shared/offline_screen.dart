@@ -6,20 +6,26 @@ class OfflineScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.background,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.wifi_off, size: 64, color: Colors.grey),
+              Icon(Icons.wifi_off, size: 64, color: colorScheme.onSurface.withOpacity(0.6)),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'No internet connection.\nPlease turn on WiFi or mobile data.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
@@ -29,8 +35,8 @@ class OfflineScreen extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  backgroundColor: Color(0xFFD0B8E1),
-                  foregroundColor: Colors.black87,
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),

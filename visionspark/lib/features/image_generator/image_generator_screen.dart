@@ -39,8 +39,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
   // Define your fixed brand colors as static const
-  static const Color _lightLilacPurple = Color(0xFFD0B8E1);
-  static const Color _lightSoftTeal = Color(0xFF87CEEB);
   static const Color _lightMutedPeach = Color(0xFFFFDAB9); // Primarily for warnings/errors
 
   // Original dark text color (useful for light mode elements)
@@ -532,7 +530,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               ),
               focusedBorder: OutlineInputBorder( // Add a focus border
                 borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide(color: _lightSoftTeal, width: 2.0), // Accent color on focus
+                borderSide: BorderSide(color: _lightMutedPeach, width: 2.0), // Accent color on focus
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
@@ -553,13 +551,14 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     required Color errorBackgroundColor,
     required Color errorTextColor,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return _buildCard(
       child: Column(
         children: [
           if (_isLoadingStatus)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12.0),
-              child: CircularProgressIndicator(color: _lightLilacPurple), // Use explicit constant color
+              child: CircularProgressIndicator(color: colorScheme.primary),
             )
           else if (_statusErrorMessage != null)
             Container(
@@ -581,7 +580,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: _lightLilacPurple.withOpacity(0.1), // This light color with opacity can work in both modes
+                color: _lightMutedPeach.withOpacity(0.1), // This light color with opacity can work in both modes
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -610,7 +609,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                       : const Icon(Icons.auto_awesome_outlined, size: 20),
                   label: const Text('Improve'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _lightSoftTeal,
+                    backgroundColor: colorScheme.secondary,
                     foregroundColor: onAccentButtonColor,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
@@ -628,7 +627,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                       : const Icon(Icons.image_outlined, size: 20),
                   label: const Text('Generate'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _lightLilacPurple,
+                    backgroundColor: colorScheme.primary,
                     foregroundColor: onAccentButtonColor,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
@@ -650,19 +649,20 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   }) {
     final Color imagePlaceholderBg = Theme.of(context).colorScheme.surface;
     final Color imageBorderColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.08);
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       width: double.infinity,
       height: 300,
-      margin: const EdgeInsets.only(bottom: 24.0), // Consistent margin with _buildCard
+      margin: const EdgeInsets.only(bottom: 24.0),
       decoration: BoxDecoration(
-        color: imagePlaceholderBg, // Base color from theme
+        color: imagePlaceholderBg,
         borderRadius: BorderRadius.circular(16.0),
         border: Border.all(color: imageBorderColor, width: 1.5),
       ),
       child: _generatedImageUrl != null
           ? ClipRRect(
-              borderRadius: BorderRadius.circular(14.5), // Slightly less than container for border visibility
+              borderRadius: BorderRadius.circular(14.5),
               child: Image.network(
                 _generatedImageUrl!,
                 fit: BoxFit.cover,
@@ -674,7 +674,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                           ? loadingProgress.cumulativeBytesLoaded /
                               loadingProgress.expectedTotalBytes!
                           : null,
-                      color: _lightLilacPurple, // Use one of the accent colors for loader
+                      color: colorScheme.primary,
                     ),
                   );
                 },
@@ -723,9 +723,10 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     required Color onAccentButtonColor,
   }) {
     if (_generatedImageUrl == null) return const SizedBox.shrink();
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    return Padding( // Wrap with Padding to give margin from below container.
-      padding: const EdgeInsets.only(bottom: 24.0), // Consistent margin with cards
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
         children: [
            ElevatedButton.icon(
@@ -735,7 +736,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                 : const Icon(Icons.save_alt_outlined, size: 20),
             label: const Text('Save to Device'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _lightSoftTeal.withOpacity(0.9), // Keep original opacity
+              backgroundColor: colorScheme.secondary,
               foregroundColor: onAccentButtonColor,
               minimumSize: const Size(double.infinity, 48),
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -751,7 +752,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                 : const Icon(Icons.ios_share_outlined, size: 20),
             label: const Text('Share to Gallery'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _lightLilacPurple.withOpacity(0.9), // Keep original opacity
+              backgroundColor: colorScheme.primary,
               foregroundColor: onAccentButtonColor,
               minimumSize: const Size(double.infinity, 48),
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -771,7 +772,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   }) {
     if (_errorMessage == null) return const SizedBox.shrink();
 
-    return Padding( // Add padding for consistent margin
+    return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -781,7 +782,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         ),
         child: Row(
           children: [
-            Icon(Icons.error_outline, color: errorTextColor), // Use errorTextColor for icon too
+            Icon(Icons.error_outline, color: errorTextColor),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -801,7 +802,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     final Brightness brightness = Theme.of(context).brightness;
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    // Dynamically choose colors based on theme brightness
     final Color scaffoldBackgroundColor = colorScheme.background;
     final Color appBarBackgroundColor = brightness == Brightness.light ? Colors.white : colorScheme.surface;
     final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
@@ -822,7 +822,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
     return Scaffold(
       backgroundColor: scaffoldBackgroundColor,
-      body: SafeArea( // SafeArea is important for content not to overlap system UI
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -854,7 +854,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               _buildActionButtons(
                 onAccentButtonColor: onAccentButtonColor,
               ),
-              const SizedBox(height: 20), // Extra space at bottom
+              const SizedBox(height: 20),
             ],
           ),
         ),

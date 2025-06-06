@@ -16,9 +16,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoUpload = false;
 
   // Define your fixed brand colors as static const
-  static const Color _lilacPurple = Color(0xFFD0B8E1);
-  static const Color _softTeal = Color(0xFF87CEEB);
-  static const Color _originalDarkText = Color(0xFF22223B); // A deep, nearly black color for text
+  // static const Color _lilacPurple = Color(0xFFD0B8E1); // REMOVED
+  // static const Color _softTeal = Color(0xFF87CEEB); // REMOVED
+  // static const Color _originalDarkText = Color(0xFF22223B); // A deep, nearly black color for text - This can be removed if primaryContentTextColor covers all its uses
 
   @override
   void initState() {
@@ -63,15 +63,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Dynamic colors based on theme brightness
     final Color scaffoldBackgroundColor = colorScheme.background;
-    final Color appBarBackgroundColor = brightness == Brightness.light ? Colors.white : colorScheme.surface;
-    final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
-    final Color appBarTitleColor = appBarIconColor;
+    // final Color appBarBackgroundColor = brightness == Brightness.light ? Colors.white : colorScheme.surface; // Not used
+    // final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9); // Not used
+    // final Color appBarTitleColor = appBarIconColor; // Not used
 
-    final Color primaryContentTextColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
+    final Color primaryContentTextColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white.withOpacity(0.9); // Adjusted _originalDarkText to be theme aware
     final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
 
     final Color cardBackgroundColor = colorScheme.surface;
-    final Color cardShadowColor = brightness == Brightness.light ? _lilacPurple.withOpacity(0.08) : Colors.black.withOpacity(0.4);
+    final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
 
 
     return Scaffold(
@@ -99,8 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text('Enable or disable dark theme', style: TextStyle(color: secondaryContentTextColor)),
                         value: themeController.isDarkMode,
                         onChanged: (value) => themeController.setDarkMode(value),
-                        activeColor: _lilacPurple, // Your accent color for the active state
-                        activeTrackColor: _lilacPurple.withOpacity(0.5), // Lighter track
+                        activeColor: colorScheme.primary, // Use theme color
+                        activeTrackColor: colorScheme.primary.withOpacity(0.5), // Lighter track
                         inactiveThumbColor: Colors.grey, // Default grey for inactive thumb
                         inactiveTrackColor: Colors.grey.withOpacity(0.5), // Lighter grey track
                       ),
@@ -109,8 +109,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text('Automatically share new images to the public gallery', style: TextStyle(color: secondaryContentTextColor)),
                         value: _autoUpload,
                         onChanged: _setAutoUpload,
-                        activeColor: _lilacPurple, // Your accent color for the active state
-                        activeTrackColor: _lilacPurple.withOpacity(0.5),
+                        activeColor: colorScheme.primary, // Use theme color
+                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
                         inactiveThumbColor: Colors.grey,
                         inactiveTrackColor: Colors.grey.withOpacity(0.5),
                       ),
@@ -118,7 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Divider(
                         height: 32, // Height of the divider
                         thickness: 1,
-                        color: _lilacPurple.withOpacity(0.3), // Themed divider color
+                        color: colorScheme.primary.withOpacity(0.3), // Themed divider color
                         indent: 16, // Indent from left
                         endIndent: 16, // Indent from right
                       ),

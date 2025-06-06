@@ -24,8 +24,6 @@ class _AccountSectionState extends State<AccountSection> {
   bool _isDeleting = false;
 
   // Define your fixed brand colors as static const
-  static const Color _lilacPurple = Color(0xFFD0B8E1);
-  static const Color _softTeal = Color(0xFF87CEEB);
   static const Color _originalDarkText = Color(0xFF22223B); // A deep, nearly black color for text
 
   Future<void> _signOut() async {
@@ -230,15 +228,15 @@ class _AccountSectionState extends State<AccountSection> {
 
     // Dynamic colors based on theme brightness
     final Color cardBackgroundColor = colorScheme.surface;
-    final Color cardShadowColor = brightness == Brightness.light ? _lilacPurple.withOpacity(0.08) : Colors.black.withOpacity(0.4);
+    final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
 
     final Color primaryContentTextColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
     final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
 
     final Color onAccentButtonColor = brightness == Brightness.light ? _originalDarkText : Colors.white;
 
-    final Color textFieldBorderColor = brightness == Brightness.light ? _lilacPurple : Colors.grey.shade700;
-    final Color textFieldFocusedBorderColor = _softTeal; // Always vibrant
+    final Color textFieldBorderColor = brightness == Brightness.light ? colorScheme.primary : Colors.grey.shade700;
+    final Color textFieldFocusedBorderColor = colorScheme.secondary; // Always vibrant
     final Color textFieldInputColor = primaryContentTextColor;
     final Color textFieldHintColor = secondaryContentTextColor;
 
@@ -306,7 +304,7 @@ class _AccountSectionState extends State<AccountSection> {
                             _isUploading
                                 ? CircleAvatar(
                                     radius: 36,
-                                    backgroundColor: _lilacPurple, // Placeholder background
+                                    backgroundColor: colorScheme.primary, // Placeholder background
                                     child: CircularProgressIndicator(color: colorScheme.onPrimary), // Loader color
                                   )
                                 : _profileImageUrl != null
@@ -316,7 +314,7 @@ class _AccountSectionState extends State<AccountSection> {
                                       )
                                     : CircleAvatar(
                                         radius: 36,
-                                        backgroundColor: _lilacPurple,
+                                        backgroundColor: colorScheme.primary,
                                         child: Text(
                                           initials,
                                           style: TextStyle(fontSize: 28, color: colorScheme.onPrimary, fontWeight: FontWeight.bold),
@@ -330,7 +328,7 @@ class _AccountSectionState extends State<AccountSection> {
                                 customBorder: const CircleBorder(),
                                 child: CircleAvatar(
                                   radius: 14,
-                                  backgroundColor: _softTeal,
+                                  backgroundColor: colorScheme.secondary,
                                   child: Icon(Icons.camera_alt, size: 16, color: colorScheme.onSecondary),
                                 ),
                               ),
@@ -374,7 +372,7 @@ class _AccountSectionState extends State<AccountSection> {
                             icon: Icon(Icons.logout, size: 18, color: onAccentButtonColor),
                             label: Text('Logout', style: TextStyle(fontSize: 14, color: onAccentButtonColor)),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _softTeal,
+                              backgroundColor: colorScheme.secondary,
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -385,7 +383,7 @@ class _AccountSectionState extends State<AccountSection> {
                         ),
                       ],
                     ),
-                    Divider(height: 40, thickness: 1, color: _lilacPurple.withOpacity(0.5)), // Visual separation
+                    Divider(height: 40, thickness: 1, color: colorScheme.primary.withOpacity(0.5)), // Visual separation
 
                     // 2. Update Username Section
                     Align(
@@ -429,7 +427,7 @@ class _AccountSectionState extends State<AccountSection> {
                               ElevatedButton(
                                 onPressed: _isSavingUsername ? null : _saveUsername,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _softTeal,
+                                  backgroundColor: colorScheme.secondary,
                                   foregroundColor: onAccentButtonColor,
                                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                                   shape: RoundedRectangleBorder(
