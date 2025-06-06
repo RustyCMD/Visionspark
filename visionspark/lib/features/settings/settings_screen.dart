@@ -15,11 +15,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _version = '';
   bool _autoUpload = false;
 
-  // Define your fixed brand colors as static const
-  // static const Color _lilacPurple = Color(0xFFD0B8E1); // REMOVED
-  // static const Color _softTeal = Color(0xFF87CEEB); // REMOVED
-  // static const Color _originalDarkText = Color(0xFF22223B); // A deep, nearly black color for text - This can be removed if primaryContentTextColor covers all its uses
-
   @override
   void initState() {
     super.initState();
@@ -63,16 +58,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Dynamic colors based on theme brightness
     final Color scaffoldBackgroundColor = colorScheme.background;
-    // final Color appBarBackgroundColor = brightness == Brightness.light ? Colors.white : colorScheme.surface; // Not used
-    // final Color appBarIconColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9); // Not used
-    // final Color appBarTitleColor = appBarIconColor; // Not used
 
     final Color primaryContentTextColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white.withOpacity(0.9); // Adjusted _originalDarkText to be theme aware
     final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
 
     final Color cardBackgroundColor = colorScheme.surface;
     final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
-
 
     return Scaffold(
       backgroundColor: scaffoldBackgroundColor,
