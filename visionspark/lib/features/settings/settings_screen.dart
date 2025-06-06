@@ -99,10 +99,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text('Enable or disable dark theme', style: TextStyle(color: secondaryContentTextColor)),
                         value: themeController.isDarkMode,
                         onChanged: (value) => themeController.setDarkMode(value),
-                        activeColor: colorScheme.primary, // Use theme color
-                        activeTrackColor: colorScheme.primary.withOpacity(0.5), // Lighter track
-                        inactiveThumbColor: Colors.grey, // Default grey for inactive thumb
-                        inactiveTrackColor: Colors.grey.withOpacity(0.5), // Lighter grey track
+                        activeColor: colorScheme.primary,
+                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
+                        inactiveThumbColor: Colors.grey,
+                        inactiveTrackColor: Colors.grey.withOpacity(0.5),
                       ),
                       SwitchListTile(
                         title: Text('Auto-upload generated images to gallery', style: TextStyle(color: primaryContentTextColor)),

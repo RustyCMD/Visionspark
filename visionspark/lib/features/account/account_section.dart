@@ -304,8 +304,8 @@ class _AccountSectionState extends State<AccountSection> {
                             _isUploading
                                 ? CircleAvatar(
                                     radius: 36,
-                                    backgroundColor: colorScheme.primary, // Placeholder background
-                                    child: CircularProgressIndicator(color: colorScheme.onPrimary), // Loader color
+                                    backgroundColor: colorScheme.primary,
+                                    child: CircularProgressIndicator(color: colorScheme.onPrimary),
                                   )
                                 : _profileImageUrl != null
                                     ? CircleAvatar(

@@ -260,7 +260,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
                     ElevatedButton.icon(
                       onPressed: _isSaving ? null : _saveImageFromUrl,
                       icon: _isSaving
-                          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary))
+                          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
                           : const Icon(Icons.save_alt),
                       label: const Text('Save to Device'),
                       style: ElevatedButton.styleFrom(
@@ -280,7 +280,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
                   top: 0,
                   right: 0,
                   child: IconButton(
-                    icon: Icon(Icons.close, color: colorScheme.onSurface.withOpacity(0.6)),
+                    icon: Icon(Icons.close, color: colorScheme.onSurface.withOpacity(0.7)),
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Close',
                   ),

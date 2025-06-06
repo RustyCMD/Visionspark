@@ -276,14 +276,17 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
         child: Container(
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: mutedPeach.withValues(alpha: 77),
+            color: colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Text(
             isMyCreations
                 ? "You haven't created any images yet. Start creating!"
                 : 'The gallery is empty. Share some images!',
-            style: TextStyle(fontSize: 20, color: darkText.withValues(alpha: 179)),
+            style: TextStyle(
+              fontSize: 20,
+              color: colorScheme.onSurface.withOpacity(0.7),
+            ),
             textAlign: TextAlign.center,
           ),
         ),
