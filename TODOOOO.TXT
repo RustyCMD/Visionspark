@@ -12,14 +12,14 @@
 - [x] Username change functionality
 - [x] Account Deletion Incompleteness: The delete-account function deletes the user's record from auth.users, profiles, and gallery_images. However, it fails to delete the user's profile picture from Supabase Storage. This will leave orphaned files in your storage bucket.
 - [x] Brittle Thumbnail Logic: The get-gallery-feed function assumes thumbnails are created by replacing a file extension (e.g., .png with _thumb.png). This is unreliable as filenames can contain multiple dots. A more robust approach would be to store the thumbnail path in a separate database column.
+- [x] Timezone-Related Daily Limit Flaw: In the generate-image-proxy function, the logic to reset the daily generation limit relies on comparing date strings (nowDayStr > lastGenDayStr). Timezone conversions are notoriously complex, and this string-based comparison is a potential source of off-by-one errors, especially around midnight or for users who change timezones.
 
 # Planned Features
 - [ ] Administration: Create local admin dashboard with action logging
 - [ ] Promotions: "Review for Refill" - 3 free generations for a review
 
 ## 📟 Backend & Function Issues
-- [x] Timezone-Related Daily Limit Flaw: In the generate-image-proxy function, the logic to reset the daily generation limit relies on comparing date strings (nowDayStr > lastGenDayStr). Timezone conversions are notoriously complex, and this string-based comparison is a potential source of off-by-one errors, especially around midnight or for users who change timezones.
-- [ ] Rate Limiting Flaw: The report-support-issue function uses an in-memory queue to rate-limit Discord webhook posts. Because Supabase Edge Functions are stateless, this queue will be reset with every new instance of the function, making the rate limiting ineffective. A better solution would be to use a persistent store like a database table to track the last sent time.
+- [x] Rate Limiting Flaw: The report-support-issue function uses an in-memory queue to rate-limit Discord webhook posts. Because Supabase Edge Functions are stateless, this queue will be reset with every new instance of the function, making the rate limiting ineffective. A better solution would be to use a persistent store like a database table to track the last sent time.
 
 ## 📱 Android-Specific Bugs
 - [ ] Outdated Storage Permissions: The AndroidManifest.xml file requests WRITE_EXTERNAL_STORAGE with a maxSdkVersion="32". This permission is deprecated and not needed for modern Android versions (API 30+). The current implementation in gallery_image_detail_dialog.dart and MainActivity.kt correctly uses the MediaStore API, making this permission redundant and potentially confusing for users.
