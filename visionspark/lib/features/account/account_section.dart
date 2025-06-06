@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -13,7 +14,6 @@ class AccountSection extends StatefulWidget {
 }
 
 class _AccountSectionState extends State<AccountSection> {
-  String? _error;
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
   String? _profileImageUrl;
@@ -23,26 +23,13 @@ class _AccountSectionState extends State<AccountSection> {
   bool _isSavingUsername = false;
   bool _isDeleting = false;
 
-  // Define your fixed brand colors as static const
-  static const Color _originalDarkText = Color(0xFF22223B); // A deep, nearly black color for text
-
   Future<void> _signOut() async {
     try {
       await Supabase.instance.client.auth.signOut();
     } on AuthException catch (e) {
-      if (mounted) {
-        setState(() => _error = e.message);
-         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Theme.of(context).colorScheme.error),
-        );
-      }
+      showErrorSnackbar(context, e.message);
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = 'Unexpected error: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An unexpected error occurred during sign out: $e'), backgroundColor: Theme.of(context).colorScheme.error),
-        );
-      }
+      showErrorSnackbar(context, 'An unexpected error occurred during sign out: $e');
     }
   }
 
@@ -69,9 +56,7 @@ class _AccountSectionState extends State<AccountSection> {
       });
     } catch (e) {
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to upload profile picture: $e')),
-      );
+      showErrorSnackbar(context, 'Failed to upload profile picture: $e');
     }
   }
 
@@ -127,22 +112,15 @@ class _AccountSectionState extends State<AccountSection> {
     if (user == null) return;
     final newUsername = _usernameController.text.trim();
     if (newUsername.isEmpty) {
-      if (mounted) {
-        setState(() => _error = 'Username cannot be empty.');
-      }
+      showErrorSnackbar(context, 'Username cannot be empty.');
       return;
     }
     if (newUsername == _username) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Username is already up to date.')),
-        );
-      }
+      showSuccessSnackbar(context, 'Username is already up to date.');
       return;
     }
     setState(() {
       _isSavingUsername = true;
-      _error = null;
     });
     try {
       await Supabase.instance.client
@@ -155,28 +133,12 @@ class _AccountSectionState extends State<AccountSection> {
         setState(() {
           _username = newUsername;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Username updated successfully.')),
-        );
+        showSuccessSnackbar(context, 'Username updated successfully.');
       }
     } on PostgrestException catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.message;
-        });
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update username: ${e.message}')),
-      );
+      showErrorSnackbar(context, 'Failed to update username: ${e.message}');
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to update username: $e';
-        });
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update username: $e')),
-      );
+      showErrorSnackbar(context, 'Failed to update username: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -208,14 +170,10 @@ class _AccountSectionState extends State<AccountSection> {
           Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
         }
       } else {
-        setState(() {
-          _error = 'Failed to delete account: ${body.isNotEmpty ? body : response.statusCode}';
-        });
+        showErrorSnackbar(context, 'Failed to delete account: ${body.isNotEmpty ? body : response.statusCode}');
       }
     } catch (e) {
-      setState(() {
-        _error = 'Failed to delete account: $e';
-      });
+      showErrorSnackbar(context, 'Failed to delete account: $e');
     } finally {
       if (mounted) setState(() { _isDeleting = false; });
     }
@@ -230,10 +188,10 @@ class _AccountSectionState extends State<AccountSection> {
     final Color cardBackgroundColor = colorScheme.surface;
     final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
 
-    final Color primaryContentTextColor = brightness == Brightness.light ? _originalDarkText : Colors.white.withOpacity(0.9);
+    final Color primaryContentTextColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white.withOpacity(0.9);
     final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
 
-    final Color onAccentButtonColor = brightness == Brightness.light ? _originalDarkText : Colors.white;
+    final Color onAccentButtonColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white;
 
     final Color textFieldBorderColor = brightness == Brightness.light ? colorScheme.primary : Colors.grey.shade700;
     final Color textFieldFocusedBorderColor = colorScheme.secondary; // Always vibrant
@@ -458,31 +416,6 @@ class _AccountSectionState extends State<AccountSection> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Error Message Display
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: errorBackgroundColor,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.error_outline, color: errorIconColor),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _error!,
-                                  style: TextStyle(color: errorTextColor, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    
                     // Delete Account Section (now inside the card)
                     Divider(height: 40, thickness: 1, color: colorScheme.error.withOpacity(0.5)),
                     Text(

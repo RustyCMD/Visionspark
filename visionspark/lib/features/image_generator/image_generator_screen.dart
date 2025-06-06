@@ -8,6 +8,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
+import '../../shared/utils/snackbar_utils.dart';
 
 class ImageGeneratorScreen extends StatefulWidget {
   const ImageGeneratorScreen({super.key});
@@ -20,7 +21,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   final TextEditingController _promptController = TextEditingController();
   String? _generatedImageUrl;
   bool _isLoading = false;
-  String? _errorMessage;
   bool _isImproving = false;
 
   int _generationLimit = 3;
@@ -125,12 +125,20 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Future<void> _generateImage() async {
     if (_promptController.text.isEmpty) {
-      setStateIfMounted(() => _errorMessage = 'Please enter a prompt');
+      showErrorSnackbar(context, 'Please enter a prompt');
       return;
     }
+
+    if (_isImproving) {
+      showErrorSnackbar(context, 'Please wait for prompt improvement to finish.');
+      return;
+    }
+    if (_isLoading) {
+      return;
+    }
+
     setStateIfMounted(() {
       _isLoading = true;
-      _errorMessage = null;
       _generatedImageUrl = null;
     });
     try {
@@ -146,9 +154,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             _resetsAtUtcIso = data['resets_at_utc_iso'];
             _updateResetsAtDisplay();
           }
-          setStateIfMounted(() {
-            _errorMessage = errorMsg;
-          });
+          showErrorSnackbar(context, errorMsg);
         } else if (data['data'] != null && data['data'][0]['url'] != null) {
           setStateIfMounted(() {
             _generatedImageUrl = data['data'][0]['url'];
@@ -161,19 +167,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             _promptController.clear();
           });
         } else {
-          setStateIfMounted(() {
-            _errorMessage = 'Failed to parse image URL from response.';
-          });
+          showErrorSnackbar(context, 'Failed to parse image URL from response.');
         }
       } else {
-        setStateIfMounted(() {
-          _errorMessage = 'No data received from image generation.';
-        });
+        showErrorSnackbar(context, 'No data received from image generation.');
       }
     } catch (e) {
-      setStateIfMounted(() {
-        _errorMessage = 'Image generation error: ${e.toString()}';
-      });
+      showErrorSnackbar(context, 'Image generation error: ${e.toString()}');
     }
     setStateIfMounted(() {
       _isLoading = false;
@@ -212,14 +212,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Future<void> _saveImage() async {
     if (_generatedImageUrl == null) {
-      _showSnackBar('No image to save.');
+      showErrorSnackbar(context, 'No image to save.');
       return;
     }
     if (_isSavingImage) return;
 
     setStateIfMounted(() {
       _isSavingImage = true;
-      _errorMessage = null;
     });
 
     try {
@@ -227,7 +226,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
       if (!status.isGranted) {
          if (status.isPermanentlyDenied) {
-          _showSnackBarWithSettingsAction('Storage permission is permanently denied. Please enable it in app settings.');
+          showErrorSnackbar(context, 'Storage permission is permanently denied. Please enable it in app settings.');
           setStateIfMounted(() => _isSavingImage = false);
           return;
         }
@@ -248,18 +247,22 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             'albumName': 'Visionspark'
           });
 
-          _showSnackBar(saveSuccess == true ? 'Image saved to Gallery as $filename' : 'Failed to save image via native code.');
+          if (saveSuccess == true) {
+            showSuccessSnackbar(context, 'Image saved to Gallery as $filename');
+          } else {
+            showErrorSnackbar(context, 'Failed to save image via native code.');
+          }
         } on PlatformException catch (e) {
-            _showSnackBar('Failed to save image: ${e.message}');
+            showErrorSnackbar(context, 'Failed to save image: ${e.message}');
         }
       } else if (status.isPermanentlyDenied) {
-        _showSnackBarWithSettingsAction('Storage permission is permanently denied. Please enable it in app settings.');
+        showErrorSnackbar(context, 'Storage permission is permanently denied. Please enable it in app settings.');
       } else {
-         _showSnackBar('Storage permission denied. Cannot save image.');
+         showErrorSnackbar(context, 'Storage permission denied. Cannot save image.');
       }
     } catch (e, s) {
       debugPrint("Error saving image: $e\n$s");
-      _showSnackBar('Error saving image: ${e.toString()}');
+      showErrorSnackbar(context, 'Error saving image: ${e.toString()}');
     } finally {
       setStateIfMounted(() {
         _isSavingImage = false;
@@ -269,19 +272,18 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Future<void> _shareToGallery() async {
     if (_generatedImageUrl == null) {
-      _showSnackBar('Please generate an image first.');
+      showErrorSnackbar(context, 'Please generate an image first.');
       return;
     }
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      _showSnackBar('You must be logged in to share to the gallery.');
+      showErrorSnackbar(context, 'You must be logged in to share to the gallery.');
       return;
     }
 
     setStateIfMounted(() {
       _isSharingToGallery = true;
-      _errorMessage = null;
     });
 
     String? mainImageStoragePath;
@@ -331,14 +333,11 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         'prompt': _promptController.text,
         'thumbnail_url': thumbnailStoragePath,
       });
-      _showSnackBar('Image shared to gallery successfully!');
+      showSuccessSnackbar(context, 'Image shared to gallery successfully!');
     } catch (e) {
       debugPrint('Error sharing to gallery: $e');
       final errorString = e.toString();
-      setStateIfMounted(() {
-        _errorMessage = 'Failed to share to gallery: $errorString';
-      });
-      _showSnackBar('Failed to share to gallery: $errorString');
+      showErrorSnackbar(context, 'Failed to share to gallery: $errorString');
     }
     setStateIfMounted(() {
       _isSharingToGallery = false;
@@ -349,12 +348,20 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   Future<void> _improvePrompt() async {
     final prompt = _promptController.text.trim();
     if (prompt.isEmpty) {
-      setStateIfMounted(() => _errorMessage = 'Please enter a prompt to improve.');
+      showErrorSnackbar(context, 'Please enter a prompt to improve.');
       return;
     }
+
+    if (_isLoading) {
+      showErrorSnackbar(context, 'Please wait for image generation to finish.');
+      return;
+    }
+    if (_isImproving) {
+      return;
+    }
+
     setStateIfMounted(() {
       _isImproving = true;
-      _errorMessage = null;
     });
     try {
       final response = await Supabase.instance.client.functions.invoke(
@@ -364,27 +371,19 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       if (response.data != null) {
         final data = response.data;
         if (data['error'] != null) {
-          setStateIfMounted(() {
-            _errorMessage = data['error'].toString();
-          });
+          showErrorSnackbar(context, data['error'].toString());
         } else if (data['improved_prompt'] != null) {
           setStateIfMounted(() {
             _promptController.text = data['improved_prompt'].trim();
           });
         } else {
-          setStateIfMounted(() {
-            _errorMessage = 'Edge function did not return an improved prompt or an error.';
-          });
+          showErrorSnackbar(context, 'Edge function did not return an improved prompt or an error.');
         }
       } else {
-        setStateIfMounted(() {
-          _errorMessage = 'Failed to improve prompt: No data received.';
-        });
+        showErrorSnackbar(context, 'Failed to improve prompt: No data received.');
       }
     } catch (e) {
-      setStateIfMounted(() {
-        _errorMessage = 'Error improving prompt: ${e.toString()}';
-      });
+      showErrorSnackbar(context, 'Error improving prompt: ${e.toString()}');
     }
     setStateIfMounted(() {
       _isImproving = false;
@@ -403,30 +402,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       setState(f);
     }
   }
-
-  void _showSnackBar(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  void _showSnackBarWithSettingsAction(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: SnackBarAction(
-          label: 'Settings',
-          onPressed: () {
-            openAppSettings();
-          },
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
 
   // --- UI Builder Methods ---
   Widget _buildCard({required Widget child}) {
@@ -723,38 +698,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     );
   }
 
-
-  Widget _buildErrorMessage({
-    required Color errorBackgroundColor,
-    required Color errorTextColor,
-  }) {
-    if (_errorMessage == null) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: errorBackgroundColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.error_outline, color: errorTextColor),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _errorMessage!,
-                style: TextStyle(color: errorTextColor, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-
   @override
   Widget build(BuildContext context) {
     final Brightness brightness = Theme.of(context).brightness;
@@ -804,10 +747,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               _buildImageDisplaySection(
                 primaryContentTextColor: primaryContentTextColor,
                 secondaryContentTextColor: secondaryContentTextColor,
-              ),
-              _buildErrorMessage(
-                errorBackgroundColor: errorBackgroundColor,
-                errorTextColor: errorTextColor,
               ),
               _buildActionButtons(
                 onAccentButtonColor: onAccentButtonColor,
