@@ -5,6 +5,7 @@
 *.swp
 .DS_Store
 .history
+ToDo's.txt
 
 # Flutter/Dart
 .dart_tool/
