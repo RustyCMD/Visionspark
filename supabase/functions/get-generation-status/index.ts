@@ -9,6 +9,7 @@ const corsHeaders = {
 };
 
 const DEFAULT_FREE_LIMIT = 3;
+const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -65,7 +66,13 @@ serve(async (req) => {
     const profileUpdates: Record<string, any> = {};
 
     const now = new Date();
-    if (profile.subscription_active && profile.subscription_expires_at && new Date(profile.subscription_expires_at) > now) {
+    // Check if subscription is active, considering the grace period
+    const isSubscriptionEffectivelyActive = 
+        profile.subscription_active && 
+        profile.subscription_expires_at && 
+        (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
+
+    if (isSubscriptionEffectivelyActive) {
       // Active subscription
       if (profile.current_subscription_tier === 'monthly_unlimited') {
         currentLimit = -1; // -1 for unlimited

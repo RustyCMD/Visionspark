@@ -12,6 +12,12 @@ import '../../shared/utils/snackbar_utils.dart';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 
+// SharedPreferences keys for caching generation status
+const String _kCachedLimit = 'cached_generation_limit';
+const String _kCachedGenerationsToday = 'cached_generations_today';
+const String _kCachedRemainingGenerations = 'cached_remaining_generations';
+const String _kCachedResetsAt = 'cached_resets_at_utc_iso';
+
 class ImageGeneratorScreen extends StatefulWidget {
   const ImageGeneratorScreen({super.key});
 
@@ -51,6 +57,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCachedGenerationStatus(); // Load cached status first
     _fetchGenerationStatus();
     _loadAutoUploadSetting();
     _resetTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -71,7 +78,35 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   void _onSubscriptionChanged() {
     // When subscription changes, refetch generation status
+    _loadCachedGenerationStatus(); // Attempt to load cache before fetch
     _fetchGenerationStatus();
+  }
+
+  Future<void> _loadCachedGenerationStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    setStateIfMounted(() {
+      _generationLimit = prefs.getInt(_kCachedLimit) ?? _generationLimit;
+      _generationsToday = prefs.getInt(_kCachedGenerationsToday) ?? _generationsToday;
+      // Calculate remaining based on cached limit and today, or use cached remaining
+      int cachedRemaining = prefs.getInt(_kCachedRemainingGenerations) ?? _remainingGenerations;
+      if (prefs.containsKey(_kCachedLimit) && prefs.containsKey(_kCachedGenerationsToday)){
+         _remainingGenerations = (_generationLimit == -1) ? -1 : (_generationLimit - _generationsToday);
+      } else {
+        _remainingGenerations = cachedRemaining;
+      }
+      _resetsAtUtcIso = prefs.getString(_kCachedResetsAt) ?? _resetsAtUtcIso;
+      if (_resetsAtUtcIso != null) _updateResetsAtDisplay();
+    });
+  }
+
+  Future<void> _saveGenerationStatusToCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kCachedLimit, _generationLimit);
+    await prefs.setInt(_kCachedGenerationsToday, _generationsToday);
+    await prefs.setInt(_kCachedRemainingGenerations, _remainingGenerations);
+    if (_resetsAtUtcIso != null) {
+      await prefs.setString(_kCachedResetsAt, _resetsAtUtcIso!);
+    }
   }
 
   Future<void> _fetchGenerationStatus() async {
@@ -94,6 +129,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             _remainingGenerations = data['remaining'] ?? _generationLimit - _generationsToday;
             _resetsAtUtcIso = data['resets_at_utc_iso'];
             _updateResetsAtDisplay();
+            _saveGenerationStatusToCache(); // Save successful fetch to cache
           });
         }
       } else {

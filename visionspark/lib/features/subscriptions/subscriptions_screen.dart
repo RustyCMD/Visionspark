@@ -27,8 +27,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _iapError; // For IAP related errors
   String? _purchaseSuccessMessage;
   List<ProductDetails> _products = [];
-  static const String monthly30Id = 'monthly_30_generations';
-  static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
+  static const String monthly30Id = 'monthly_30';
+  static const String monthlyUnlimitedId = 'monthly_unlimited';
 
   // New state variables for active subscription status
   String? _activeSubscriptionType;

@@ -18,6 +18,7 @@ const corsHeaders = {
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')!;
 const GOOGLE_PRIVATE_KEY_PEM = Deno.env.get('GOOGLE_PRIVATE_KEY_PEM')!; // Ensure PEM format, newlines as \\n
 const APP_PACKAGE_NAME = 'app.visionspark.app';
+const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 // ---
 
 // Define a new interface for the validation result
@@ -109,12 +110,12 @@ async function validateGooglePlayPurchase(productId: string, purchaseToken: stri
   const purchaseData = await response.json();
 
   // --- Validate purchaseData for Subscriptions ---
-  if (purchaseData.expiryTimeMillis && parseInt(purchaseData.expiryTimeMillis) > Date.now()) {
-    // Successfully validated with Google
+  if (purchaseData.expiryTimeMillis && (parseInt(purchaseData.expiryTimeMillis) + GRACE_PERIOD_MILLISECONDS) > Date.now()) {
+    // Successfully validated with Google (considering grace period for isValid flag)
     return { isValid: true, purchaseData: purchaseData };
   }
 
-  console.log(`Subscription ${subscriptionId} for token ${purchaseToken} is not valid or has expired. Expiry: ${purchaseData.expiryTimeMillis}, Payment State: ${purchaseData.paymentState}, Ack State: ${purchaseData.acknowledgementState}`);
+  console.log(`Subscription ${subscriptionId} for token ${purchaseToken} is not valid or has expired (even with grace period). Expiry: ${purchaseData.expiryTimeMillis}, Payment State: ${purchaseData.paymentState}, Ack State: ${purchaseData.acknowledgementState}`);
   return { isValid: false, purchaseData: purchaseData, error: 'Subscription is not valid or has expired.' };
 }
 
@@ -205,8 +206,11 @@ serve(async (req) => {
 
     // Use expiryTimeMillis from Google's response
     if (validationResult.purchaseData && validationResult.purchaseData.expiryTimeMillis) {
-      expiresAt = new Date(parseInt(validationResult.purchaseData.expiryTimeMillis)).toISOString();
-      isActive = true; // If we have an expiry date from a valid purchase, it's active
+      const actualExpiryTimeMillis = parseInt(validationResult.purchaseData.expiryTimeMillis);
+      expiresAt = new Date(actualExpiryTimeMillis).toISOString(); // Store REAL expiry from Google
+      
+      // isActive considers the grace period
+      isActive = (actualExpiryTimeMillis + GRACE_PERIOD_MILLISECONDS) > Date.now();
 
       // Set cycleStartDate from Google's startTimeMillis if available, otherwise current time
       if (validationResult.purchaseData.startTimeMillis) {
@@ -223,9 +227,9 @@ serve(async (req) => {
     }
     
     // Determine tier based on productId
-    if (productId === 'monthly_30_generations') {
+    if (productId === 'monthly_30') {
       tier = 'monthly_30';
-    } else if (productId === 'monthly_unlimited_generations') {
+    } else if (productId === 'monthly_unlimited') {
       tier = 'monthly_unlimited';
     } else {
       console.warn(`Validated purchase for unknown productId in this function logic: ${productId}. Tier will be null.`);

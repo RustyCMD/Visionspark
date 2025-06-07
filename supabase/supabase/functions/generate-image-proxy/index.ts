@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 
 const DEFAULT_FREE_LIMIT = 3;
+const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // Helper function to safely get the user's timezone
 function getUserTimezone(user: any, profile: any): string {
@@ -85,48 +86,47 @@ serve(async (req) => {
     const userTimezone = getUserTimezone(user, profile);
     const now = new Date();
     const profileUpdates: Record<string, any> = {};
-    let needsDBUpdateBeforeDebit = false;
-    let derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT; // Start with default or profile's base limit
-    let nextResetForClientIso = getNextUTCMidnightISO(); // Default daily UTC reset
+    let needsDBUpdateBeforeGenerationAttempt = false; // Renamed for clarity
+    let derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
+    let nextResetForClientIso = getNextUTCMidnightISO();
     let isMonthlyTier = false;
 
     // Subscription and Reset Logic
-    if (profile.subscription_active && profile.subscription_expires_at && new Date(profile.subscription_expires_at) > now) {
+    const isSubscriptionEffectivelyActive = 
+        profile.subscription_active && 
+        profile.subscription_expires_at && 
+        (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
+
+    if (isSubscriptionEffectivelyActive) {
       if (profile.current_subscription_tier === 'monthly_unlimited') {
         derivedGenerationLimit = -1; // Unlimited
-        lt_generations_today = 0; // Not strictly tracked against limit
+        lt_generations_today = 0; 
         nextResetForClientIso = new Date(profile.subscription_expires_at).toISOString();
-        isMonthlyTier = true; // Considers unlimited as a type of monthly plan for skipping daily reset
+        isMonthlyTier = true; 
       } else if (profile.current_subscription_tier === 'monthly_30') {
         isMonthlyTier = true;
         derivedGenerationLimit = 30;
         let currentCycleStartDate = profile.subscription_cycle_start_date ? new Date(profile.subscription_cycle_start_date) : null;
 
         if (!currentCycleStartDate) {
-          currentCycleStartDate = new Date(now); // Start cycle now
+          currentCycleStartDate = new Date(now); 
           lt_generations_today = 0;
           profileUpdates.subscription_cycle_start_date = currentCycleStartDate.toISOString();
           profileUpdates.generations_today = 0;
-          needsDBUpdateBeforeDebit = true;
+          needsDBUpdateBeforeGenerationAttempt = true;
         }
 
         const nextMonthlyResetDate = new Date(currentCycleStartDate);
-        nextMonthlyResetDate.setUTCMonth(currentCycleStartDate.getUTCMonth() + 1); // Go to next month
-        // Preserve day of month from cycle start, handle month rollovers carefully if needed, e.g. Jan 31 -> Feb 28/29
-        // For simplicity, using setUTCMonth, then setUTCDate to ensure it lands on the same day if possible, or last day of month.
-        // A more robust way might be to add a fixed number of days (e.g. 30) or use a library.
-        // For now, simple month increment.
-        // Reset to the beginning of that day for consistency
+        nextMonthlyResetDate.setUTCMonth(currentCycleStartDate.getUTCMonth() + 1);
         nextMonthlyResetDate.setUTCHours(0,0,0,0);
 
-        if (now >= nextMonthlyResetDate) { // Monthly reset needed
+        if (now >= nextMonthlyResetDate) { 
           lt_generations_today = 0;
-          currentCycleStartDate = new Date(now); // New cycle starts now
+          currentCycleStartDate = new Date(now); 
           profileUpdates.generations_today = 0;
           profileUpdates.subscription_cycle_start_date = currentCycleStartDate.toISOString();
-          needsDBUpdateBeforeDebit = true;
+          needsDBUpdateBeforeGenerationAttempt = true;
         }
-        // For client response, calculate the *actual* next reset after this potential update
         const finalCycleStartDateForNextReset = new Date(profileUpdates.subscription_cycle_start_date || currentCycleStartDate.toISOString());
         const actualNextMonthlyReset = new Date(finalCycleStartDateForNextReset);
         actualNextMonthlyReset.setUTCMonth(finalCycleStartDateForNextReset.getUTCMonth() + 1);
@@ -135,9 +135,8 @@ serve(async (req) => {
       }
     }
     
-    // Daily Reset Logic (Only if not a monthly tier handled above)
     if (!isMonthlyTier) {
-      derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT; // Fallback to profile limit or default
+      derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
       let performDailyReset = false;
       if (profile.last_generation_at) {
         const lastGenDateUtc = new Date(profile.last_generation_at);
@@ -147,36 +146,28 @@ serve(async (req) => {
           performDailyReset = true;
         }
       } else {
-        performDailyReset = true; // First generation or no last_generation_at
+        performDailyReset = true; 
       }
 
       if (performDailyReset) {
         lt_generations_today = 0;
         profileUpdates.generations_today = 0;
-        // For daily reset, we also update last_generation_at to mark the reset point for *this* logic
-        // However, the main last_generation_at will be updated upon successful generation later.
-        // Using a different field like 'daily_reset_marker_at' might be cleaner if needed.
-        // For now, this update effectively resets the count for the new day.
-        // profileUpdates.last_generation_at = now.toISOString(); // Let main debit handle last_generation_at
-        needsDBUpdateBeforeDebit = true;
+        needsDBUpdateBeforeGenerationAttempt = true;
       }
-      nextResetForClientIso = getNextUTCMidnightISO(); // Daily reset is next UTC midnight
+      nextResetForClientIso = getNextUTCMidnightISO();
     }
 
-    // Perform DB Update if resets occurred
-    if (needsDBUpdateBeforeDebit && Object.keys(profileUpdates).length > 0) {
-      console.log(`User ${user.id}: Performing pre-debit profile update for cycle/daily reset:`, profileUpdates);
+    if (needsDBUpdateBeforeGenerationAttempt && Object.keys(profileUpdates).length > 0) {
+      console.log(`User ${user.id}: Performing pre-generation profile update for cycle/daily reset:`, profileUpdates);
       const { error: resetUpdateError } = await supabaseClient
         .from("profiles")
         .update(profileUpdates)
         .eq("id", user.id);
       if (resetUpdateError) {
         console.error(`User ${user.id}: Failed to update profile on cycle/daily reset:`, resetUpdateError.message);
-        // Non-fatal, proceed with locally reset counts, but log.
       }
     }
 
-    // Limit Check (using lt_generations_today which reflects count after any resets)
     if (derivedGenerationLimit !== -1 && lt_generations_today >= derivedGenerationLimit) {
       console.log(`Limit (${derivedGenerationLimit}) reached for user ${user.id}. Generations this period: ${lt_generations_today}. Resets at: ${nextResetForClientIso}`);
       return new Response(
@@ -193,46 +184,30 @@ serve(async (req) => {
       );
     }
 
-    // --- Start of critical section: Debit, then attempt generation ---
-    const generationsCountForDBDebit = lt_generations_today + 1;
-    const timestampForThisAttempt = new Date().toISOString(); 
+    // --- Attempt OpenAI Generation First ---
+    const body = await req.json();
+    const { prompt, n = 1, size = "1024x1024" } = body;
 
-    console.log(`User ${user.id}: Attempting to debit generation. Current usage this period: ${lt_generations_today}, New count to set: ${generationsCountForDBDebit}`);
-    const { data: debitedProfile, error: debitError } = await supabaseClient
-      .from("profiles")
-      .update({
-        generations_today: generationsCountForDBDebit,
-        last_generation_at: timestampForThisAttempt, 
-      })
-      .eq("id", user.id)
-      .select('generations_today') // Select to confirm the update
-      .single();
-
-    if (debitError || !debitedProfile) {
-      console.error(`Failed to debit generation count for user ${user.id}:`, debitError);
-      return new Response(JSON.stringify({ error: "Failed to update generation credits. Please try again." }), {
+    if (!prompt) {
+      return new Response(JSON.stringify({ error: "Prompt is required" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 500,
+        status: 400,
       });
     }
-    console.log(`User ${user.id}: Successfully debited. DB generations_today is now: ${debitedProfile.generations_today}. Last gen at: ${timestampForThisAttempt}`);
-    const currentUsageAfterDebit = debitedProfile.generations_today;
+    
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiApiKey) {
+        console.error("OpenAI API key not set for generate-image-proxy.");
+        return new Response(JSON.stringify({ error: "Image generation service not configured." }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 503, 
+        });
+    }
+
+    let openaiDataResponse: any;
 
     try {
-      const body = await req.json();
-      const { prompt, n = 1, size = "1024x1024" } = body;
-
-      if (!prompt) {
-        throw new Error("Prompt is required"); 
-      }
-      
-      const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-      if (!openaiApiKey) {
-          console.error("OpenAI API key not set for generate-image-proxy.");
-          throw new Error("OpenAI API key not configured.");
-      }
-
-      console.log(`User ${user.id} generating image with prompt (first 50 chars): ${prompt.substring(0,50)}`);
+      console.log(`User ${user.id} generating image with prompt (first 50 chars): ${prompt.substring(0,50)}...`);
       const openaiResponse = await fetch("https://api.openai.com/v1/images/generations", {
         method: "POST",
         headers: {
@@ -242,50 +217,76 @@ serve(async (req) => {
         body: JSON.stringify({ model: "dall-e-3", prompt, n, size }),
       });
 
-      const openaiData = await openaiResponse.json();
+      openaiDataResponse = await openaiResponse.json();
 
       if (!openaiResponse.ok) {
-        console.error(`OpenAI API Error for user ${user.id}:`, openaiData);
-        const openaiError = new Error(openaiData.error?.message || "OpenAI API request failed");
-        (openaiError as any).openaiData = openaiData; 
-        (openaiError as any).openaiStatus = openaiResponse.status;
-        throw openaiError; // Re-throw to be caught by outer catch to trigger revert
+        console.error(`OpenAI API Error for user ${user.id} (Status: ${openaiResponse.status}):`, openaiDataResponse);
+        return new Response(JSON.stringify({ 
+            error: openaiDataResponse.error?.message || "OpenAI API request failed", 
+            details: openaiDataResponse.error 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: openaiResponse.status, // Propagate OpenAI's error status
+        });
       }
       
-      // Generation successful
-      return new Response(JSON.stringify(openaiData), {
+      // --- OpenAI Call Successful: Now Debit Generation ---
+      const generationsCountForDBDebit = lt_generations_today + 1;
+      const timestampForThisAttempt = new Date().toISOString(); 
+
+      console.log(`User ${user.id}: OpenAI success. Debiting generation. Current (before this): ${lt_generations_today}, New DB count: ${generationsCountForDBDebit}`);
+      const { data: debitedProfile, error: debitError } = await supabaseClient
+        .from("profiles")
+        .update({
+          generations_today: generationsCountForDBDebit,
+          last_generation_at: timestampForThisAttempt, 
+        })
+        .eq("id", user.id)
+        .select('generations_today, last_generation_at')
+        .single();
+
+      if (debitError || !debitedProfile) {
+        console.error(`User ${user.id}: CRITICAL - OpenAI call SUCCEEDED but FAILED to debit generation count:`, debitError?.message);
+        return new Response(JSON.stringify({
+          ...openaiDataResponse,
+          warning: "Image generated, but an issue occurred while updating your credits. Please check your balance or contact support if discrepancies continue.",
+          generation_status: { 
+            generations_used_this_period: lt_generations_today, // Show pre-attempt status
+            limit: derivedGenerationLimit,
+            next_reset_utc_iso: nextResetForClientIso,
+            debit_error: true
+          }
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200, // Still 200 as image was generated
+        });
+      }
+      
+      console.log(`User ${user.id}: Successfully debited. DB generations_today: ${debitedProfile.generations_today}. Last gen_at: ${debitedProfile.last_generation_at}`);
+      
+      return new Response(JSON.stringify({
+        ...openaiDataResponse,
+        generation_status: {
+            generations_used_this_period: debitedProfile.generations_today,
+            limit: derivedGenerationLimit,
+            next_reset_utc_iso: nextResetForClientIso
+          }
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
 
-    } catch (generationError) {
-      // This catch is for errors during OpenAI call or if prompt was missing *after* debit
-      console.error(`User ${user.id}: Error during/after OpenAI call (attempting to revert debit):`, generationError.message);
-      
-      // Revert the generation count
-      const { error: revertError } = await supabaseClient
-        .from("profiles")
-        .update({ generations_today: lt_generations_today }) // Revert to count *before* this attempt's debit
-        .eq("id", user.id);
-
-      if (revertError) {
-        console.error(`User ${user.id}: CRITICAL - Failed to revert generation count after OpenAI error:`, revertError.message);
-        // The count is now wrong. This is a bad state.
-      } else {
-        console.log(`User ${user.id}: Successfully reverted generation count to ${lt_generations_today} after OpenAI error.`);
-      }
-      
-      // Return the original generation error to the client
-      const statusCode = generationError.openaiStatus || 500;
-      return new Response(JSON.stringify({ error: generationError.message, details: generationError.openaiData }), {
+    } catch (generationApiError) {
+      // Catches errors from the fetch call itself (network, DNS) or JSON parsing of OpenAI response
+      console.error(`User ${user.id}: Network or parsing error during OpenAI interaction:`, generationApiError.message);
+      return new Response(JSON.stringify({ error: "Image generation service currently unavailable. Please try again later." , details: generationApiError.message }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: statusCode,
+        status: 503, // Service Unavailable
       });
     }
 
   } catch (error) {
-    // This is for broader errors like auth, profile fetch, or unexpected issues
-    console.error('General error in generate-image-proxy:', error);
+    console.error('General error in generate-image-proxy:', error.message, error.stack);
     return new Response(JSON.stringify({ error: error.message || "An unexpected server error occurred." }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
