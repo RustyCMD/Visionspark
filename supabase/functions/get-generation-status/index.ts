@@ -32,7 +32,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('generations_today, last_generation_at, generation_limit, resets_at_utc_iso, current_subscription_tier, subscription_active, subscription_expires_at')
+      .select('generations_today, last_generation_at, generation_limit, resets_at_utc_iso, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
       .eq('id', user.id)
       .single();
 
@@ -49,7 +49,7 @@ serve(async (req) => {
         generations_today: 0,
         remaining: DEFAULT_FREE_LIMIT,
         resets_at_utc_iso: tomorrow.toISOString(),
-        subscription_tier: null,
+        active_subscription_type: null,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -58,64 +58,110 @@ serve(async (req) => {
 
     // Subscription Check
     let currentLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
-    let generationsToday = profile.generations_today || 0;
-    let resetsAtUtcIso = profile.resets_at_utc_iso;
-    let subscriptionTier = profile.current_subscription_tier;
+    let usageInCurrentPeriod = profile.generations_today || 0;
+    let nextResetDateIso = profile.resets_at_utc_iso;
+    let activeSubscriptionTier = profile.current_subscription_tier;
+    let needsProfileUpdate = false;
+    const profileUpdates: Record<string, any> = {};
 
     const now = new Date();
     if (profile.subscription_active && profile.subscription_expires_at && new Date(profile.subscription_expires_at) > now) {
       // Active subscription
       if (profile.current_subscription_tier === 'monthly_unlimited') {
-        currentLimit = 999999; // Effectively unlimited
-        generationsToday = 0; // Or don't track for unlimited
-         // For unlimited, reset time is less critical, or set to subscription expiry
-        resetsAtUtcIso = new Date(profile.subscription_expires_at).toISOString();
+        currentLimit = -1; // -1 for unlimited
+        usageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
+        nextResetDateIso = new Date(profile.subscription_expires_at).toISOString();
       } else if (profile.current_subscription_tier === 'monthly_30') {
         currentLimit = 30;
-        // IMPORTANT: Current logic still assumes daily reset for generations_today.
-        // A true monthly count for the 30-tier would need `monthly_generations_used`
-        // and a `monthly_cycle_resets_at` in the profiles table, and more complex reset logic here.
-        // For now, it's 30 gens per day if this sub is active.
-        // The daily reset logic below will still apply.
+        let cycleStartDate = profile.subscription_cycle_start_date ? new Date(profile.subscription_cycle_start_date) : null;
+        
+        if (!cycleStartDate) { // First time seeing this user with the new field, or it was null
+          cycleStartDate = new Date(now); // Start their cycle now
+          usageInCurrentPeriod = 0;
+          profileUpdates.subscription_cycle_start_date = cycleStartDate.toISOString();
+          profileUpdates.generations_today = 0; // Reset usage for the new cycle
+          needsProfileUpdate = true;
+        }
+
+        const nextMonthlyReset = new Date(cycleStartDate);
+        nextMonthlyReset.setMonth(nextMonthlyReset.getMonth() + 1);
+        nextMonthlyReset.setUTCDate(cycleStartDate.getUTCDate()); // Preserve the day of the month
+        nextMonthlyReset.setUTCHours(0,0,0,0); // Prefer start of day for cycle resets
+
+        if (now >= nextMonthlyReset) { // Time for monthly reset
+          usageInCurrentPeriod = 0;
+          profileUpdates.generations_today = 0;
+          profileUpdates.subscription_cycle_start_date = now.toISOString(); // Start new cycle from now
+          needsProfileUpdate = true;
+          // Calculate the next reset after this one
+          const newCycleStartDateForNext = new Date(now);
+          const nextNextMonthlyReset = new Date(newCycleStartDateForNext);
+          nextNextMonthlyReset.setMonth(nextNextMonthlyReset.getMonth() + 1);
+          nextNextMonthlyReset.setUTCDate(newCycleStartDateForNext.getUTCDate());
+          nextNextMonthlyReset.setUTCHours(0,0,0,0);
+          nextResetDateIso = nextNextMonthlyReset.toISOString();
+        } else {
+          // Still within the current monthly cycle
+          nextResetDateIso = nextMonthlyReset.toISOString();
+        }
+      } else {
+        activeSubscriptionTier = null; // Treat as free if tier is unknown but active
+        currentLimit = DEFAULT_FREE_LIMIT;
+        // Apply daily reset logic for free/unknown active tier
+        const dailyResetDate = profile.resets_at_utc_iso ? new Date(profile.resets_at_utc_iso) : new Date(0);
+        if (now >= dailyResetDate) {
+          usageInCurrentPeriod = 0;
+          profileUpdates.generations_today = 0;
+          const tomorrow = new Date(now);
+          tomorrow.setUTCDate(now.getUTCDate() + 1);
+          tomorrow.setUTCHours(0, 0, 0, 0);
+          profileUpdates.resets_at_utc_iso = tomorrow.toISOString();
+          needsProfileUpdate = true;
+          nextResetDateIso = tomorrow.toISOString();
+        } else {
+          nextResetDateIso = dailyResetDate.toISOString();
+        }
       }
     } else {
-        // Subscription expired or not active, revert to default/free tier values if they were different
-        currentLimit = profile.generation_limit || DEFAULT_FREE_LIMIT; // Re-evaluate default based on profile or absolute default
-        subscriptionTier = null; // Clear tier if subscription is not active
+      // Subscription expired or not active, revert to default/free tier values
+      activeSubscriptionTier = null;
+      currentLimit = DEFAULT_FREE_LIMIT; // Use absolute default for free tier
+      
+      // Daily Reset Logic for Free Tier
+      const dailyResetDate = profile.resets_at_utc_iso ? new Date(profile.resets_at_utc_iso) : new Date(0); // Use existing or epoch
+      if (now >= dailyResetDate) {
+        usageInCurrentPeriod = 0;
+        profileUpdates.generations_today = 0;
+        const tomorrow = new Date(now);
+        tomorrow.setUTCDate(now.getUTCDate() + 1);
+        tomorrow.setUTCHours(0, 0, 0, 0);
+        profileUpdates.resets_at_utc_iso = tomorrow.toISOString();
+        needsProfileUpdate = true;
+        nextResetDateIso = tomorrow.toISOString();
+      } else {
+        nextResetDateIso = dailyResetDate.toISOString();
+      }
     }
 
-
-    // Daily Reset Logic (applies to free tier and, for now, the 30-gen tier)
-    let lastGenDate = profile.last_generation_at ? new Date(profile.last_generation_at) : new Date(0); // Epoch if null
-    let resetsAtDate = resetsAtUtcIso ? new Date(resetsAtUtcIso) : new Date(0);
-
-    if (now >= resetsAtDate) {
-      generationsToday = 0;
-      const tomorrow = new Date(now);
-      tomorrow.setUTCDate(now.getUTCDate() + 1);
-      tomorrow.setUTCHours(0, 0, 0, 0);
-      resetsAtUtcIso = tomorrow.toISOString();
-
-      // Update the profile with the new reset time and cleared generations_today
-      // This happens regardless of subscription if it's a daily reset mechanism
+    if (needsProfileUpdate && Object.keys(profileUpdates).length > 0) {
       const { error: updateError } = await supabaseClient
         .from('profiles')
-        .update({ generations_today: 0, resets_at_utc_iso: resetsAtUtcIso })
+        .update(profileUpdates)
         .eq('id', user.id);
       if (updateError) {
-          console.error("Failed to update profile on reset:", updateError.message);
-          // Non-fatal, proceed with calculated values but log error
+        console.error("Failed to update profile for cycle/daily reset:", updateError.message);
+        // Non-fatal, proceed with calculated values but log error
       }
     }
     
-    const remaining = Math.max(0, currentLimit - generationsToday);
+    const remaining = currentLimit === -1 ? -1 : Math.max(0, currentLimit - usageInCurrentPeriod);
 
     return new Response(JSON.stringify({
       limit: currentLimit,
-      generations_today: generationsToday,
+      generations_today: usageInCurrentPeriod,
       remaining: remaining,
-      resets_at_utc_iso: resetsAtUtcIso,
-      active_subscription_type: subscriptionTier,
+      resets_at_utc_iso: nextResetDateIso,
+      active_subscription_type: activeSubscriptionTier,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,

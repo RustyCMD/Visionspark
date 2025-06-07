@@ -20,6 +20,13 @@ const GOOGLE_PRIVATE_KEY_PEM = Deno.env.get('GOOGLE_PRIVATE_KEY_PEM')!; // Ensur
 const APP_PACKAGE_NAME = 'app.visionspark.app';
 // ---
 
+// Define a new interface for the validation result
+interface GooglePlaySubscriptionValidationResult {
+  isValid: boolean;
+  purchaseData?: any; // The raw purchase data from Google, contains expiryTimeMillis, acknowledgementState etc.
+  error?: string;
+}
+
 async function getGoogleAccessToken() {
   const header = { alg: "RS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
@@ -82,58 +89,57 @@ function pemToBinary(pem: string) {
 }
 
 
-async function validateGooglePlayPurchase(productId: string, purchaseToken: string, accessToken: string): Promise<boolean> {
+async function validateGooglePlayPurchase(productId: string, purchaseToken: string, accessToken: string): Promise<GooglePlaySubscriptionValidationResult> {
   // For subscriptions, productId is the subscriptionId/SKU
   const subscriptionId = productId;
-  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}`;
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}?access_token=${accessToken}`; // access_token can also be a query param
 
   const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-    },
+    // headers: { // Headers can also be used
+    //   'Authorization': `Bearer ${accessToken}`,
+    // },
   });
 
   if (!response.ok) {
-    console.error(`Google Play API Error: ${response.status}`, await response.text());
-    return false; // Or throw a more specific error
+    const errorText = await response.text();
+    console.error(`Google Play API Error: ${response.status}`, errorText);
+    return { isValid: false, error: `Google Play API Error (${response.status}): ${errorText}` };
   }
 
   const purchaseData = await response.json();
 
   // --- Validate purchaseData for Subscriptions ---
-  // Check if the subscription is active (not expired)
-  // paymentState: 0 = Pending, 1 = Active, 2 = Grace period, (other states might exist for issues)
-  // autoRenewing: boolean
   if (purchaseData.expiryTimeMillis && parseInt(purchaseData.expiryTimeMillis) > Date.now()) {
-    // Optionally, you might also want to check purchaseData.paymentState if it's critical
-    // e.g., if (purchaseData.paymentState === 1 /* ACTIVE */ || purchaseData.paymentState === 2 /* GRACE PERIOD */)
-    // For simplicity, primary check is expiryTimeMillis
-    
-    // Optional: Acknowledge the subscription if not yet acknowledged (usually for the first purchase or after recovery)
-    // The `isAcknowledged` field might not be directly on `purchaseData` for subscriptions in the same way.
-    // Acknowledgment status is typically inferred or handled based on whether you've called acknowledge.
-    // The API `purchases.subscriptions.get` returns `acknowledgementState` (0: Yet to be acknowledged, 1: Acknowledged)
-    if (purchaseData.acknowledgementState === 0) { // 0 means not acknowledged
-        console.log(`Subscription ${subscriptionId} for token ${purchaseToken} needs acknowledgement.`);
-        // await acknowledgeGooglePlaySubscription(subscriptionId, purchaseToken, accessToken);
-    }
-    return true;
+    // Successfully validated with Google
+    return { isValid: true, purchaseData: purchaseData };
   }
 
   console.log(`Subscription ${subscriptionId} for token ${purchaseToken} is not valid or has expired. Expiry: ${purchaseData.expiryTimeMillis}, Payment State: ${purchaseData.paymentState}, Ack State: ${purchaseData.acknowledgementState}`);
-  return false;
+  return { isValid: false, purchaseData: purchaseData, error: 'Subscription is not valid or has expired.' };
 }
 
-// Optional: Function to acknowledge a subscription
-// async function acknowledgeGooglePlaySubscription(subscriptionId: string, purchaseToken: string, accessToken: string) {
-//   const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}:acknowledge`;
+// Function to acknowledge a subscription
+async function acknowledgeGooglePlaySubscription(subscriptionId: string, purchaseToken: string, accessToken: string): Promise<boolean> {
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}:acknowledge`;
 
-//   const response = await fetch(url, {
-//     method: 'POST',
-// ... existing code ...
-//   console.log("Subscription acknowledged successfully:", subscriptionId);
-//   return true;
-// }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({}) // Body can be empty for acknowledge
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Failed to acknowledge subscription ${subscriptionId}: ${response.status}`, errorText);
+    // Depending on policy, you might want to throw an error or just log and return false
+    return false; 
+  }
+  console.log("Subscription acknowledged successfully:", subscriptionId);
+  return true;
+}
 
 
 serve(async (req) => {
@@ -173,46 +179,85 @@ serve(async (req) => {
         throw new Error("Failed to authenticate with Google Play services.");
     }
 
-    const isPurchaseValid = await validateGooglePlayPurchase(productId, purchaseToken, googleAccessToken);
-    if (!isPurchaseValid) {
-      throw new Error('Invalid purchase or failed to validate with Google Play.');
+    const validationResult = await validateGooglePlayPurchase(productId, purchaseToken, googleAccessToken);
+    
+    if (!validationResult.isValid) {
+      throw new Error(validationResult.error || 'Invalid purchase or failed to validate with Google Play.');
     }
     // --- End Google Play Validation ---
 
+    // --- Acknowledge if necessary ---
+    if (validationResult.purchaseData && validationResult.purchaseData.acknowledgementState === 0) {
+      console.log(`Subscription ${productId} needs acknowledgement. Attempting to acknowledge...`);
+      const ackSuccess = await acknowledgeGooglePlaySubscription(productId, purchaseToken, googleAccessToken);
+      if (!ackSuccess) {
+        // Log the error but proceed with entitlement update as validation was successful
+        console.warn(`Failed to acknowledge subscription ${productId}, but entitlement will still be granted as validation passed.`);
+        // You might want to implement a retry mechanism for acknowledgement later
+      }
+    }
+    // --- End Acknowledgement ---
 
     let tier: string | null = null;
     let isActive = false;
-    let expiresAt: string | null = null;
-    const now = new Date();
-    const futureDate = new Date(now);
-    futureDate.setDate(now.getDate() + 30); 
+    let expiresAt: string | null = null; // This will now come from Google
+    let cycleStartDate: string | null = null; // For subscription_cycle_start_date
 
+    // Use expiryTimeMillis from Google's response
+    if (validationResult.purchaseData && validationResult.purchaseData.expiryTimeMillis) {
+      expiresAt = new Date(parseInt(validationResult.purchaseData.expiryTimeMillis)).toISOString();
+      isActive = true; // If we have an expiry date from a valid purchase, it's active
+
+      // Set cycleStartDate from Google's startTimeMillis if available, otherwise current time
+      if (validationResult.purchaseData.startTimeMillis) {
+        cycleStartDate = new Date(parseInt(validationResult.purchaseData.startTimeMillis)).toISOString();
+      } else {
+        console.warn("startTimeMillis not found in Google's response, using current time as cycle start date.");
+        cycleStartDate = new Date().toISOString();
+      }
+
+    } else {
+      // Fallback or error if expiryTimeMillis is missing after successful validation (should not happen)
+      console.error("ExpiryTimeMillis missing from Google's response despite successful validation!");
+      throw new Error("Failed to determine subscription expiry from Google Play.");
+    }
+    
+    // Determine tier based on productId
     if (productId === 'monthly_30_generations') {
       tier = 'monthly_30';
-      isActive = true;
-      expiresAt = futureDate.toISOString();
     } else if (productId === 'monthly_unlimited_generations') {
       tier = 'monthly_unlimited';
-      isActive = true;
-      expiresAt = futureDate.toISOString();
     } else {
-      // If purchase was validated by Google but product ID is unknown to your system here
-      console.warn(`Validated purchase for unknown productId: ${productId}`);
-      // Decide how to handle: maybe a generic entitlement or log for review
-      // For now, returning an error as original logic did.
-      return new Response(JSON.stringify({ error: 'Product ID recognized by Google but not configured in this function.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
+      console.warn(`Validated purchase for unknown productId in this function logic: ${productId}. Tier will be null.`);
+      // Allow entitlement if Google validated it, but the tier might not be specifically handled.
+      // Or, throw an error if strict productId matching is required for tier assignment.
+      // For now, tier will remain null, and isActive/expiresAt from Google will be used.
+      // The DB update will proceed with a null tier if not matched.
+    }
+    
+    // If tier is still null but purchase was Google-valid and has expiry, set isActive
+    if (tier === null && isActive && expiresAt) {
+        console.log(`Purchase for productId ${productId} is valid and active until ${expiresAt}, but not mapped to a specific tier in this function. User will get general active status.`);
+    }
+
+    const updatePayload: {
+      current_subscription_tier: string | null;
+      subscription_active: boolean;
+      subscription_expires_at: string | null;
+      subscription_cycle_start_date?: string | null; // Optional
+    } = {
+      current_subscription_tier: tier,
+      subscription_active: isActive,
+      subscription_expires_at: expiresAt,
+    };
+
+    if (isActive && cycleStartDate) { // Only set cycle start date if the subscription is active
+        updatePayload.subscription_cycle_start_date = cycleStartDate;
     }
 
     const { error: updateError } = await supabaseClient
       .from('profiles')
-      .update({
-        current_subscription_tier: tier,
-        subscription_active: isActive,
-        subscription_expires_at: expiresAt,
-      })
+      .update(updatePayload)
       .eq('id', user.id);
 
     if (updateError) {

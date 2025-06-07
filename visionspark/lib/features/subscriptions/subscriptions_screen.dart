@@ -231,9 +231,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
         'validate-purchase-and-update-profile',
         body: {
           'productId': purchase.productID,
-          // Consider sending more details if your backend needs them
-          // 'token': purchase.verificationData.serverVerificationData,
-          // 'source': purchase.verificationData.source,
+          'purchaseToken': purchase.verificationData.serverVerificationData,
+          // 'source': purchase.verificationData.source, // Optional: send if your backend uses it
         },
       );
 
