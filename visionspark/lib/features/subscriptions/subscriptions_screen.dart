@@ -6,7 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+// import 'package:http/http.dart' as http; // Not directly used anymore for validation
+import 'package:provider/provider.dart';
+import '../../shared/notifiers/subscription_status_notifier.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'package:functions_client/functions_client.dart' as fn_client; // Not directly used anymore
 
 class SubscriptionsScreen extends StatefulWidget {
   const SubscriptionsScreen({super.key});
@@ -17,188 +21,423 @@ class SubscriptionsScreen extends StatefulWidget {
 
 class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   final InAppPurchase _iap = InAppPurchase.instance;
-  late final StreamSubscription<List<PurchaseDetails>> _subscription;
-  bool _loading = true;
+  late final StreamSubscription<List<PurchaseDetails>> _purchaseStreamSubscription; // Renamed for clarity
+  bool _iapLoading = true; // For IAP product loading
   bool _purchasePending = false;
-  String? _error;
-  String? _success;
+  String? _iapError; // For IAP related errors
+  String? _purchaseSuccessMessage;
   List<ProductDetails> _products = [];
   static const String monthly30Id = 'monthly_30_generations';
   static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
 
+  // New state variables for active subscription status
+  String? _activeSubscriptionType;
+  int? _currentGenerationLimit;
+  bool _isLoadingStatus = true; // For fetching active subscription status
+  String? _statusErrorMessage;
+  SubscriptionStatusNotifier? _subscriptionStatusNotifier;
+
   @override
   void initState() {
     super.initState();
-    _initialize();
-    _subscription = _iap.purchaseStream.listen(_onPurchaseUpdate, onDone: () {
-      _subscription.cancel();
+    _initializeIap();
+    _fetchSubscriptionStatus(); // Fetch current status on init
+    _purchaseStreamSubscription = _iap.purchaseStream.listen(_onPurchaseUpdate, onDone: () {
+      _purchaseStreamSubscription.cancel();
     }, onError: (error) {
-      setState(() {
-        _purchasePending = false;
-        _error = 'Purchase error: $error';
-      });
+      if (mounted) {
+        setState(() {
+          _purchasePending = false;
+          _iapError = 'Purchase stream error: $error';
+        });
+      }
     });
   }
 
   @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subscriptionStatusNotifier != notifier) {
+      _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
+      _subscriptionStatusNotifier = notifier;
+      _subscriptionStatusNotifier?.addListener(_onSubscriptionChanged);
+    }
   }
 
-  Future<void> _initialize() async {
+  void _onSubscriptionChanged() {
+    _fetchSubscriptionStatus(); // Refetch status if notifier indicates a change
+  }
+
+  Future<void> _fetchSubscriptionStatus() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingStatus = true;
+      _statusErrorMessage = null;
+    });
+    try {
+      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
+      if (mounted) {
+        if (response.data != null) {
+          final data = response.data;
+          if (data['error'] != null) {
+            setState(() {
+              _statusErrorMessage = data['error'].toString();
+              _activeSubscriptionType = null;
+              _currentGenerationLimit = null;
+            });
+          } else {
+            setState(() {
+              _activeSubscriptionType = data['active_subscription_type'];
+              _currentGenerationLimit = data['limit'];
+               // If there's an active subscription, we might want to clear _purchaseSuccessMessage
+              if (_activeSubscriptionType != null) {
+                _purchaseSuccessMessage = null;
+              }
+            });
+          }
+        } else {
+          setState(() {
+            _statusErrorMessage = 'Failed to fetch subscription status: No data received.';
+            _activeSubscriptionType = null;
+            _currentGenerationLimit = null;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _statusErrorMessage = 'Error fetching subscription status: ${e.toString()}';
+          _activeSubscriptionType = null;
+          _currentGenerationLimit = null;
+        });
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _isLoadingStatus = false;
+      });
+    }
+  }
+
+  Future<void> _initializeIap() async {
     final bool available = await _iap.isAvailable();
+    if (!mounted) return;
     if (!available) {
       setState(() {
-        _loading = false;
-        _error = 'In-app purchases are not available.';
+        _iapLoading = false;
+        _iapError = 'In-app purchases are not available.';
       });
       return;
     }
     const Set<String> ids = {monthly30Id, monthlyUnlimitedId};
-    final ProductDetailsResponse response = await _iap.queryProductDetails(ids);
-    if (response.error != null) {
+    try {
+      final ProductDetailsResponse response = await _iap.queryProductDetails(ids);
+      if (!mounted) return;
+      if (response.error != null) {
+        setState(() {
+          _iapLoading = false;
+          _iapError = response.error!.message;
+        });
+        return;
+      }
       setState(() {
-        _loading = false;
-        _error = response.error!.message;
+        _products = response.productDetails;
+        _iapLoading = false;
       });
-      return;
+    } catch (e) {
+        if (mounted) {
+            setState(() {
+                _iapLoading = false;
+                _iapError = "Error querying products: ${e.toString()}";
+            });
+        }
     }
-    setState(() {
-      _products = response.productDetails;
-      _loading = false;
-    });
   }
 
   void _buy(ProductDetails product) async {
     final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);
-    setState(() {
-      _purchasePending = true;
-      _error = null;
-      _success = null;
-    });
-    _iap.buyNonConsumable(purchaseParam: purchaseParam);
+    if (mounted) {
+      setState(() {
+        _purchasePending = true;
+        _iapError = null; // Clear previous IAP error
+        _purchaseSuccessMessage = null; // Clear previous success message
+      });
+    }
+    try {
+      await _iap.buyNonConsumable(purchaseParam: purchaseParam);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _purchasePending = false;
+          _iapError = "Error initiating purchase: ${e.toString()}";
+        });
+      }
+    }
   }
 
   void _onPurchaseUpdate(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       if (purchase.status == PurchaseStatus.pending) {
-        setState(() {
-          _purchasePending = true;
-        });
+        if (mounted) setState(() => _purchasePending = true);
       } else {
-        setState(() {
-          _purchasePending = false;
-        });
+        if (mounted) setState(() => _purchasePending = false);
         if (purchase.status == PurchaseStatus.error) {
-          setState(() {
-            _error = 'Purchase failed: \\${purchase.error?.message ?? 'Unknown error'}';
-          });
+          if (mounted) {
+            setState(() {
+              _iapError = 'Purchase failed: ${purchase.error?.message ?? 'Unknown error'}';
+            });
+          }
         } else if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
-          // TODO: Validate purchase with backend
           final valid = await _validateWithBackend(purchase);
           if (valid) {
-            setState(() {
-              _success = 'Subscription activated!';
-              _error = null;
-            });
-            // Complete the purchase
+            if (mounted) {
+              setState(() {
+                _purchaseSuccessMessage = 'Subscription activated successfully!';
+                _iapError = null; // Clear IAP error on success
+              });
+              // Notify other parts of the app and fetch updated status
+              Provider.of<SubscriptionStatusNotifier>(context, listen: false).subscriptionChanged();
+              // _fetchSubscriptionStatus(); // Already handled by the notifier listener
+            }
             if (purchase.pendingCompletePurchase) {
               await _iap.completePurchase(purchase);
             }
           } else {
-            setState(() {
-              _error = 'Purchase validation failed. Please contact support.';
-            });
+            // _iapError would have been set by _validateWithBackend if validation failed there
+            if (mounted && _iapError == null) { // Ensure an error message is shown
+                 setState(() {
+                    _iapError = 'Purchase validation failed. Please contact support.';
+                });
+            }
           }
+        } else if (purchase.status == PurchaseStatus.canceled) {
+            if (mounted) {
+                setState(() {
+                    _iapError = 'Purchase was cancelled.';
+                });
+            }
         }
       }
     }
   }
 
   Future<bool> _validateWithBackend(PurchaseDetails purchase) async {
-    // TODO: Replace this with your actual backend endpoint and logic
-    // Example: Call a Supabase Edge Function to validate the purchase
-    // This is a placeholder and always returns true for demo purposes
-    // You should send purchase.verificationData.serverVerificationData to your backend
+    if (mounted) { // Clear previous specific error before new validation attempt
+        setState(() {  _iapError = null; });
+    }
     try {
-      // final response = await http.post(
-      //   Uri.parse('https://your-backend/validate-purchase'),
-      //   headers: {'Content-Type': 'application/json'},
-      //   body: jsonEncode({
-      //     'source': purchase.verificationData.source,
-      //     'serverVerificationData': purchase.verificationData.serverVerificationData,
-      //     'productID': purchase.productID,
-      //   }),
-      // );
-      // return response.statusCode == 200;
-      await Future.delayed(const Duration(seconds: 1));
-      return true;
-    } catch (e) {
+      final response = await Supabase.instance.client.functions.invoke(
+        'validate-purchase-and-update-profile',
+        body: {
+          'productId': purchase.productID,
+          // Consider sending more details if your backend needs them
+          // 'token': purchase.verificationData.serverVerificationData,
+          // 'source': purchase.verificationData.source,
+        },
+      );
+
+      if (!mounted) return false;
+
+      if (response.status == 200) {
+        if (response.data != null && response.data['success'] == true) {
+          return true;
+        } else {
+          String errorMessage = 'Purchase validation failed on backend.';
+          if (response.data != null && response.data['error'] != null) {
+            errorMessage = response.data['error'].toString();
+          }
+          setState(() => _iapError = errorMessage);
+          return false;
+        }
+      } else {
+        String errorMessage = 'Backend validation function returned error status: ${response.status}.';
+        if (response.data != null && response.data is Map && response.data['error'] != null) {
+          errorMessage += ' Details: ${response.data['error'].toString()}';
+        } else if (response.data != null) {
+          errorMessage += ' Response: ${jsonEncode(response.data)}';
+        }
+        setState(() => _iapError = errorMessage);
+        return false;
+      }
+    } 
+    catch (e) {
+      if (!mounted) return false;
+      String displayMessage = 'Error calling validation function: ${e.toString()}';
+      if (e.toString().toLowerCase().contains('functionshttperror')) {
+         try {
+            final parts = e.toString().split(':');
+            if (parts.length > 1) displayMessage = 'Validation Error: ${parts.sublist(1).join(':').trim()}';
+         } catch (_) {/* Use original displayMessage */}
+      }
+      setState(() => _iapError = displayMessage);
       return false;
     }
+  }
+  
+  String _formatSubscriptionType(String? type) {
+    if (type == monthly30Id || type == 'monthly_30') return 'Monthly 30 Generations'; // Handle raw tier ID
+    if (type == monthlyUnlimitedId || type == 'monthly_unlimited') return 'Monthly Unlimited Generations'; // Handle raw tier ID
+    if (type != null && type.isNotEmpty) { // Fallback for any other non-empty type
+      return type.replaceAll('_', ' ').split(' ').map((e) => e.isNotEmpty ? e[0].toUpperCase() + e.substring(1) : '').join(' ');
+    }
+    return 'N/A'; // Default if type is null or empty
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return Center(child: Text(_error!, style: TextStyle(color: colorScheme.error)));
-    }
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text('Choose your subscription',
-            style: Theme.of(context).textTheme.headlineMedium,
-            textAlign: TextAlign.center),
-        const SizedBox(height: 32),
-        if (_success != null)
-          Card(
-            color: colorScheme.primary.withOpacity(0.1),
-            margin: const EdgeInsets.only(bottom: 16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(_success!, style: const TextStyle(fontWeight: FontWeight.bold))),
-                ],
-              ),
-            ),
-          ),
-        ..._products.map((product) => _SubscriptionCard(
-              product: product,
-              onPressed: _purchasePending ? null : () => _buy(product),
-              isLoading: _purchasePending,
-            )),
-        if (_products.isEmpty)
-          Card(
-            color: colorScheme.surface,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: const [
-                  Text('No subscriptions available.',
-                      style: TextStyle(fontSize: 18)),
-                  SizedBox(height: 8),
-                  Text('Please try again later.'),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 32),
-        Text(
-          'Payments are securely processed by Google Play. You can cancel anytime in your Google Play account.',
-          style: TextStyle(color: colorScheme.onSurface.withOpacity(0.7), fontSize: 13),
-          textAlign: TextAlign.center,
+
+    Widget statusSection;
+    if (_isLoadingStatus) {
+      statusSection = const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16.0),
+          child: Center(child: CircularProgressIndicator()));
+    } else if (_statusErrorMessage != null) {
+      statusSection = Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Card(
+          color: colorScheme.errorContainer.withOpacity(0.5),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(_statusErrorMessage!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
+          )
         ),
-      ],
+      );
+    } else if (_activeSubscriptionType != null) {
+      statusSection = Card(
+        color: colorScheme.primaryContainer.withOpacity(0.3),
+        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text('Your Active Subscription', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: colorScheme.onPrimaryContainer)),
+              const SizedBox(height: 8),
+              Text(_formatSubscriptionType(_activeSubscriptionType), style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              if(_currentGenerationLimit != null)
+                 Text('Generation Limit: ${_currentGenerationLimit == -1 ? "Unlimited" : _currentGenerationLimit}', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: colorScheme.onPrimaryContainer)),
+            ],
+          ),
+        ),
+      );
+    } else {
+       statusSection = Card(
+        color: colorScheme.secondaryContainer.withOpacity(0.3),
+        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text('No active subscription found.', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.onSecondaryContainer), textAlign: TextAlign.center),
+        ),
+      );
+    }
+
+
+    return Scaffold( // Added Scaffold
+      // appBar: AppBar(title: Text('Manage Subscriptions')), // Optional: Add AppBar
+      body: ListView(
+        padding: const EdgeInsets.all(16), // Adjusted padding
+        children: [
+          Text('Manage Your Subscription', // Changed title
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), // Adjusted style
+              textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          
+          statusSection, // Display current subscription status
+
+          if (_iapLoading) const Center(child: CircularProgressIndicator())
+          else if (_iapError != null && _products.isEmpty) // Show IAP error only if no products loaded
+             Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Card(
+                  color: colorScheme.errorContainer.withOpacity(0.5),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
+                  )
+                ),
+              )
+          else ...[ // Display products if available or a message if not
+            const SizedBox(height: 16),
+            Text('Available Plans',
+                style: Theme.of(context).textTheme.titleLarge,
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+
+            if (_purchaseSuccessMessage != null) // Display purchase success message here
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical:8.0),
+                child: Card(
+                  color: Colors.green.withOpacity(0.15),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(_purchaseSuccessMessage!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green))),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            
+            // Display IAP specific error here, if purchase success is not shown.
+            if (_purchaseSuccessMessage == null && _iapError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical:8.0),
+                child: Card(
+                  color: colorScheme.errorContainer.withOpacity(0.5),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
+                  )
+                ),
+              ),
+
+            if (_products.isNotEmpty)
+              ..._products.map((product) => _SubscriptionCard(
+                    product: product,
+                    onPressed: _purchasePending || (_activeSubscriptionType == product.id) ? null : () => _buy(product),
+                    isLoading: _purchasePending,
+                    isActive: _activeSubscriptionType == product.id,
+                  ))
+            else if (!_iapLoading) // Only show "No subscriptions" if not loading and no IAP error blocking products.
+              Card(
+                color: colorScheme.surfaceVariant,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: const [
+                      Text('No subscription plans available at the moment.',
+                          style: TextStyle(fontSize: 18)),
+                      SizedBox(height: 8),
+                      Text('Please check back later.'),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 24),
+            Text(
+              'Payments are securely processed by the play store. You can manage or cancel your subscription anytime through your play store account settings.',
+              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ]
+        ],
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _purchaseStreamSubscription.cancel();
+    _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
+    super.dispose();
   }
 }
 
@@ -206,47 +445,48 @@ class _SubscriptionCard extends StatelessWidget {
   final ProductDetails product;
   final VoidCallback? onPressed;
   final bool isLoading;
-  const _SubscriptionCard({required this.product, this.onPressed, this.isLoading = false});
+  final bool isActive; // New parameter
+  const _SubscriptionCard({required this.product, this.onPressed, this.isLoading = false, this.isActive = false});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      color: colorScheme.surface,
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      elevation: 4,
+      color: isActive ? colorScheme.primaryContainer.withOpacity(0.5) : colorScheme.surfaceContainerHighest, // Highlight if active
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: isActive ? 4 : 2,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(product.title,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface)),
             const SizedBox(height: 8),
             Text(product.description,
-                style: TextStyle(color: colorScheme.onSurface.withOpacity(0.7))),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: isActive ? colorScheme.onPrimaryContainer.withOpacity(0.8) : colorScheme.onSurfaceVariant)),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(product.price,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface)),
                 ElevatedButton(
-                  onPressed: onPressed,
+                  onPressed: onPressed, // Will be null if active or purchase pending
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    backgroundColor: isActive ? colorScheme.outlineVariant : colorScheme.primary,
+                    foregroundColor: isActive ? colorScheme.onSurfaceVariant : colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: isLoading
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
-                      : const Text('Subscribe', style: TextStyle(fontWeight: FontWeight.bold)),
+                      : Text(isActive ? 'Active' : 'Subscribe', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

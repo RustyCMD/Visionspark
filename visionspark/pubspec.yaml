@@ -2,7 +2,7 @@ name: visionspark
 description: "A Flutter application for generating AI images using DALL-E 3."
 publish_to: 'none'
 
-version: 1.0.0+4
+version: 1.0.0+6
 
 environment:
   sdk: '^3.8.0'
@@ -32,6 +32,7 @@ dependencies:
   provider: ^6.1.2
   in_app_purchase: ^3.2.3
   image: ^4.1.7
+  google_sign_in: ^6.2.1
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -26,6 +27,7 @@ class _AccountSectionState extends State<AccountSection> {
   Future<void> _signOut() async {
     try {
       await Supabase.instance.client.auth.signOut();
+      await GoogleSignIn().signOut();
     } on AuthException catch (e) {
       showErrorSnackbar(context, e.message);
     } catch (e) {

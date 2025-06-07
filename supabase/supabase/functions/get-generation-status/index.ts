@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// import { corsHeaders } from "../_shared/cors.ts"; // Removed import
 
 // Inlined corsHeaders
 const corsHeaders = {
@@ -8,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const DAILY_LIMIT = 3;
+// const DAILY_LIMIT = 3; // Removed
 
 // Helper function to safely get the user's timezone
 function getUserTimezone(user: any, profile: any): string {
@@ -67,23 +68,22 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("last_generation_at, generations_today, timezone")
+      .select("last_generation_at, generations_today, timezone, current_subscription_tier, subscription_active")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profile) {
-      console.error("Profile error:", profileError);
+      console.error(`Profile not found or error for user ID: ${user?.id}. Profile query error:`, profileError);
       return new Response(JSON.stringify({ error: "Profile not found" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 404,
       });
     }
 
-    let { last_generation_at, generations_today } = profile; // timezone from helper
+    let { last_generation_at, generations_today, current_subscription_tier, subscription_active } = profile;
     const userTimezone = getUserTimezone(user, profile);
 
     const now = new Date();
-    // let lastGenerationDate = null; // This variable is not used later
     
     if (typeof generations_today !== 'number') {
         console.warn(`Generations_today was not a number for user ${user.id}, defaulting to 0. Value: ${generations_today}`);
@@ -91,7 +91,7 @@ serve(async (req) => {
     }
 
     if (last_generation_at) {
-        const lastGenDateUtc = new Date(last_generation_at); // This is already UTC
+        const lastGenDateUtc = new Date(last_generation_at); 
 
         const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
         const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
@@ -101,21 +101,31 @@ serve(async (req) => {
             generations_today = 0;
         }
     } else {
-        // No previous generation, so it's effectively a reset for status purposes
         console.log(`User ${user.id} (get-status): No last_generation_at. Resetting count for status.`);
         generations_today = 0;
     }
     
-    const remaining = DAILY_LIMIT - generations_today;
+    // Derive generation_limit based on subscription status
+    let derivedGenerationLimit = 3; // Default free tier
+    if (subscription_active === true) {
+      if (current_subscription_tier === 'monthly_30') {
+        derivedGenerationLimit = 30;
+      } else if (current_subscription_tier === 'monthly_unlimited') {
+        derivedGenerationLimit = -1; // -1 for unlimited
+      }
+    }
+    
+    const remaining = derivedGenerationLimit === -1 ? Infinity : derivedGenerationLimit - generations_today;
     const resetsAtIso = getNextDayStartUTCISO(userTimezone);
 
     const responsePayload = {
-      remaining: Math.max(0, remaining),
+      remaining: remaining === Infinity ? 99999 : Math.max(0, remaining), // Represent Infinity for JSON if needed
       generations_today: generations_today,
-      limit: DAILY_LIMIT,
+      limit: derivedGenerationLimit, 
       resets_at_utc_iso: resetsAtIso,
       timezone_used: userTimezone,
       last_generation_at_utc: last_generation_at ? new Date(last_generation_at).toISOString() : null,
+      active_subscription_type: current_subscription_tier, // Use current_subscription_tier
     };
 
     return new Response(JSON.stringify(responsePayload), {

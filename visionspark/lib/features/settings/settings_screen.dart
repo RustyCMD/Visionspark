@@ -3,6 +3,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../../main.dart'; // Assuming ThemeController is in main.dart
+import 'package:supabase_flutter/supabase_flutter.dart'; // Added for Supabase
+import '../../shared/notifiers/subscription_status_notifier.dart'; // Added for Notifier
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,12 +16,85 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _version = '';
   bool _autoUpload = false;
+  String? _activeSubscription;
+  bool _isLoadingSubscription = true;
+  SubscriptionStatusNotifier? _subscriptionStatusNotifier;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
     _loadAutoUpload();
+    _fetchSubscriptionStatus();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subscriptionStatusNotifier != notifier) {
+      _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
+      _subscriptionStatusNotifier = notifier;
+      _subscriptionStatusNotifier?.addListener(_onSubscriptionChanged);
+    }
+  }
+
+  void _onSubscriptionChanged() {
+    _fetchSubscriptionStatus();
+  }
+
+  Future<void> _fetchSubscriptionStatus() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingSubscription = true;
+    });
+    try {
+      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
+      if (mounted) {
+        if (response.data != null) {
+          final data = response.data;
+          if (data['error'] != null) {
+            setState(() {
+              _activeSubscription = 'Error: ${data['error']}';
+            });
+          } else {
+            final subType = data['active_subscription_type'];
+            final limit = data['limit'];
+            String subText = 'No Active Subscription';
+
+            if (subType == 'monthly_30_generations' || subType == 'monthly_30') {
+              subText = 'Standard Monthly';
+              if (limit != null) subText += ' (Limit: $limit)';
+            } else if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
+              subText = 'Unlimited Monthly';
+              if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
+            } else if (subType != null) {
+              subText = subType.toString().replaceAll('_', ' ').split(' ').map((e) => e[0].toUpperCase() + e.substring(1)).join(' ');
+              if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
+            }
+
+            setState(() {
+              _activeSubscription = subText;
+            });
+          }
+        } else {
+          setState(() {
+            _activeSubscription = 'Failed to load status: No data';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _activeSubscription = 'Error: ${e.toString()}';
+        });
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _isLoadingSubscription = false;
+      });
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -117,6 +192,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: Text('App Version', style: TextStyle(color: primaryContentTextColor, fontWeight: FontWeight.w600)),
                         subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: TextStyle(color: secondaryContentTextColor)),
                       ),
+                      // --- Active Subscription Info ---
+                      ListTile(
+                        title: Text('Active Subscription', style: TextStyle(color: primaryContentTextColor, fontWeight: FontWeight.w600)),
+                        subtitle: _isLoadingSubscription
+                            ? Row(
+                                children: [
+                                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary)),
+                                  const SizedBox(width: 8),
+                                  Text('Loading...', style: TextStyle(color: secondaryContentTextColor)),
+                                ],
+                              )
+                            : Text(_activeSubscription ?? 'N/A', style: TextStyle(color: secondaryContentTextColor)),
+                      ),
                     ],
                   ),
                 ),
@@ -126,5 +214,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
+    super.dispose();
   }
 }

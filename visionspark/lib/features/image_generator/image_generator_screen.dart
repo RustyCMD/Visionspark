@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
 import '../../shared/utils/snackbar_utils.dart';
+import 'package:provider/provider.dart';
+import '../../shared/notifiers/subscription_status_notifier.dart';
 
 class ImageGeneratorScreen extends StatefulWidget {
   const ImageGeneratorScreen({super.key});
@@ -35,6 +37,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   bool _isSharingToGallery = false;
   bool _autoUploadToGallery = false;
 
+  SubscriptionStatusNotifier? _subscriptionStatusNotifier;
+
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
   // Define your fixed brand colors as static const
@@ -52,6 +56,22 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     _resetTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateResetsAtDisplay();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subscriptionStatusNotifier != notifier) {
+      _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
+      _subscriptionStatusNotifier = notifier;
+      _subscriptionStatusNotifier?.addListener(_onSubscriptionChanged);
+    }
+  }
+
+  void _onSubscriptionChanged() {
+    // When subscription changes, refetch generation status
+    _fetchGenerationStatus();
   }
 
   Future<void> _fetchGenerationStatus() async {
@@ -485,6 +505,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     required Color errorTextColor,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    String generationsText;
+    if (_generationLimit == -1) {
+      generationsText = 'Generations: ∞/∞ remaining';
+    } else {
+      generationsText = 'Generations: $_remainingGenerations/$_generationLimit remaining';
+    }
+
     return _buildCard(
       child: Column(
         children: [
@@ -519,7 +546,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               child: Column(
                 children: [
                   Text(
-                    'Generations: $_remainingGenerations/$_generationLimit remaining',
+                    generationsText,
                     style: TextStyle(color: primaryContentTextColor, fontWeight: FontWeight.w500, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
@@ -763,6 +790,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   void dispose() {
     _promptController.dispose();
     _resetTimer?.cancel();
+    _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
     super.dispose();
   }
 }

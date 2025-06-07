@@ -2,9 +2,16 @@
 // Add Deno types reference for linter
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+// import { corsHeaders } from "../_shared/cors.ts"; // Removed import
 
-const DAILY_LIMIT = 3;
+// Inlined corsHeaders
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*", 
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+// const DAILY_LIMIT = 3; // Removed - will be derived
 
 // Helper function to safely get the user's timezone
 function getUserTimezone(user: any, profile: any): string {
@@ -99,19 +106,19 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("last_generation_at, generations_today, timezone")
+      .select("last_generation_at, generations_today, timezone, current_subscription_tier, subscription_active")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profile) {
-       console.error("Profile fetch error:", profileError, "for user ID:", user.id);
+       console.error(`Profile not found or error for user ID: ${user?.id}. Profile query error:`, profileError, "for user ID:", user.id);
       return new Response(JSON.stringify({ error: "Profile not found" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 404,
       });
     }
 
-    let { last_generation_at, generations_today } = profile; // timezone will be from helper
+    let { last_generation_at, generations_today, current_subscription_tier, subscription_active } = profile;
     const userTimezone = getUserTimezone(user, profile);
     const now = new Date();
     let performReset = false;
@@ -156,14 +163,28 @@ serve(async (req) => {
 
     const generationsCountBeforeThisAttempt = generations_today;
 
-    if (generationsCountBeforeThisAttempt >= DAILY_LIMIT) {
+    // Derive generation_limit based on subscription status
+    let derivedGenerationLimit = 3; // Default free tier
+    if (subscription_active === true) {
+      if (current_subscription_tier === 'monthly_30') {
+        derivedGenerationLimit = 30;
+      } else if (current_subscription_tier === 'monthly_unlimited') {
+        derivedGenerationLimit = -1; // -1 for unlimited
+      }
+    }
+
+    if (derivedGenerationLimit !== -1 && generationsCountBeforeThisAttempt >= derivedGenerationLimit) {
       const resetTimeIso = getNextDayStartUTCISO(userTimezone);
-      console.log(`Daily limit reached for user ${user.id}. Generations: ${generationsCountBeforeThisAttempt}. Resets at: ${resetTimeIso} (Calculated for TZ: ${userTimezone})`);
+      console.log(`Daily limit (${derivedGenerationLimit}) reached for user ${user.id}. Generations: ${generationsCountBeforeThisAttempt}. Resets at: ${resetTimeIso} (Calculated for TZ: ${userTimezone}, Subscription: ${current_subscription_tier})`);
       return new Response(
         JSON.stringify({ 
-            error: "Daily generation limit reached.",
+            error: `Daily generation limit of ${derivedGenerationLimit} reached.`,
             resets_at_utc_iso: resetTimeIso,
-            timezone_used: userTimezone
+            timezone_used: userTimezone,
+            limit_details: {
+              current_limit: derivedGenerationLimit,
+              active_subscription: current_subscription_tier // Use current_subscription_tier
+            }
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 429 }
       );

@@ -1,41 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../shared/main_scaffold.dart'; // Will be created
-import './auth_screen.dart'; // Will be created
+import '../shared/main_scaffold.dart';
+import './auth_screen.dart';
 
-class AuthGate extends StatefulWidget {
+class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
-
-  @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  Stream<AuthState>? _authStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _authStream = Supabase.instance.client.auth.onAuthStateChange;
-  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
-      stream: _authStream,
+      stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
+        // Log every auth event to the debug console
+        if (snapshot.hasData) {
+          debugPrint(
+              "[AuthGate] Event: ${snapshot.data?.event}, Session: ${snapshot.data?.session != null}");
+        }
+
         if (!snapshot.hasData) {
-          // Still waiting for auth state restoration
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data?.session != null) {
+
+        final authState = snapshot.data;
+
+        if (authState?.session != null) {
           return const MainScaffold(selectedIndex: 0);
-        } else {
-          return const AuthScreen();
         }
+
+        return const AuthScreen();
       },
     );
   }
-} 
+}
