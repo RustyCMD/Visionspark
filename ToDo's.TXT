@@ -1,3 +1,7 @@
+Research how to make the GUI/UI/UX Much more better than it currently is on all pages visable by the user
+
+
+
 # Critical Security and Bug Fixes
 
 ## 1. Purchase Validation Security Fix
