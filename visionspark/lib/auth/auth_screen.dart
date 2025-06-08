@@ -1,7 +1,8 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../shared/utils/snackbar_utils.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -23,7 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (googleUser == null) {
         // User cancelled the sign-in
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
       
@@ -58,71 +59,174 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  // Helper function to launch URLs
+  Future<void> _launchURL(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        showErrorSnackbar(context, 'Could not launch $urlString');
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Log In / Sign Up'),
-        centerTitle: true,
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 0,
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Card(
-            elevation: 6,
-            color: colorScheme.surface,
-            shadowColor: Theme.of(context).shadowColor.withOpacity(0.15),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(32),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(Icons.lock_outline, size: 72, color: colorScheme.primary),
-                  const SizedBox(height: 32),
-                  Text(
-                    'Welcome to Visionspark',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: colorScheme.primary),
+      body: Container(
+        // Adding a subtle gradient background for more visual appeal
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colorScheme.surface,
+              colorScheme.background,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Spacer(),
+                // A more engaging visual element than a simple lock icon
+                _buildLogo(colorScheme),
+                const SizedBox(height: 24),
+                Text(
+                  'Welcome to VisionSpark',
+                  textAlign: TextAlign.center,
+                  style: textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Please sign in or create an account.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: colorScheme.onSurface.withOpacity(0.7)),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Ignite your creativity with the power of AI',
+                  textAlign: TextAlign.center,
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.7),
                   ),
-                  const SizedBox(height: 36),
-                  _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : ElevatedButton.icon(
-                          onPressed: _googleSignIn,
-                          icon: const Icon(Icons.login),
-                          label: const Text('Sign In with Google'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            textStyle: const TextStyle(fontSize: 18)
-                          ),
-                        ),
-                ],
-              ),
+                ),
+                const Spacer(flex: 2),
+                _buildGoogleSignInButton(colorScheme, textTheme),
+                const SizedBox(height: 24),
+                _buildTermsAndPolicyFooter(context),
+              ],
             ),
           ),
         ),
       ),
     );
   }
-} 
+
+  Widget _buildLogo(ColorScheme colorScheme) {
+    return Center(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(
+            Icons.lightbulb_outline,
+            size: 100,
+            color: colorScheme.secondary.withOpacity(0.5),
+          ),
+          Icon(
+            Icons.auto_awesome, // Sparkle icon
+            size: 60,
+            color: colorScheme.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleSignInButton(ColorScheme colorScheme, TextTheme textTheme) {
+    // This is a common style for Google Sign-In buttons.
+    // In a real app, you would use an Image.asset for the Google logo.
+    return ElevatedButton(
+      onPressed: _isLoading ? null : _googleSignIn,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white, // Google's recommended button color
+        foregroundColor: Colors.black87, // Google's recommended text color
+        minimumSize: const Size(double.infinity, 50),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        elevation: 2,
+      ),
+      child: _isLoading
+          ? SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+              ),
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Placeholder icon. Use Image.asset('assets/google_logo.png') in a real app.
+                Icon(Icons.login, color: colorScheme.primary), 
+                const SizedBox(width: 12),
+                Text(
+                  'Sign In with Google',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildTermsAndPolicyFooter(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(
+          text: 'By continuing, you agree to our ',
+          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withOpacity(0.6)),
+          children: [
+            TextSpan(
+              text: 'Terms of Service',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.primary,
+                decoration: TextDecoration.underline,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  _launchURL('https://visionspark.app/terms-of-service.html');
+                },
+            ),
+            const TextSpan(text: ' and '),
+            TextSpan(
+              text: 'Privacy Policy',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.primary,
+                decoration: TextDecoration.underline,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  _launchURL('https://visionspark.app/privacy-policy.html');
+                },
+            ),
+            const TextSpan(text: '.'),
+          ],
+        ),
+      ),
+    );
+  }
+}

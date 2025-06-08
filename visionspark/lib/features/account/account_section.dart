@@ -24,68 +24,21 @@ class _AccountSectionState extends State<AccountSection> {
   bool _isSavingUsername = false;
   bool _isDeleting = false;
 
-  Future<void> _signOut() async {
-    try {
-      await Supabase.instance.client.auth.signOut();
-      await GoogleSignIn().signOut();
-    } on AuthException catch (e) {
-      showErrorSnackbar(context, e.message);
-    } catch (e) {
-      showErrorSnackbar(context, 'An unexpected error occurred during sign out: $e');
-    }
-  }
-
-  Future<void> _pickAndUploadProfilePicture() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-    try {
-      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-      if (pickedFile == null) return;
-      setState(() => _isUploading = true);
-      final file = File(pickedFile.path);
-      final ext = pickedFile.path.split('.').last;
-      final storagePath = '${user.id}/profile.$ext';
-      final bytes = await file.readAsBytes();
-      await Supabase.instance.client.storage
-          .from('profilepictures')
-          .uploadBinary(storagePath, bytes, fileOptions: const FileOptions(upsert: true));
-      final urlResponse = await Supabase.instance.client.storage
-          .from('profilepictures')
-          .createSignedUrl(storagePath, 60 * 60); // 1 hour
-      setState(() {
-        _profileImageUrl = urlResponse;
-        _isUploading = false;
-      });
-    } catch (e) {
-      setState(() => _isUploading = false);
-      showErrorSnackbar(context, 'Failed to upload profile picture: $e');
-    }
-  }
-
-  Future<void> _loadProfileImage() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-    for (final ext in ['png', 'jpg']) {
-      final storagePath = '${user.id}/profile.$ext';
-      try {
-        final urlResponse = await Supabase.instance.client.storage
-            .from('profilepictures')
-            .createSignedUrl(storagePath, 60 * 60); // 1 hour
-        setState(() {
-          _profileImageUrl = urlResponse;
-        });
-        return;
-      } catch (_) {
-        // Continue to next extension if not found
-      }
-    }
-  }
-
   @override
   void initState() {
     super.initState();
-    _loadProfileImage();
-    _fetchProfile();
+    _loadProfileData();
+  }
+  
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfileData() async {
+    await _fetchProfile();
+    await _loadProfileImage();
   }
 
   Future<void> _fetchProfile() async {
@@ -97,56 +50,115 @@ class _AccountSectionState extends State<AccountSection> {
           .select('created_at, username')
           .eq('id', user.id)
           .single();
-      setState(() {
-        if (response['created_at'] != null) {
-          _joinDate = DateTime.parse(response['created_at']);
-        }
-        _username = response['username'];
-        _usernameController.text = _username ?? '';
-      });
+      if (mounted) {
+        setState(() {
+          if (response['created_at'] != null) {
+            _joinDate = DateTime.parse(response['created_at']);
+          }
+          _username = response['username'];
+          _usernameController.text = _username ?? '';
+        });
+      }
     } catch (e) {
+      if(mounted) showErrorSnackbar(context, 'Could not fetch profile.');
       debugPrint('Error fetching profile: $e');
     }
   }
 
-  Future<void> _saveUsername() async {
+  Future<void> _loadProfileImage() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    // Check common image extensions
+    for (final ext in ['png', 'jpg']) {
+      final storagePath = '${user.id}/profile.$ext';
+      try {
+        final urlResponse = await Supabase.instance.client.storage
+            .from('profilepictures')
+            .createSignedUrl(storagePath, 60 * 60); // 1 hour validity
+        if (mounted) {
+          setState(() {
+            _profileImageUrl = urlResponse;
+          });
+        }
+        return; // Exit after finding the first valid image
+      } catch (_) {
+        // Silently continue to the next extension if image is not found
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadProfilePicture() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (pickedFile == null) return;
+      if(mounted) setState(() => _isUploading = true);
+      final file = File(pickedFile.path);
+      final ext = pickedFile.path.split('.').last;
+      final storagePath = '${user.id}/profile.$ext';
+      final bytes = await file.readAsBytes();
+      await Supabase.instance.client.storage
+          .from('profilepictures')
+          .uploadBinary(storagePath, bytes, fileOptions: const FileOptions(upsert: true));
+      
+      // After upload, reload the image to get the new signed URL
+      await _loadProfileImage();
+
+    } catch (e) {
+      if(mounted) showErrorSnackbar(context, 'Failed to upload profile picture: $e');
+    } finally {
+      if(mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _saveUsername(BuildContext dialogContext) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     final newUsername = _usernameController.text.trim();
+
     if (newUsername.isEmpty) {
       showErrorSnackbar(context, 'Username cannot be empty.');
       return;
     }
     if (newUsername == _username) {
-      showSuccessSnackbar(context, 'Username is already up to date.');
+      Navigator.of(dialogContext).pop(); // Close dialog if no change
       return;
     }
-    setState(() {
-      _isSavingUsername = true;
-    });
+
+    // This setState call needs to be managed carefully with a StatefulBuilder in the dialog
+    (dialogContext as Element).markNeedsBuild();
+    setState(() => _isSavingUsername = true);
+
     try {
       await Supabase.instance.client
           .from('profiles')
-          .update({'username': newUsername})
-          .eq('id', user.id)
-          .select()
-          .single();
+          .update({'username': newUsername}).eq('id', user.id);
       if (mounted) {
         setState(() {
           _username = newUsername;
         });
         showSuccessSnackbar(context, 'Username updated successfully.');
+        Navigator.of(dialogContext).pop(); // Close dialog on success
       }
     } on PostgrestException catch (e) {
-      showErrorSnackbar(context, 'Failed to update username: ${e.message}');
+      if(mounted) showErrorSnackbar(context, 'Error: ${e.message}');
     } catch (e) {
-      showErrorSnackbar(context, 'Failed to update username: $e');
+      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred.');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSavingUsername = false;
-        });
-      }
+      if (mounted) setState(() => _isSavingUsername = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+      await GoogleSignIn().signOut();
+      // AuthGate will handle navigation
+    } on AuthException catch (e) {
+      if(mounted) showErrorSnackbar(context, e.message);
+    } catch (e) {
+      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred during sign out.');
     }
   }
 
@@ -154,66 +166,56 @@ class _AccountSectionState extends State<AccountSection> {
     final user = Supabase.instance.client.auth.currentUser;
     final jwt = Supabase.instance.client.auth.currentSession?.accessToken;
     if (user == null || jwt == null) return;
-    setState(() { _isDeleting = true; });
+    
+    if(mounted) setState(() => _isDeleting = true);
+
     try {
       final projectUrl = dotenv.env['SUPABASE_URL']!;
       final response = await http.post(
         Uri.parse('$projectUrl/functions/v1/delete-account'),
-        headers: {
-          'Authorization': 'Bearer $jwt',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $jwt', 'Content-Type': 'application/json'},
       );
-      final body = response.body;
+
       if (response.statusCode == 200) {
-        await Supabase.instance.client.auth.signOut();
-        if (mounted) {
-          // Navigate to a root screen (e.g., login) and remove all previous routes
-          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-        }
+        if(mounted) await Supabase.instance.client.auth.signOut();
+        // AuthGate will handle navigation
       } else {
-        showErrorSnackbar(context, 'Failed to delete account: ${body.isNotEmpty ? body : response.statusCode}');
+        if(mounted) showErrorSnackbar(context, 'Failed to delete account: ${response.body}');
       }
     } catch (e) {
-      showErrorSnackbar(context, 'Failed to delete account: $e');
+      if(mounted) showErrorSnackbar(context, 'Failed to delete account: $e');
     } finally {
-      if (mounted) setState(() { _isDeleting = false; });
+      if(mounted) setState(() => _isDeleting = false);
     }
   }
 
+  // --- UI Builder Methods ---
+
   @override
   Widget build(BuildContext context) {
-    final Brightness brightness = Theme.of(context).brightness;
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+          child: _isDeleting ? const Center(child: CircularProgressIndicator()) : Column(
+            children: [
+              _buildProfileHeader(),
+              const SizedBox(height: 32),
+              _buildAccountSettingsCard(),
+              const SizedBox(height: 24),
+              _buildDangerZoneCard(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-    // Dynamic colors based on theme brightness
-    final Color cardBackgroundColor = colorScheme.surface;
-    final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
-
-    final Color primaryContentTextColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white.withOpacity(0.9);
-    final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
-
-    final Color onAccentButtonColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white;
-
-    final Color textFieldBorderColor = brightness == Brightness.light ? colorScheme.primary : Colors.grey.shade700;
-    final Color textFieldFocusedBorderColor = colorScheme.secondary; // Always vibrant
-    final Color textFieldInputColor = primaryContentTextColor;
-    final Color textFieldHintColor = secondaryContentTextColor;
-
-    final Color errorBackgroundColor = brightness == Brightness.light ? Colors.red.shade100 : Colors.red.shade900.withOpacity(0.4);
-    final Color errorTextColor = brightness == Brightness.light ? Colors.red.shade800 : Colors.red.shade100;
-    final Color errorIconColor = brightness == Brightness.light ? Colors.red.shade600 : Colors.red.shade200;
-
-
+  Widget _buildProfileHeader() {
+    final colorScheme = Theme.of(context).colorScheme;
     final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return const SizedBox.shrink();
 
-    if (user == null) {
-      return const Center(
-        child: Text('Error: No user session found. Please restart the app.'),
-      );
-    }
-
-    // Get initials from email or username
     String getInitials(String? name, String? email) {
       if (name != null && name.isNotEmpty) {
         final parts = name.split(' ').where((e) => e.isNotEmpty).toList();
@@ -221,269 +223,189 @@ class _AccountSectionState extends State<AccountSection> {
         if (parts.isNotEmpty) return parts[0].substring(0, 1).toUpperCase();
       }
       if (email != null && email.isNotEmpty) {
-        final emailParts = email.split('@').first.split(RegExp(r'[^a-zA-Z]'));
-        final filteredEmailParts = emailParts.where((e) => e.isNotEmpty).toList();
-        if (filteredEmailParts.length >= 2) return (filteredEmailParts[0][0] + filteredEmailParts[1][0]).toUpperCase();
-        if (filteredEmailParts.isNotEmpty) return filteredEmailParts[0].substring(0, 1).toUpperCase();
-        return email.substring(0, 2).toUpperCase();
+        return email.substring(0, 1).toUpperCase();
       }
       return '';
     }
 
     final initials = getInitials(_username, user.email);
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24), // Outer padding for the entire screen content
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return Column(
+      children: [
+        Stack(
+          alignment: Alignment.bottomRight,
           children: [
-            Card(
-              elevation: 8, // Slightly increased elevation for more depth
-              color: cardBackgroundColor,
-              shadowColor: cardShadowColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(32),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // 1. Profile Header (Avatar, Username/Email, Joined Date, Logout Button)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Profile Picture / Initials with Camera Icon
-                        Stack(
-                          alignment: Alignment.bottomRight,
-                          children: [
-                            _isUploading
-                                ? CircleAvatar(
-                                    radius: 36,
-                                    backgroundColor: colorScheme.primary,
-                                    child: CircularProgressIndicator(color: colorScheme.onPrimary),
-                                  )
-                                : _profileImageUrl != null
-                                    ? CircleAvatar(
-                                        radius: 36,
-                                        backgroundImage: NetworkImage(_profileImageUrl!),
-                                      )
-                                    : CircleAvatar(
-                                        radius: 36,
-                                        backgroundColor: colorScheme.primary,
-                                        child: Text(
-                                          initials,
-                                          style: TextStyle(fontSize: 28, color: colorScheme.onPrimary, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: InkWell(
-                                onTap: _isUploading ? null : _pickAndUploadProfilePicture,
-                                customBorder: const CircleBorder(),
-                                child: CircleAvatar(
-                                  radius: 14,
-                                  backgroundColor: colorScheme.secondary,
-                                  child: Icon(Icons.camera_alt, size: 16, color: colorScheme.onSecondary),
-                                ),
-                              ),
-                            ),
-                          ],
+            CircleAvatar(
+              radius: 52,
+              backgroundColor: colorScheme.primary.withOpacity(0.2),
+              child: _isUploading
+                  ? CircularProgressIndicator(color: colorScheme.primary)
+                  : _profileImageUrl != null
+                      ? CircleAvatar(radius: 50, backgroundImage: NetworkImage(_profileImageUrl!))
+                      : CircleAvatar(
+                          radius: 50,
+                          backgroundColor: colorScheme.primary,
+                          child: Text(initials, style: TextStyle(fontSize: 40, color: colorScheme.onPrimary, fontWeight: FontWeight.bold)),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _username?.isNotEmpty == true ? _username! : user.email ?? 'No email',
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: primaryContentTextColor),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              if (_username?.isNotEmpty == true && user.email?.isNotEmpty == true)
-                                Text(
-                                  user.email!,
-                                  style: TextStyle(fontSize: 14, color: secondaryContentTextColor),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              if (_joinDate != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Text(
-                                    'Joined: ${_formatJoinDate(_joinDate!)}',
-                                    style: TextStyle(fontSize: 14, color: secondaryContentTextColor),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        SizedBox(
-                          width: 100, // Fixed width for consistent button size
-                          child: ElevatedButton.icon(
-                            onPressed: _signOut,
-                            icon: Icon(Icons.logout, size: 18, color: onAccentButtonColor),
-                            label: Text('Logout', style: TextStyle(fontSize: 14, color: onAccentButtonColor)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.secondary,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 2,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Divider(height: 40, thickness: 1, color: colorScheme.primary.withOpacity(0.5)), // Visual separation
-
-                    // 2. Update Username Section
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Update Username',
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: primaryContentTextColor)),
-                          const SizedBox(height: 16),
-                          Text('New Username', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: primaryContentTextColor)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _usernameController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Enter your new username',
-                                    hintStyle: TextStyle(color: textFieldHintColor, fontSize: 15),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: textFieldBorderColor),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: textFieldBorderColor.withOpacity(0.7)),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: textFieldFocusedBorderColor, width: 2),
-                                    ),
-                                    isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                                  ),
-                                  style: TextStyle(color: textFieldInputColor),
-                                  enabled: !_isSavingUsername,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: _isSavingUsername ? null : _saveUsername,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: colorScheme.secondary,
-                                  foregroundColor: onAccentButtonColor,
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 2,
-                                ),
-                                child: _isSavingUsername
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: onAccentButtonColor),
-                                      )
-                                    : Text('Save', style: TextStyle(fontSize: 16, color: onAccentButtonColor)),
-                              ),
-                            ],
-                          ),
-                          if (_username != null && _username!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Text(
-                                'Current username: $_username',
-                                style: TextStyle(fontSize: 14, color: secondaryContentTextColor),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Delete Account Section (now inside the card)
-                    Divider(height: 40, thickness: 1, color: colorScheme.error.withOpacity(0.5)),
-                    Text(
-                      'Danger Zone',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: colorScheme.error),
-                    ),
-                    const SizedBox(height: 16),
-                    _isDeleting
-                        ? CircularProgressIndicator(color: colorScheme.error)
-                        : ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.error,
-                              foregroundColor: colorScheme.onError, // Text/icon color for error button
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 2,
-                            ),
-                            icon: Icon(Icons.delete_forever, color: colorScheme.onError),
-                            label: Text('Delete Account', style: TextStyle(color: colorScheme.onError, fontSize: 16)),
-                            onPressed: () async {
-                              final confirmed = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  backgroundColor: cardBackgroundColor, // Use card background for dialog
-                                  title: Text('Delete Account', style: TextStyle(color: primaryContentTextColor)),
-                                  content: Text(
-                                    'Are you sure you want to delete your account? This action cannot be undone.',
-                                    style: TextStyle(color: secondaryContentTextColor),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
-                                      child: Text('Cancel', style: TextStyle(color: primaryContentTextColor)),
-                                    ),
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(backgroundColor: colorScheme.error),
-                                      onPressed: () => Navigator.of(context).pop(true),
-                                      child: Text('Delete', style: TextStyle(color: colorScheme.onError)),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              if (confirmed == true) {
-                                await _deleteAccount();
-                              }
-                            },
-                          ),
-                  ],
+            ),
+            InkWell(
+              onTap: _isUploading ? null : _pickAndUploadProfilePicture,
+              customBorder: const CircleBorder(),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: colorScheme.surface,
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: colorScheme.secondary,
+                  child: Icon(Icons.camera_alt, size: 18, color: colorScheme.onSecondary),
                 ),
               ),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        Text(
+          _username ?? user.email ?? 'Visionspark User',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        if (_username != null && user.email != null)
+          Text(user.email!, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface.withOpacity(0.7))),
+        if (_joinDate != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              'Joined ${_formatJoinDate(_joinDate!)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withOpacity(0.5)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAccountSettingsCard() {
+    return _buildSettingsCard(
+      title: 'Account Settings',
+      children: [
+        _buildSettingsTile(
+          icon: Icons.edit_outlined,
+          title: 'Edit Username',
+          subtitle: _username ?? 'Set your display name',
+          onTap: () => _showEditUsernameDialog(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDangerZoneCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return _buildSettingsCard(
+      title: 'Danger Zone',
+      cardColor: colorScheme.errorContainer.withOpacity(0.4),
+      children: [
+        _buildSettingsTile(
+          icon: Icons.logout,
+          title: 'Logout',
+          onTap: _signOut,
+        ),
+        const Divider(),
+        _buildSettingsTile(
+          icon: Icons.delete_forever_outlined,
+          title: 'Delete Account',
+          textColor: colorScheme.error,
+          onTap: _showDeleteAccountConfirmation,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsCard({required String title, required List<Widget> children, Color? cardColor}) {
+    return Card(
+      color: cardColor ?? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          ),
+          ...children,
+        ],
       ),
     );
   }
 
-  String _formatJoinDate(DateTime date) {
-    return '${_monthName(date.month)} ${date.day}, ${date.year}';
+  Widget _buildSettingsTile({required IconData icon, required String title, String? subtitle, required VoidCallback onTap, Color? textColor}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: textColor ?? colorScheme.onSurfaceVariant),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w500, color: textColor)),
+      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.7))) : null,
+      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant.withOpacity(0.7)),
+      onTap: onTap,
+    );
+  }
+  
+  void _showEditUsernameDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Username'),
+              content: TextField(
+                controller: _usernameController,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'Enter new username'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: _isSavingUsername ? null : () async {
+                    // Manually trigger a rebuild of the dialog's state
+                    setDialogState(() { _isSavingUsername = true; });
+                    await _saveUsername(dialogContext);
+                    if(mounted) setDialogState(() { _isSavingUsername = false; });
+                  },
+                  child: _isSavingUsername ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+  
+  void _showDeleteAccountConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text('Are you sure you want to delete your account? This action is permanent and cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error, foregroundColor: Theme.of(context).colorScheme.onError),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _deleteAccount();
+    }
   }
 
-  String _monthName(int month) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months[month - 1];
+  String _formatJoinDate(DateTime date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }
