@@ -26,12 +26,21 @@ class _SupportScreenState extends State<SupportScreen> {
     try {
       final title = _titleController.text.trim();
       final content = _contentController.text.trim();
+      final userEmail = Supabase.instance.client.auth.currentUser?.email;
+
+      if (userEmail == null) {
+        if (mounted) {
+          showErrorSnackbar(context, 'Could not submit report: User email not found. Please ensure you are logged in.');
+        }
+        return;
+      }
       
       await Supabase.instance.client.functions.invoke(
         'report-support-issue',
         body: {
           'title': title,
           'content': content,
+          'email': userEmail,
         },
       );
 

@@ -36,6 +36,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   Timer? _resetTimer;
   bool _isSavingImage = false;
   bool _isSharingToGallery = false;
+  SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
 
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
@@ -44,18 +45,26 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     super.initState();
     _loadCachedGenerationStatus();
     _fetchGenerationStatus();
-    // Listen to subscription changes to refresh status
-    Provider.of<SubscriptionStatusNotifier>(context, listen: false)
-        .addListener(_fetchGenerationStatus);
+    // Listener will be added in didChangeDependencies
     _resetTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateResetsAtDisplay());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subscriptionStatusNotifierInstance != notifier) {
+      _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
+      _subscriptionStatusNotifierInstance = notifier;
+      _subscriptionStatusNotifierInstance?.addListener(_fetchGenerationStatus);
+    }
   }
   
   @override
   void dispose() {
     _promptController.dispose();
     _resetTimer?.cancel();
-    Provider.of<SubscriptionStatusNotifier>(context, listen: false)
-        .removeListener(_fetchGenerationStatus);
+    _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
     super.dispose();
   }
 
