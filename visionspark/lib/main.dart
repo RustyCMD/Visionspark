@@ -91,28 +91,46 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeController = Provider.of<ThemeController>(context);
-    const Color lilacPurple = Color(0xFFD0B8E1);
-    const Color softTeal = Color(0xFF87CEEB);
-    const Color mutedPeach = Color(0xFFFFDAB9);
-    const Color lightGrey = Color(0xFFF5F5F7);
-    const Color darkText = Color(0xFF22223B);
-    const Color errorRed = Color(0xFFCF6679);
 
+    // New VisionSpark Color Palette
+    const Color vsPrimaryIndigo = Color(0xFF3949AB); // Primary
+    const Color vsSecondaryTeal = Color(0xFF00ACC1); // Secondary
+    // const Color vsAccentAmber = Color(0xFFFFB300); // Accent - will be used strategically
+
+    // Light Theme ColorScheme
     final lightScheme = ColorScheme(
       brightness: Brightness.light,
-      primary: lilacPurple, onPrimary: darkText,
-      secondary: softTeal, onSecondary: darkText,
-      surface: lightGrey, onSurface: darkText,
-      background: lightGrey, onBackground: darkText,
-      error: errorRed, onError: darkText,
+      primary: vsPrimaryIndigo,
+      onPrimary: Colors.white,
+      secondary: vsSecondaryTeal,
+      onSecondary: Colors.black, // For high contrast on Teal
+      surface: const Color(0xFFF5F5F5), // Light grey for surfaces
+      onSurface: const Color(0xFF212121), // Dark grey for text on light surfaces
+      background: Colors.white, // Clean white background
+      onBackground: const Color(0xFF212121), // Dark grey for text on white background
+      error: const Color(0xFFD32F2F), // Standard error red
+      onError: Colors.white,
+      // Optional: Define tertiary if needed, or use vsAccentAmber directly
+      // tertiary: vsAccentAmber,
+      // onTertiary: Colors.black,
     );
+
+    // Dark Theme ColorScheme
     final darkScheme = ColorScheme(
       brightness: Brightness.dark,
-      primary: lilacPurple, onPrimary: Colors.white,
-      secondary: softTeal, onSecondary: Colors.white,
-      surface: const Color(0xFF2A2A40), onSurface: Colors.white,
-      background: darkText, onBackground: Colors.white,
-      error: errorRed, onError: Colors.black,
+      primary: const Color(0xFF7986CB), // Lighter Indigo for dark theme
+      onPrimary: Colors.black, // Black text on lighter Indigo
+      secondary: const Color(0xFF4DD0E1), // Lighter Teal for dark theme
+      onSecondary: Colors.black, // Black text on lighter Teal
+      surface: const Color(0xFF212121), // Dark grey for surfaces
+      onSurface: Colors.white, // White text on dark surfaces
+      background: const Color(0xFF121212), // Standard dark theme background
+      onBackground: Colors.white, // White text on dark background
+      error: const Color(0xFFEF9A9A), // Lighter error red for dark theme
+      onError: Colors.black,
+      // Optional: Define tertiary if needed
+      // tertiary: vsAccentAmber, // Amber might need adjustment for dark theme if used as tertiary
+      // onTertiary: Colors.black,
     );
 
     return StreamBuilder<bool>(
@@ -131,8 +149,8 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: 'Visionspark',
           navigatorKey: navigatorKey,
-          theme: ThemeData.from(colorScheme: lightScheme, useMaterial3: true),
-          darkTheme: ThemeData.from(colorScheme: darkScheme, useMaterial3: true),
+          theme: _buildTheme(lightScheme),
+          darkTheme: _buildTheme(darkScheme),
           themeMode: themeController.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const AuthGate(),
           debugShowCheckedModeBanner: false,
@@ -140,6 +158,54 @@ class MyApp extends StatelessWidget {
       },
     );
   }
+}
+
+ThemeData _buildTheme(ColorScheme colorScheme) {
+  return ThemeData.from(colorScheme: colorScheme, useMaterial3: true).copyWith(
+    cardTheme: CardTheme(
+      elevation: 2, // Default elevation for cards
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12.0), // Consistent border radius
+      ),
+      // In M3, Card color defaults to surface. If we want a different default:
+      // color: colorScheme.surfaceContainerLow, // Example: slightly off-surface
+      // However, explicit coloring on cards per-screen might be better for flexibility.
+      // For now, let's rely on local Card color settings if a deviation from `surface` is needed.
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colorScheme.surfaceContainer, // M3 standard fill color
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0), // Consistent border radius
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: colorScheme.primary, width: 2.0),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: colorScheme.error, width: 1.5),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: colorScheme.error, width: 2.0),
+      ),
+    ),
+    // Example: If all ElevatedButtons should have a specific padding or shape
+    // elevatedButtonTheme: ElevatedButtonThemeData(
+    //   style: ElevatedButton.styleFrom(
+    //     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    //     shape: RoundedRectangleBorder(
+    //       borderRadius: BorderRadius.circular(12.0),
+    //     ),
+    //   ),
+    // ),
+  );
 }
 
 // AuthGate has been moved to lib/auth/auth_gate.dart

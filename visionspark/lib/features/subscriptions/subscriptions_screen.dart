@@ -366,25 +366,24 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
 
-            if (_purchaseSuccessMessage != null) // Display purchase success message here
+            if (_purchaseSuccessMessage != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical:8.0),
                 child: Card(
-                  color: Colors.green.withOpacity(0.15),
+                  color: colorScheme.primaryContainer.withOpacity(0.2), // Themed success indication
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green),
+                        Icon(Icons.check_circle, color: colorScheme.primary),
                         const SizedBox(width: 12),
-                        Expanded(child: Text(_purchaseSuccessMessage!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green))),
+                        Expanded(child: Text(_purchaseSuccessMessage!, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onPrimaryContainer))),
                       ],
                     ),
                   ),
                 ),
               ),
             
-            // Display IAP specific error here, if purchase success is not shown.
             if (_purchaseSuccessMessage == null && _iapError != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical:8.0),

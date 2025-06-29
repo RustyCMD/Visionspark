@@ -158,13 +158,17 @@ class _SupportScreenState extends State<SupportScreen> {
       validator: validator,
       textInputAction: maxLines > 1 ? TextInputAction.newline : TextInputAction.next,
       decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: colorScheme.onSurface.withOpacity(0.6)),
+        prefixIcon: Icon(icon, color: colorScheme.onSurfaceVariant), // Use onSurfaceVariant for icons in inputs
         hintText: hintText,
         filled: true,
-        fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+        fillColor: colorScheme.surfaceContainer, // Standard M3 fill color for text fields
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: colorScheme.outlineVariant), // Default border
+        ),
+        enabledBorder: OutlineInputBorder( // Explicitly define enabled border
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
