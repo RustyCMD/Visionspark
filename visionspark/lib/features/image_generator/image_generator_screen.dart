@@ -46,11 +46,20 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   String _selectedAspectRatioValue = "1024x1024"; // Default to square
   String _lastSuccessfulPrompt = ""; // For displaying the last used prompt
 
+  // New state variables for advanced parameters
+  late final TextEditingController _negativePromptController;
+  String _selectedStyle = 'None'; // Default style
+  final List<String> _availableStyles = [
+    'None', 'Cartoon', 'Photorealistic', 'Fantasy Art', 'Abstract',
+    'Anime', 'Comic Book', 'Impressionistic', 'Pixel Art', 'Watercolor'
+  ];
+
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
   @override
   void initState() {
     super.initState();
+    _negativePromptController = TextEditingController(); // Initialize new controller
     _loadCachedGenerationStatus();
     _fetchGenerationStatus();
     // Listener will be added in didChangeDependencies
@@ -71,6 +80,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   @override
   void dispose() {
     _promptController.dispose();
+    _negativePromptController.dispose(); // Dispose new controller
     _resetTimer?.cancel();
     _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
     super.dispose();
@@ -196,13 +206,28 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     setState(() { _isLoading = true; _generatedImageUrl = null; });
 
     try {
+      // Prepare the base body for the API call
+      final Map<String, dynamic> requestBody = {
+        'prompt': _promptController.text.trim(),
+        'size': _selectedAspectRatioValue,
+      };
+
+      // Add negative_prompt if it's not empty
+      final String negativePrompt = _negativePromptController.text.trim();
+      if (negativePrompt.isNotEmpty) {
+        requestBody['negative_prompt'] = negativePrompt;
+      }
+
+      // Add style if it's not 'None'
+      if (_selectedStyle != 'None') {
+        requestBody['style'] = _selectedStyle;
+      }
+
       final response = await Supabase.instance.client.functions.invoke(
         'generate-image-proxy',
-        body: {
-          'prompt': _promptController.text,
-          'size': _selectedAspectRatioValue, // Pass selected size
-        },
+        body: requestBody,
       );
+
       if (mounted) {
         final data = response.data;
         if (data['error'] != null) {
@@ -311,13 +336,21 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               _buildGenerationStatus(context, remaining, _generationLimit),
               const SizedBox(height: 24),
               _buildPromptInput(context),
-              const SizedBox(height: 16), // Reduced space a bit
-              _buildAspectRatioSelector(context), // Added Aspect Ratio Selector
-              const SizedBox(height: 16), // Reduced space a bit
+              const SizedBox(height: 16),
+              _buildNegativePromptInput(context), // New Negative Prompt Field
+              const SizedBox(height: 16),
+              Row( // Row for Aspect Ratio and Style selectors
+                children: [
+                  Expanded(child: _buildAspectRatioSelector(context)),
+                  const SizedBox(width: 16),
+                  Expanded(child: _buildStyleSelector(context)), // New Style Selector
+                ],
+              ),
+              const SizedBox(height: 24), // Increased spacing before result
               _buildResultSection(context),
-              const SizedBox(height: 16),
-              _buildLastPromptDisplay(context), // Added Last Prompt Display
-              const SizedBox(height: 16),
+              const SizedBox(height: 24), // Increased spacing
+              _buildLastPromptDisplay(context),
+              const SizedBox(height: 24), // Increased spacing
               ElevatedButton(
                 onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
                 style: ElevatedButton.styleFrom(
@@ -452,28 +485,62 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     );
   }
 
+  Widget _buildNegativePromptInput(BuildContext context) {
+    // Uses global InputDecorationTheme by default
+    return TextField(
+      controller: _negativePromptController,
+      minLines: 1,
+      maxLines: 3,
+      decoration: const InputDecoration(
+        hintText: 'Negative prompt (e.g., "blurry, ugly, text")',
+        labelText: 'Negative Prompt (Optional)',
+      ),
+    );
+  }
+
+  Widget _buildStyleSelector(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return DropdownButtonFormField<String>(
+      value: _selectedStyle,
+      items: _availableStyles.map((String style) {
+        return DropdownMenuItem<String>(
+          value: style,
+          child: Text(style, style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface)),
+        );
+      }).toList(),
+      onChanged: (String? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _selectedStyle = newValue;
+          });
+        }
+      },
+      decoration: InputDecoration(
+        labelText: 'Image Style',
+        // Uses global InputDecorationTheme, but we can override parts if needed
+        // For example, if we want a specific icon for the dropdown:
+        // prefixIcon: Icon(Icons.style_outlined, color: colorScheme.onSurfaceVariant),
+      ),
+      dropdownColor: colorScheme.surfaceContainerHigh, // Background color of the dropdown menu
+    );
+  }
+
   Widget _buildPromptInput(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Uses global InputDecorationTheme, only specific overrides here
     return TextField(
       controller: _promptController,
       minLines: 3,
       maxLines: 5,
       decoration: InputDecoration(
         hintText: 'Describe the image you want to create...',
-        filled: true,
-        fillColor: colorScheme.surfaceContainer, // M3 surface color for input fields
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outlineVariant) // Subtle border
-        ),
-        enabledBorder: OutlineInputBorder( // Ensure consistent border when not focused
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder( // Highlight with primary color when focused
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2.0),
-        ),
+        labelText: 'Prompt', // Added label
+        // fillColor is from global theme
+        // border is from global theme
+        // enabledBorder is from global theme
+        // focusedBorder is from global theme
         suffixIcon: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
