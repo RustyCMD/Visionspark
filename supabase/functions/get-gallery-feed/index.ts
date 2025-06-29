@@ -26,8 +26,20 @@ serve(async (req) => {
 
   // Parse query params
   const url = new URL(req.url);
-  const limit = parseInt(url.searchParams.get('limit') ?? '50', 10); // Default limit 50
-  const offset = parseInt(url.searchParams.get('offset') ?? '0', 10);
+  let limit = parseInt(url.searchParams.get('limit') ?? '50', 10);
+  let offset = parseInt(url.searchParams.get('offset') ?? '0', 10);
+
+  // Validate limit
+  if (isNaN(limit) || limit < 1 || limit > 100) {
+    limit = 50; // Default to 50 if invalid, or you could return an error:
+    // return new Response(JSON.stringify({ error: 'Invalid limit parameter. Must be between 1 and 100.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  // Validate offset
+  if (isNaN(offset) || offset < 0) {
+    offset = 0; // Default to 0 if invalid, or you could return an error:
+    // return new Response(JSON.stringify({ error: 'Invalid offset parameter. Must be a non-negative integer.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
 
   // Create admin client
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
