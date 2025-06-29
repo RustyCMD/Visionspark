@@ -5,6 +5,39 @@ import { corsHeaders } from '../_shared/cors.ts';
 const DEFAULT_FREE_LIMIT = 3;
 const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
+// Helper functions (copied from generate-image-proxy.ts for daily reset logic consistency)
+function getUserTimezone(user: any, profile: any): string { // user param might not be needed if only profile.timezone is primary
+  if (profile?.timezone) { // Prioritize profile.timezone if available directly
+    try {
+      new Date().toLocaleString('en-US', { timeZone: profile.timezone });
+      return profile.timezone;
+    } catch (e) {
+      console.warn(`Invalid timezone in profile.timezone: ${profile.timezone}. Falling back.`);
+    }
+  }
+  if (user?.user_metadata?.timezone) {
+    try {
+      new Date().toLocaleString('en-US', { timeZone: user.user_metadata.timezone });
+      return user.user_metadata.timezone;
+    } catch (e) {
+      console.warn(`Invalid timezone in user.user_metadata.timezone: ${user.user_metadata.timezone}. Falling back.`);
+    }
+  }
+  console.warn(`No valid timezone found for user ${user?.id}, defaulting to UTC.`);
+  return "UTC";
+}
+
+function getDateStringInTimezone(date: Date, timeZone: string): string {
+  return date.toLocaleDateString('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function getNextUTCMidnightISO(): string {
+  const nowUtc = new Date();
+  const nextUTCMidnight = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate() + 1, 0, 0, 0, 0));
+  return nextUTCMidnight.toISOString();
+}
+
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -27,23 +60,21 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('generations_today, last_generation_at, generation_limit, resets_at_utc_iso, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
+      // Select timezone, last_generation_at. Remove resets_at_utc_iso.
+      .select('generations_today, last_generation_at, timezone, generation_limit, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
       .eq('id', user.id)
       .single();
 
     if (profileError || !profile) {
-      console.error('Error fetching profile or profile not found:', profileError);
+      console.error('Error fetching profile or profile not found for user:', user.id, profileError);
       // Fallback to default free limits if profile doesn't exist yet or error
-      const now = new Date();
-      const tomorrow = new Date(now);
-      tomorrow.setUTCDate(now.getUTCDate() + 1);
-      tomorrow.setUTCHours(0, 0, 0, 0);
+      const tomorrow = getNextUTCMidnightISO(); // Use helper for consistency
 
       return new Response(JSON.stringify({
         limit: DEFAULT_FREE_LIMIT,
         generations_today: 0,
         remaining: DEFAULT_FREE_LIMIT,
-        resets_at_utc_iso: tomorrow.toISOString(),
+        resets_at_utc_iso: tomorrow, // This is for client display of daily reset
         active_subscription_type: null,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -52,11 +83,12 @@ serve(async (req) => {
     }
 
     // Subscription Check
-    let currentLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
-    let usageInCurrentPeriod = profile.generations_today || 0;
-    let nextResetDateIso = profile.resets_at_utc_iso;
+    // Use nullish coalescing for currentLimit to respect 0
+    let currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT;
+    let usageInCurrentPeriod = profile.generations_today ?? 0; // Default to 0 if null
+    let nextResetDateIso: string; // Will be determined by logic below
     let activeSubscriptionTier = profile.current_subscription_tier;
-    let needsProfileUpdate = false;
+    let needsProfileUpdate = false; // For monthly cycle start/reset updates by this function
     const profileUpdates: Record<string, any> = {};
 
     const now = new Date();
@@ -107,44 +139,57 @@ serve(async (req) => {
         }
       } else {
         activeSubscriptionTier = null; // Treat as free if tier is unknown but active
-        currentLimit = DEFAULT_FREE_LIMIT;
-        // Apply daily reset logic for free/unknown active tier
-        const dailyResetDate = profile.resets_at_utc_iso ? new Date(profile.resets_at_utc_iso) : new Date(0);
-        if (now >= dailyResetDate) {
-          usageInCurrentPeriod = 0;
-          profileUpdates.generations_today = 0;
-          const tomorrow = new Date(now);
-          tomorrow.setUTCDate(now.getUTCDate() + 1);
-          tomorrow.setUTCHours(0, 0, 0, 0);
-          profileUpdates.resets_at_utc_iso = tomorrow.toISOString();
-          needsProfileUpdate = true;
-          nextResetDateIso = tomorrow.toISOString();
+        currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT; // Respect user's specific limit or default
+        activeSubscriptionTier = null; // Not a recognized paid tier or subscription expired
+
+        // Daily Reset Logic (reflects generate-image-proxy logic, doesn't write daily reset here)
+        const userTimezone = getUserTimezone(user, profile);
+        let performDailyResetCheck = false;
+        if (profile.last_generation_at) {
+          const lastGenDateUtc = new Date(profile.last_generation_at);
+          const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+          const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
+          if (nowDayStrUserTz > lastGenDayStrUserTz) {
+            performDailyResetCheck = true;
+          }
         } else {
-          nextResetDateIso = dailyResetDate.toISOString();
+          performDailyResetCheck = true; // No last generation, so it's effectively a new day for generation
         }
+
+        if (performDailyResetCheck) {
+          usageInCurrentPeriod = 0;
+          // This function does not update profile.generations_today or profile.last_generation_at for daily resets.
+          // That is handled by generate-image-proxy before actual generation.
+          // We only reflect what the count *would be*.
+        }
+        nextResetDateIso = getNextUTCMidnightISO(); // Daily resets are at UTC midnight on the next day
       }
     } else {
-      // Subscription expired or not active, revert to default/free tier values
+      // Subscription not effectively active, apply daily free tier logic
+      currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT;
       activeSubscriptionTier = null;
-      currentLimit = DEFAULT_FREE_LIMIT; // Use absolute default for free tier
-      
-      // Daily Reset Logic for Free Tier
-      const dailyResetDate = profile.resets_at_utc_iso ? new Date(profile.resets_at_utc_iso) : new Date(0); // Use existing or epoch
-      if (now >= dailyResetDate) {
-        usageInCurrentPeriod = 0;
-        profileUpdates.generations_today = 0;
-        const tomorrow = new Date(now);
-        tomorrow.setUTCDate(now.getUTCDate() + 1);
-        tomorrow.setUTCHours(0, 0, 0, 0);
-        profileUpdates.resets_at_utc_iso = tomorrow.toISOString();
-        needsProfileUpdate = true;
-        nextResetDateIso = tomorrow.toISOString();
+
+      const userTimezone = getUserTimezone(user, profile);
+      let performDailyResetCheck = false;
+      if (profile.last_generation_at) {
+        const lastGenDateUtc = new Date(profile.last_generation_at);
+        const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+        const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
+        if (nowDayStrUserTz > lastGenDayStrUserTz) {
+          performDailyResetCheck = true;
+        }
       } else {
-        nextResetDateIso = dailyResetDate.toISOString();
+        performDailyResetCheck = true;
       }
+
+      if (performDailyResetCheck) {
+        usageInCurrentPeriod = 0;
+      }
+      nextResetDateIso = getNextUTCMidnightISO();
     }
 
-    if (needsProfileUpdate && Object.keys(profileUpdates).length > 0) {
+    // This function only updates the profile for monthly subscription cycle changes
+    if (needsProfileUpdate && activeSubscriptionTier === 'monthly_30' && Object.keys(profileUpdates).length > 0) {
       const { error: updateError } = await supabaseClient
         .from('profiles')
         .update(profileUpdates)
