@@ -3,8 +3,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../../main.dart'; // Assuming ThemeController is in main.dart
-import 'package:supabase_flutter/supabase_flutter.dart'; // Added for Supabase
-import '../../shared/notifiers/subscription_status_notifier.dart'; // Added for Notifier
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../shared/notifiers/subscription_status_notifier.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:url_launcher/url_launcher.dart'; // For launching URLs
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -36,6 +38,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
       _subscriptionStatusNotifier = notifier;
       _subscriptionStatusNotifier?.addListener(_onSubscriptionChanged);
+    }
+  }
+
+  // Helper function to launch URLs
+  Future<void> _launchURL(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not launch $urlString')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching URL: An unexpected error occurred.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _clearImageCache() async {
+    bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Clear Cache'),
+          content: const Text('Are you sure you want to clear all cached images? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+            ),
+            TextButton(
+              child: Text('Clear Cache', style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        await DefaultCacheManager().emptyCache();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image cache cleared successfully!')),
+        );
+      } catch (e) {
+        debugPrint("Error clearing cache: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error clearing cache: An unexpected error occurred.')),
+        );
+      }
     }
   }
 
@@ -180,6 +243,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         inactiveThumbColor: Colors.grey,
                         inactiveTrackColor: Colors.grey.withOpacity(0.5),
                       ),
+                      ListTile(
+                        leading: Icon(Icons.delete_sweep_outlined, color: primaryContentTextColor),
+                        title: Text('Clear Image Cache', style: TextStyle(color: primaryContentTextColor)),
+                        subtitle: Text('Remove cached images from gallery and network', style: TextStyle(color: secondaryContentTextColor)),
+                        onTap: _clearImageCache,
+                      ),
                       // --- Version Info ---
                       Divider(
                         height: 32, // Height of the divider
@@ -204,6 +273,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               )
                             : Text(_activeSubscription ?? 'N/A', style: TextStyle(color: secondaryContentTextColor)),
+                      ),
+                      Divider(indent: 16, endIndent: 16, color: colorScheme.primary.withOpacity(0.3)),
+                      ListTile(
+                        leading: Icon(Icons.privacy_tip_outlined, color: primaryContentTextColor),
+                        title: Text('Privacy Policy', style: TextStyle(color: primaryContentTextColor)),
+                        onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'), // Replace with actual URL
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.description_outlined, color: primaryContentTextColor),
+                        title: Text('Terms of Service', style: TextStyle(color: primaryContentTextColor)),
+                        onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'), // Replace with actual URL
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.subscriptions_outlined, color: primaryContentTextColor),
+                        title: Text('Manage Subscription', style: TextStyle(color: primaryContentTextColor)),
+                        onTap: () {
+                          // General link for Google Play. For specific SKU management, a more detailed URL might be needed if available.
+                          // https://developer.android.com/google/play/billing/subscriptions#deep-link
+                          // Example: "https://play.google.com/store/account/subscriptions?sku=your-sku&package=com.example.app"
+                          _launchURL('https://play.google.com/store/account/subscriptions');
+                        },
                       ),
                     ],
                   ),
