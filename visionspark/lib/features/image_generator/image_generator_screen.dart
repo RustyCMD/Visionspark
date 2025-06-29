@@ -300,7 +300,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         // Fix: Replaced deprecated surfaceVariant
-        color: colorScheme.surfaceContainerHighest.withAlpha(77),
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -324,7 +324,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           const SizedBox(height: 8),
           if (limit != -1)
             // Fix: Replaced deprecated withOpacity
-            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withAlpha(179))),
+            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withOpacity(0.7))),
         ],
       ),
     );
@@ -339,7 +339,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         hintText: 'Describe the image you want to create...',
         filled: true,
         // Fix: Replaced deprecated surfaceVariant
-        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(77),
+        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
         suffixIcon: IconButton(
           icon: _isImproving
@@ -367,15 +367,15 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             if (_generatedImageUrl == null && !_isLoading)
               Container(
                 // Fix: Replaced deprecated surfaceVariant
-                color: colorScheme.surfaceContainerHighest.withAlpha(128),
+                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Fix: Replaced deprecated withOpacity
-                    Icon(Icons.image_search, size: 64, color: colorScheme.onSurface.withAlpha(102)),
+                    Icon(Icons.image_search, size: 64, color: colorScheme.onSurface.withOpacity(0.4)),
                     const SizedBox(height: 16),
                     // Fix: Replaced deprecated withOpacity
-                    Text("Your image will appear here", style: TextStyle(color: colorScheme.onSurface.withAlpha(179))),
+                    Text("Your image will appear here", style: TextStyle(color: colorScheme.onSurface.withOpacity(0.7))),
                   ],
                 ),
               ),
@@ -414,7 +414,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                       end: Alignment.topCenter,
                       colors: [
                         // Fix: Replaced deprecated withOpacity
-                        Colors.black.withAlpha(179),
+                        Colors.black.withOpacity(0.7),
                         Colors.transparent
                       ],
                     ),
