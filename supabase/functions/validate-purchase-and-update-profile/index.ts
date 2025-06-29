@@ -7,12 +7,7 @@ import { create as createJWT } from "https://deno.land/x/djwt@v2.8/mod.ts"; // E
 // Add Google Play Billing API client
 // @ts-ignore
 // const {GooglePlayBilling} = require('@google-cloud/billing'); // TODO: Find Deno-compatible way to use Google Play Billing
-
-// Inlined CORS Headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 // --- Google API Config (Store securely as environment variables) ---
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')!;

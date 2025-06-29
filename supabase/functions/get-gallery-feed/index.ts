@@ -2,12 +2,18 @@
 // Add Deno types reference for linter
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
+import { corsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  // Handle OPTIONS preflight request
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   // Get JWT from Authorization header
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
   const jwt = authHeader.replace('Bearer ', '');
 
@@ -15,7 +21,7 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: 'Missing Supabase env vars' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Missing Supabase env vars' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   // Parse query params
@@ -31,7 +37,7 @@ serve(async (req) => {
   // Get user info from JWT
   const { data: { user }, error: userError } = await adminClient.auth.getUser(jwt);
   if (userError || !user) {
-    return new Response(JSON.stringify({ error: 'Invalid user or session' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Invalid user or session' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
   const userId = user.id;
 
@@ -42,11 +48,11 @@ serve(async (req) => {
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
   if (imgError) {
-    return new Response(JSON.stringify({ error: imgError.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: imgError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   if (!images) {
-    return new Response(JSON.stringify({ images: [] }), { headers: { 'Content-Type': 'application/json' }, status: 200 });
+    return new Response(JSON.stringify({ images: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }
 
   // For each image, get signed URL and like status
@@ -112,7 +118,7 @@ serve(async (req) => {
   }));
 
   return new Response(JSON.stringify({ images: results }), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     status: 200,
   });
 }); 

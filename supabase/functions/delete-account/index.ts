@@ -2,12 +2,18 @@
 // Add Deno types reference for linter
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
+import { corsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  // Handle OPTIONS preflight request
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   // Get the JWT from the Authorization header
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), { status: 401 });
+    return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
   const jwt = authHeader.replace('Bearer ', '');
 
@@ -15,7 +21,7 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: 'Missing Supabase env vars' }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'Missing Supabase env vars' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   // Create admin client
@@ -26,7 +32,7 @@ serve(async (req) => {
   // Get user info from JWT
   const { data: { user }, error: userError } = await adminClient.auth.getUser(jwt);
   if (userError || !user) {
-    return new Response(JSON.stringify({ error: 'Invalid user or session' }), { status: 401 });
+    return new Response(JSON.stringify({ error: 'Invalid user or session' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
   const userId = user.id;
 
@@ -68,8 +74,8 @@ serve(async (req) => {
   // Delete the user from auth.users
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
   if (deleteError) {
-    return new Response(JSON.stringify({ error: deleteError.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: deleteError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  return new Response(JSON.stringify({ success: true }), { status: 200 });
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }); 
