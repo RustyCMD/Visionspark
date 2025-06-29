@@ -36,7 +36,15 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   Timer? _resetTimer;
   bool _isSavingImage = false;
   bool _isSharingToGallery = false;
+  bool _isFetchingRandomPrompt = false;
   SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
+
+  // For Aspect Ratio Selection
+  // DALL-E 3 sizes: 1024x1024 (Square), 1792x1024 (Landscape), 1024x1792 (Portrait)
+  final List<String> _aspectRatioLabels = ["Square", "Landscape", "Portrait"];
+  final List<String> _aspectRatioValues = ["1024x1024", "1792x1024", "1024x1792"];
+  String _selectedAspectRatioValue = "1024x1024"; // Default to square
+  String _lastSuccessfulPrompt = ""; // For displaying the last used prompt
 
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
@@ -158,21 +166,52 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     if (mounted) setState(() => _isImproving = false);
   }
 
+  Future<void> _fetchRandomPrompt() async {
+    if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _isFetchingRandomPrompt = true);
+
+    try {
+      final response = await Supabase.instance.client.functions.invoke('get-random-prompt');
+      if (mounted) {
+        if (response.data != null && response.data['prompt'] != null) {
+          _promptController.text = response.data['prompt'];
+          showSuccessSnackbar(context, 'New prompt loaded!');
+        } else if (response.data['error'] != null) {
+          showErrorSnackbar(context, response.data['error'].toString());
+        } else {
+          showErrorSnackbar(context, 'Failed to get a random prompt. No data.');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching random prompt: $e');
+      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while fetching a new prompt.');
+    }
+    if (mounted) setState(() => _isFetchingRandomPrompt = false);
+  }
+
   Future<void> _generateImage() async {
-    if (_promptController.text.isEmpty || _isLoading || _isImproving) return;
+    if (_promptController.text.isEmpty || _isLoading || _isImproving || _isFetchingRandomPrompt) return;
     FocusScope.of(context).unfocus();
     setState(() { _isLoading = true; _generatedImageUrl = null; });
 
     try {
       final response = await Supabase.instance.client.functions.invoke(
-        'generate-image-proxy', body: {'prompt': _promptController.text},
+        'generate-image-proxy',
+        body: {
+          'prompt': _promptController.text,
+          'size': _selectedAspectRatioValue, // Pass selected size
+        },
       );
       if (mounted) {
         final data = response.data;
         if (data['error'] != null) {
           showErrorSnackbar(context, data['error'].toString());
         } else if (data['data'] != null && data['data'][0]['url'] != null) {
-          setState(() => _generatedImageUrl = data['data'][0]['url']);
+          setState(() {
+            _generatedImageUrl = data['data'][0]['url'];
+            _lastSuccessfulPrompt = _promptController.text; // Store the successful prompt
+          });
           await _fetchGenerationStatus();
         }
       }
@@ -272,11 +311,15 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               _buildGenerationStatus(context, remaining, _generationLimit),
               const SizedBox(height: 24),
               _buildPromptInput(context),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16), // Reduced space a bit
+              _buildAspectRatioSelector(context), // Added Aspect Ratio Selector
+              const SizedBox(height: 16), // Reduced space a bit
               _buildResultSection(context),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              _buildLastPromptDisplay(context), // Added Last Prompt Display
+              const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading ? null : _generateImage,
+                onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -334,6 +377,77 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     );
   }
 
+  Widget _buildLastPromptDisplay(BuildContext context) {
+    if (_lastSuccessfulPrompt.isEmpty) {
+      return const SizedBox.shrink(); // Don't show if no prompt stored
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5))
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Last Used Prompt:",
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            _lastSuccessfulPrompt,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.9),
+                  fontStyle: FontStyle.italic,
+                ),
+            maxLines: 3,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAspectRatioSelector(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    List<bool> _isSelected = _aspectRatioValues.map((value) => value == _selectedAspectRatioValue).toList();
+
+    return Center( // Center the ToggleButtons
+      child: Column(
+        children: [
+          Text("Aspect Ratio", style: Theme.of(context).textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 6),
+          ToggleButtons(
+            isSelected: _isSelected,
+            onPressed: (int index) {
+              if (_isLoading || _isImproving || _isFetchingRandomPrompt) return; // Disable during other operations
+              setState(() {
+                _selectedAspectRatioValue = _aspectRatioValues[index];
+              });
+            },
+            borderRadius: BorderRadius.circular(12),
+            selectedColor: colorScheme.onPrimary,
+            color: colorScheme.onSurfaceVariant,
+            fillColor: colorScheme.primary,
+            splashColor: colorScheme.primary.withOpacity(0.2),
+            highlightColor: colorScheme.primary.withOpacity(0.1),
+            borderColor: colorScheme.outlineVariant,
+            selectedBorderColor: colorScheme.primary,
+            children: _aspectRatioLabels.map((label) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text(label),
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPromptInput(BuildContext context) {
     return TextField(
       controller: _promptController,
@@ -345,12 +459,24 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         // Fix: Replaced deprecated surfaceVariant
         fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-        suffixIcon: IconButton(
-          icon: _isImproving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.auto_awesome),
-          tooltip: 'Improve Prompt',
-          onPressed: _improvePrompt,
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min, // Important to keep icons tight
+          children: [
+            IconButton(
+              icon: _isImproving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.auto_awesome),
+              tooltip: 'Improve Prompt',
+              onPressed: _isFetchingRandomPrompt ? null : _improvePrompt, // Disable if fetching random
+            ),
+            IconButton(
+              icon: _isFetchingRandomPrompt
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.casino), // Using casino icon for "Surprise Me"
+              tooltip: 'Surprise Me!',
+              onPressed: _isImproving ? null : _fetchRandomPrompt, // Disable if improving
+            ),
+          ],
         ),
       ),
     );
@@ -358,8 +484,17 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Widget _buildResultSection(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    // Determine aspect ratio for the placeholder/result Card
+    double cardAspectRatio = 1.0; // Default square
+    if (_selectedAspectRatioValue == "1792x1024") { // Landscape
+      cardAspectRatio = 1792 / 1024;
+    } else if (_selectedAspectRatioValue == "1024x1792") { // Portrait
+      cardAspectRatio = 1024 / 1792;
+    }
+
     return AspectRatio(
-      aspectRatio: 1,
+      aspectRatio: cardAspectRatio, // Use dynamic aspect ratio
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
