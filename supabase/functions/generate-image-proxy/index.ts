@@ -80,7 +80,8 @@ serve(async (req) => {
     const now = new Date();
     const profileUpdates: Record<string, any> = {};
     let needsDBUpdateBeforeGenerationAttempt = false; // Renamed for clarity
-    let derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
+    // Use nullish coalescing operator (??) to respect 0 as a valid limit, unlike ||
+    let derivedGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT;
     let nextResetForClientIso = getNextUTCMidnightISO();
     let isMonthlyTier = false;
 
@@ -179,14 +180,39 @@ serve(async (req) => {
 
     // --- Attempt OpenAI Generation First ---
     const body = await req.json();
-    const { prompt, n = 1, size = "1024x1024" } = body;
+    const { prompt, n: requestedN = 1, size: requestedSize = "1024x1024" } = body;
 
-    if (!prompt) {
-      return new Response(JSON.stringify({ error: "Prompt is required" }), {
+    // Validate prompt
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Prompt is required and must be a non-empty string." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
     }
+    if (prompt.length > 4000) { // DALL-E 3 prompt limit
+      return new Response(JSON.stringify({ error: "Prompt is too long. Maximum 4000 characters allowed." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    // Validate n (DALL-E 3 API currently supports n=1)
+    const n = 1; // Force n=1 as per DALL-E 3 API current capability
+    if (requestedN !== 1) {
+      console.warn(`User ${user.id} requested n=${requestedN}, but DALL-E 3 API supports n=1. Forcing n=1.`);
+      // Optionally, inform the user in the response if strictness is desired,
+      // but for now, we just silently enforce it and log.
+    }
+
+    // Validate size
+    const allowedSizes = ["1024x1024", "1792x1024", "1024x1792"];
+    if (!allowedSizes.includes(requestedSize)) {
+      return new Response(JSON.stringify({ error: `Invalid size. Allowed sizes are: ${allowedSizes.join(", ")}.` }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+    const size = requestedSize; // Use validated size
     
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
