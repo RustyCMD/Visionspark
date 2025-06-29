@@ -49,9 +49,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
       // AuthGate will handle navigation automatically on success.
     } on AuthException catch (error) {
-      if(mounted) showErrorSnackbar(context, 'Sign-In Failed: ${error.message}');
+      debugPrint('Google Sign-In AuthException: ${error.message}');
+      if(mounted) showErrorSnackbar(context, 'Sign-In Failed: ${error.message}'); // Supabase messages are usually user-friendly
     } catch (error) {
-      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred: $error');
+      debugPrint('Google Sign-In unexpected error: $error');
+      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred during sign-in. Please try again.');
     }
 
     if (mounted) {

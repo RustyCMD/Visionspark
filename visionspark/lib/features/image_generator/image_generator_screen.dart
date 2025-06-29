@@ -152,7 +152,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         }
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Error improving prompt: ${e.toString()}');
+      debugPrint('Error improving prompt: $e');
+      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while improving the prompt. Please try again.');
     }
     if (mounted) setState(() => _isImproving = false);
   }
@@ -176,7 +177,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         }
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Image generation error: ${e.toString()}');
+      debugPrint('Image generation error: $e');
+      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred during image generation. Please try again.');
     }
     if (mounted) setState(() => _isLoading = false);
   }
@@ -204,7 +206,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         if (mounted) showErrorSnackbar(context, 'Storage permission is required to save images.');
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Error saving image: ${e.toString()}');
+      debugPrint('Error saving image: $e');
+      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while saving the image. Please try again.');
     }
     if (mounted) setState(() => _isSavingImage = false);
   }
@@ -240,7 +243,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
       if (mounted) showSuccessSnackbar(context, 'Image shared to gallery!');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Failed to share: ${e.toString()}');
+      debugPrint('Failed to share to gallery: $e');
+      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while sharing the image. Please try again.');
     }
     if (mounted) setState(() => _isSharingToGallery = false);
   }
