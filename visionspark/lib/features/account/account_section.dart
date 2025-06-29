@@ -339,10 +339,11 @@ class _AccountSectionState extends State<AccountSection> {
 
   Widget _buildSettingsTile({required IconData icon, required String title, String? subtitle, required VoidCallback onTap, Color? textColor}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return ListTile(
       leading: Icon(icon, color: textColor ?? colorScheme.onSurfaceVariant),
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.w500, color: textColor)),
-      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.7))) : null,
+      title: Text(title, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500, color: textColor ?? colorScheme.onSurface)),
+      subtitle: subtitle != null ? Text(subtitle, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.7))) : null,
       trailing: Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant.withOpacity(0.7)),
       onTap: onTap,
     );

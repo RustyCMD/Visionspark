@@ -191,103 +191,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final themeController = Provider.of<ThemeController>(context);
-    final Brightness brightness = Theme.of(context).brightness;
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
-    // Dynamic colors based on theme brightness
-    final Color scaffoldBackgroundColor = colorScheme.background;
-
-    final Color primaryContentTextColor = brightness == Brightness.light ? colorScheme.onSurface : Colors.white.withOpacity(0.9); // Adjusted _originalDarkText to be theme aware
-    final Color secondaryContentTextColor = brightness == Brightness.light ? Colors.grey.shade600 : Colors.grey.shade400;
-
-    final Color cardBackgroundColor = colorScheme.surface;
-    final Color cardShadowColor = brightness == Brightness.light ? colorScheme.primary.withOpacity(0.08) : Colors.black.withOpacity(0.4);
+    final TextTheme textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      backgroundColor: scaffoldBackgroundColor,
+      // backgroundColor is inherited from theme.background automatically
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0), // Padding around the entire content
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
               Card(
-                elevation: 6, // Increased elevation for a more prominent card
-                color: cardBackgroundColor,
-                shadowColor: cardShadowColor,
+                elevation: 2, // Standard elevation
+                color: colorScheme.surfaceContainerLow, // Use a M3 surface color
+                shadowColor: colorScheme.shadow,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                margin: const EdgeInsets.symmetric(vertical: 8.0), // Margin around the card
+                margin: const EdgeInsets.symmetric(vertical: 8.0),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0), // Padding inside the card
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Column(
                     children: [
-                      // --- Toggle Buttons Group ---
                       SwitchListTile(
-                        title: Text('Dark Mode', style: TextStyle(color: primaryContentTextColor)),
-                        subtitle: Text('Enable or disable dark theme', style: TextStyle(color: secondaryContentTextColor)),
+                        title: Text('Dark Mode', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                        subtitle: Text('Enable or disable dark theme', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                         value: themeController.isDarkMode,
                         onChanged: (value) => themeController.setDarkMode(value),
                         activeColor: colorScheme.primary,
                         activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: Colors.grey,
-                        inactiveTrackColor: Colors.grey.withOpacity(0.5),
+                        inactiveThumbColor: colorScheme.outline,
+                        inactiveTrackColor: colorScheme.surfaceVariant,
                       ),
                       SwitchListTile(
-                        title: Text('Auto-upload generated images to gallery', style: TextStyle(color: primaryContentTextColor)),
-                        subtitle: Text('Automatically share new images to the public gallery', style: TextStyle(color: secondaryContentTextColor)),
+                        title: Text('Auto-upload generated images to gallery', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                        subtitle: Text('Automatically share new images to the public gallery', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                         value: _autoUpload,
                         onChanged: _setAutoUpload,
-                        activeColor: colorScheme.primary, // Use theme color
+                        activeColor: colorScheme.primary,
                         activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: Colors.grey,
-                        inactiveTrackColor: Colors.grey.withOpacity(0.5),
+                        inactiveThumbColor: colorScheme.outline,
+                        inactiveTrackColor: colorScheme.surfaceVariant,
                       ),
                       ListTile(
-                        leading: Icon(Icons.delete_sweep_outlined, color: primaryContentTextColor),
-                        title: Text('Clear Image Cache', style: TextStyle(color: primaryContentTextColor)),
-                        subtitle: Text('Remove cached images from gallery and network', style: TextStyle(color: secondaryContentTextColor)),
+                        leading: Icon(Icons.delete_sweep_outlined, color: colorScheme.onSurfaceVariant),
+                        title: Text('Clear Image Cache', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                        subtitle: Text('Remove cached images from gallery and network', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                         onTap: _clearImageCache,
                       ),
-                      // --- Version Info ---
                       Divider(
-                        height: 32, // Height of the divider
+                        height: 32,
                         thickness: 1,
-                        color: colorScheme.primary.withOpacity(0.3), // Themed divider color
-                        indent: 16, // Indent from left
-                        endIndent: 16, // Indent from right
+                        color: colorScheme.outlineVariant, // Standard M3 divider color
+                        indent: 16,
+                        endIndent: 16,
                       ),
                       ListTile(
-                        title: Text('App Version', style: TextStyle(color: primaryContentTextColor, fontWeight: FontWeight.w600)),
-                        subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: TextStyle(color: secondaryContentTextColor)),
+                        title: Text('App Version', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
+                        subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                       ),
-                      // --- Active Subscription Info ---
                       ListTile(
-                        title: Text('Active Subscription', style: TextStyle(color: primaryContentTextColor, fontWeight: FontWeight.w600)),
+                        title: Text('Active Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
                         subtitle: _isLoadingSubscription
                             ? Row(
                                 children: [
                                   SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary)),
                                   const SizedBox(width: 8),
-                                  Text('Loading...', style: TextStyle(color: secondaryContentTextColor)),
+                                  Text('Loading...', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                                 ],
                               )
-                            : Text(_activeSubscription ?? 'N/A', style: TextStyle(color: secondaryContentTextColor)),
+                            : Text(_activeSubscription ?? 'N/A', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                       ),
-                      Divider(indent: 16, endIndent: 16, color: colorScheme.primary.withOpacity(0.3)),
+                      Divider(indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
                       ListTile(
-                        leading: Icon(Icons.privacy_tip_outlined, color: primaryContentTextColor),
-                        title: Text('Privacy Policy', style: TextStyle(color: primaryContentTextColor)),
-                        onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'), // Replace with actual URL
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.description_outlined, color: primaryContentTextColor),
-                        title: Text('Terms of Service', style: TextStyle(color: primaryContentTextColor)),
-                        onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'), // Replace with actual URL
+                        leading: Icon(Icons.privacy_tip_outlined, color: colorScheme.onSurfaceVariant),
+                        title: Text('Privacy Policy', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                        onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
                       ),
                       ListTile(
-                        leading: Icon(Icons.subscriptions_outlined, color: primaryContentTextColor),
-                        title: Text('Manage Subscription', style: TextStyle(color: primaryContentTextColor)),
+                        leading: Icon(Icons.description_outlined, color: colorScheme.onSurfaceVariant),
+                        title: Text('Terms of Service', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                        onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.subscriptions_outlined, color: colorScheme.onSurfaceVariant),
+                        title: Text('Manage Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
                         onTap: () {
                           // General link for Google Play. For specific SKU management, a more detailed URL might be needed if available.
                           // https://developer.android.com/google/play/billing/subscriptions#deep-link

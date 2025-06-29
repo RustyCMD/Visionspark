@@ -55,18 +55,20 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   Widget _wipSection(String name) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.construction,
-              size: 64, color: Theme.of(context).colorScheme.primary),
+              size: 64, color: colorScheme.primary),
           const SizedBox(height: 16),
           Text('$name Section',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          const Text('Work in progress...',
-              style: TextStyle(fontSize: 16, color: Colors.grey)),
+          Text('Work in progress...',
+              style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface.withOpacity(0.6))),
         ],
       ),
     );
@@ -75,16 +77,13 @@ class _MainScaffoldState extends State<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final lilacPurple = colorScheme.primary;
-    final softTeal = colorScheme.secondary;
-    final mutedPeach = colorScheme.error.withOpacity(0.12); // Use error as accent, adjust as needed
-    final lightGrey = colorScheme.surface;
-    final darkText = colorScheme.onSurface;
+    // final textTheme = Theme.of(context).textTheme; // Not directly used here, but good to have if needed
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_titles[_selectedIndex]),
         centerTitle: true,
+        // AppBar uses theme colors by default (colorScheme.primary for background, colorScheme.onPrimary for text)
       ),
       drawer: Drawer(
         shape: const RoundedRectangleBorder(
@@ -93,21 +92,21 @@ class _MainScaffoldState extends State<MainScaffold> {
             bottomRight: Radius.circular(32),
           ),
         ),
-        backgroundColor: colorScheme.surface,
+        backgroundColor: colorScheme.surface, // Correct: uses theme surface color
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
               decoration: BoxDecoration(
-                color: colorScheme.surface,
+                color: colorScheme.surface, // Correct
                 borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(32),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
+                    color: colorScheme.shadow?.withOpacity(0.1) ?? colorScheme.onSurface.withOpacity(0.05), // Themed shadow
                     blurRadius: 8,
-                    offset: Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
@@ -116,7 +115,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text('Vision Spark',
-                      style: TextStyle(
+                      style: TextStyle( // Explicit styling is fine here for branding
                           color: colorScheme.primary,
                           fontSize: 28,
                           fontWeight: FontWeight.bold)),
@@ -135,7 +134,8 @@ class _MainScaffoldState extends State<MainScaffold> {
             _drawerItem(Icons.subscriptions, 'Subscriptions', 3, colorScheme),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
-              child: Divider(color: colorScheme.error.withOpacity(0.12), thickness: 2, height: 24),
+              // Use outlineVariant for a more subtle, Material 3 aligned divider
+              child: Divider(color: colorScheme.outlineVariant, thickness: 1, height: 24),
             ),
             _drawerItem(Icons.settings, 'Settings', 4, colorScheme),
             _drawerItem(Icons.support_agent, 'Support', 5, colorScheme),
@@ -150,21 +150,25 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   Widget _drawerItem(IconData icon, String title, int index, ColorScheme colorScheme) {
     final bool isSelected = _selectedIndex == index;
+    final textTheme = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
       child: Material(
-        color: isSelected ? colorScheme.primary.withOpacity(0.13) : Colors.transparent,
+        // Use primaryContainer for selected background if available and appropriate, or primary.withOpacity
+        color: isSelected ? colorScheme.primary.withOpacity(0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         child: ListTile(
           leading: Icon(icon,
+              // Selected icon uses primary, unselected uses secondary - good distinction
               color: isSelected ? colorScheme.primary : colorScheme.secondary),
           title: Text(title,
-              style: TextStyle(
+              style: textTheme.titleMedium?.copyWith( // Using a standard textTheme style
                 color: colorScheme.onSurface,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               )),
-          selected: isSelected,
-          selectedTileColor: colorScheme.primary.withOpacity(0.09),
+          selected: isSelected, // This helps with semantics but visual styling is handled by Material widget
+          // selectedTileColor: isSelected ? colorScheme.primary.withOpacity(0.09) : null, // Removed to simplify, Material handles it
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           onTap: () {
             setState(() {
@@ -176,4 +180,4 @@ class _MainScaffoldState extends State<MainScaffold> {
       ),
     );
   }
-} 
+}

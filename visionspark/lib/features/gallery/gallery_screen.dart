@@ -157,11 +157,15 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 0,
+        toolbarHeight: 0, // Keeps app bar minimal, only showing the TabBar below
         bottom: TabBar(
           controller: _tabController,
+          labelColor: colorScheme.primary, // Active tab text color
+          unselectedLabelColor: colorScheme.onSurfaceVariant, // Inactive tab text color
+          indicatorColor: colorScheme.primary, // Indicator line color
           tabs: const [Tab(text: 'All'), Tab(text: 'My Creations')],
         ),
       ),
@@ -176,8 +180,22 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
   }
 
   Widget _buildGalleryBody({required bool isMyCreations}) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_errorMessage != null) return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text(_errorMessage!, textAlign: TextAlign.center)));
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    if (_isLoading) return Center(child: CircularProgressIndicator(color: colorScheme.primary));
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: textTheme.titleMedium?.copyWith(color: colorScheme.error),
+          ),
+        ),
+      );
+    }
     
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final imagesToShow = isMyCreations ? _galleryImages.where((img) => img.userId == currentUserId).toList() : _galleryImages;
@@ -187,11 +205,11 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.photo_library_outlined, size: 64, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+            Icon(Icons.photo_library_outlined, size: 64, color: colorScheme.onSurface.withOpacity(0.5)),
             const SizedBox(height: 16),
             Text(
               isMyCreations ? "You haven't created any images yet." : 'The gallery is empty.',
-              style: Theme.of(context).textTheme.titleLarge,
+              style: textTheme.titleLarge?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -199,14 +217,15 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
     }
 
     return RefreshIndicator(
+      color: colorScheme.primary, // Color of the refresh indicator
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
       child: GridView.builder(
-        padding: const EdgeInsets.all(16.0),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        padding: const EdgeInsets.all(12.0), // Slightly reduced padding
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          crossAxisSpacing: 16.0,
-          mainAxisSpacing: 16.0,
-          childAspectRatio: 0.67, // Further adjusted to resolve remaining overflow
+          crossAxisSpacing: 12.0, // Slightly reduced spacing
+          mainAxisSpacing: 12.0,  // Slightly reduced spacing
+          childAspectRatio: 0.70, // Adjusted for potentially better fit with new card style
         ),
         itemCount: imagesToShow.length,
         itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
@@ -221,7 +240,8 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
     return Card(
       elevation: 2,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // Slightly smaller radius
+      color: colorScheme.surfaceContainerLow, // Use a themed surface color for cards
       child: InkWell(
         onTap: () => GalleryImageDetailDialog.show(context, image),
         child: Column(
@@ -230,28 +250,29 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
             Hero(
               tag: image.id,
               child: AspectRatio(
-                aspectRatio: 1,
+                aspectRatio: 1, // Square image preview
                 child: CachedNetworkImage(
                   imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: colorScheme.surfaceVariant),
-                  errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, size: 40)),
+                  placeholder: (context, url) => Container(color: colorScheme.surfaceVariant.withOpacity(0.5)),
+                  errorWidget: (context, url, error) => Center(child: Icon(Icons.broken_image, size: 40, color: colorScheme.onSurfaceVariant.withOpacity(0.7))),
                 ),
               ),
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(8.0),
+                padding: const EdgeInsets.all(10.0), // Adjusted padding
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween, // Ensure like button is at bottom
                   children: [
                     Text(
                       image.prompt ?? 'No prompt provided.',
-                      style: textTheme.bodySmall,
-                      maxLines: 3,
+                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                      maxLines: 3, // Keep max lines
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(), // Pushes the like button to the bottom
+                    // Spacer removed to allow MainAxisAlignment.spaceBetween to work
                     Align(
                       alignment: Alignment.bottomRight,
                       child: _buildLikeButton(image),
@@ -268,28 +289,35 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   Widget _buildLikeButton(GalleryImage image) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final isProcessing = _likeProcessing.contains(image.id);
+
     return Material(
-      color: Colors.transparent,
+      color: Colors.transparent, // Keep transparent for InkWell effect
       child: InkWell(
         onTap: isProcessing ? null : () => _toggleLike(image.id),
         borderRadius: BorderRadius.circular(20),
+        splashColor: colorScheme.primary.withOpacity(0.12),
+        highlightColor: colorScheme.primary.withOpacity(0.08),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Adjusted padding
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               isProcessing
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
                   : Icon(
                       image.isLikedByCurrentUser ? Icons.favorite : Icons.favorite_border,
-                      color: image.isLikedByCurrentUser ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.7),
+                      color: image.isLikedByCurrentUser ? colorScheme.primary : colorScheme.onSurfaceVariant.withOpacity(0.7),
                       size: 20,
                     ),
               const SizedBox(width: 6),
               Text(
                 '${image.likeCount}',
-                style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.onSurface.withOpacity(0.9)),
+                style: textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.9)
+                ),
               ),
             ],
           ),

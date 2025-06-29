@@ -341,13 +341,12 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     if (_isLoadingStatus) return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
     if (_statusErrorMessage != null) return Center(child: Text(_statusErrorMessage!, style: TextStyle(color: colorScheme.error)));
 
-    double progress = limit <= 0 ? 1.0 : remaining / limit;
+    double progress = limit <= 0 ? 1.0 : remaining / limit.clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        // Fix: Replaced deprecated surfaceVariant
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        color: colorScheme.surfaceContainerLow, // M3 standard surface color
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -355,23 +354,24 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Generations Remaining', style: textTheme.titleMedium),
+              Text('Generations Remaining', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
               Text(
                 limit == -1 ? 'Unlimited' : '$remaining / $limit',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
               ),
             ],
           ),
           const SizedBox(height: 12),
           LinearProgressIndicator(
             value: progress,
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(3),
+            minHeight: 8, // Slightly thicker for better visibility
+            borderRadius: BorderRadius.circular(4),
+            backgroundColor: colorScheme.surfaceVariant, // Themed background for progress bar
+            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary), // Explicitly use primary
           ),
           const SizedBox(height: 8),
           if (limit != -1)
-            // Fix: Replaced deprecated withOpacity
-            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withOpacity(0.7))),
+            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
         ],
       ),
     );
@@ -382,19 +382,20 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       return const SizedBox.shrink(); // Don't show if no prompt stored
     }
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.2),
+        color: colorScheme.surfaceContainerLowest, // Use a very subtle background
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5))
+        border: Border.all(color: colorScheme.outlineVariant) // Standard border
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "Last Used Prompt:",
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            style: textTheme.labelMedium?.copyWith( // Slightly larger label
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.bold,
                 ),
@@ -402,11 +403,12 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
           const SizedBox(height: 4),
           SelectableText(
             _lastSuccessfulPrompt,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            style: textTheme.bodyMedium?.copyWith( // Slightly larger body
                   color: colorScheme.onSurfaceVariant.withOpacity(0.9),
                   fontStyle: FontStyle.italic,
                 ),
             maxLines: 3,
+            minLines: 1,
           ),
         ],
       ),
@@ -415,32 +417,34 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Widget _buildAspectRatioSelector(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     List<bool> _isSelected = _aspectRatioValues.map((value) => value == _selectedAspectRatioValue).toList();
 
-    return Center( // Center the ToggleButtons
+    return Center(
       child: Column(
         children: [
-          Text("Aspect Ratio", style: Theme.of(context).textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 6),
+          Text("Aspect Ratio", style: textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8), // Increased spacing slightly
           ToggleButtons(
             isSelected: _isSelected,
             onPressed: (int index) {
-              if (_isLoading || _isImproving || _isFetchingRandomPrompt) return; // Disable during other operations
+              if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
               setState(() {
                 _selectedAspectRatioValue = _aspectRatioValues[index];
               });
             },
             borderRadius: BorderRadius.circular(12),
             selectedColor: colorScheme.onPrimary,
-            color: colorScheme.onSurfaceVariant,
-            fillColor: colorScheme.primary,
-            splashColor: colorScheme.primary.withOpacity(0.2),
-            highlightColor: colorScheme.primary.withOpacity(0.1),
-            borderColor: colorScheme.outlineVariant,
-            selectedBorderColor: colorScheme.primary,
+            color: colorScheme.onSurfaceVariant, // Color for unselected text & icons
+            fillColor: colorScheme.primary, // Background for selected button
+            splashColor: colorScheme.primaryContainer.withOpacity(0.5), // Use primaryContainer for splash
+            highlightColor: colorScheme.primaryContainer.withOpacity(0.3), // Use primaryContainer for highlight
+            borderColor: colorScheme.outline, // Standard border color
+            selectedBorderColor: colorScheme.primary.withOpacity(0.8), // Slightly subtler selected border
+            constraints: const BoxConstraints(minHeight: 40.0, minWidth: 80.0), // Ensure buttons are easy to tap
             children: _aspectRatioLabels.map((label) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(label),
+              padding: const EdgeInsets.symmetric(horizontal: 12.0), // Adjusted padding
+              child: Text(label, style: textTheme.labelLarge), // Use a standard text style
             )).toList(),
           ),
         ],
@@ -449,6 +453,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   }
 
   Widget _buildPromptInput(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return TextField(
       controller: _promptController,
       minLines: 3,
@@ -456,25 +461,35 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
       decoration: InputDecoration(
         hintText: 'Describe the image you want to create...',
         filled: true,
-        // Fix: Replaced deprecated surfaceVariant
-        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        fillColor: colorScheme.surfaceContainer, // M3 surface color for input fields
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.outlineVariant) // Subtle border
+        ),
+        enabledBorder: OutlineInputBorder( // Ensure consistent border when not focused
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder( // Highlight with primary color when focused
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2.0),
+        ),
         suffixIcon: Row(
-          mainAxisSize: MainAxisSize.min, // Important to keep icons tight
+          mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: _isImproving
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.auto_awesome),
+                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
+                  : Icon(Icons.auto_awesome, color: colorScheme.onSurfaceVariant),
               tooltip: 'Improve Prompt',
-              onPressed: _isFetchingRandomPrompt ? null : _improvePrompt, // Disable if fetching random
+              onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
             ),
             IconButton(
               icon: _isFetchingRandomPrompt
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.casino), // Using casino icon for "Surprise Me"
+                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
+                  : Icon(Icons.casino, color: colorScheme.onSurfaceVariant),
               tooltip: 'Surprise Me!',
-              onPressed: _isImproving ? null : _fetchRandomPrompt, // Disable if improving
+              onPressed: _isImproving ? null : _fetchRandomPrompt,
             ),
           ],
         ),
@@ -484,87 +499,87 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   Widget _buildResultSection(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    // Determine aspect ratio for the placeholder/result Card
-    double cardAspectRatio = 1.0; // Default square
-    if (_selectedAspectRatioValue == "1792x1024") { // Landscape
+    double cardAspectRatio = 1.0;
+    if (_selectedAspectRatioValue == "1792x1024") {
       cardAspectRatio = 1792 / 1024;
-    } else if (_selectedAspectRatioValue == "1024x1792") { // Portrait
+    } else if (_selectedAspectRatioValue == "1024x1792") {
       cardAspectRatio = 1024 / 1792;
     }
 
     return AspectRatio(
-      aspectRatio: cardAspectRatio, // Use dynamic aspect ratio
+      aspectRatio: cardAspectRatio,
       child: Card(
+        elevation: 2, // Add a bit of elevation
+        color: colorScheme.surfaceContainerLowest, // Use a very subtle background for the card itself
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Placeholder
             if (_generatedImageUrl == null && !_isLoading)
               Container(
-                // Fix: Replaced deprecated surfaceVariant
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: colorScheme.surfaceContainerLow, // A bit darker than card for placeholder bg
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Fix: Replaced deprecated withOpacity
-                    Icon(Icons.image_search, size: 64, color: colorScheme.onSurface.withOpacity(0.4)),
+                    Icon(Icons.image_search, size: 64, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
                     const SizedBox(height: 16),
-                    // Fix: Replaced deprecated withOpacity
-                    Text("Your image will appear here", style: TextStyle(color: colorScheme.onSurface.withOpacity(0.7))),
+                    Text("Your image will appear here", style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
                   ],
                 ),
               ),
-            // Generated Image
             if (_generatedImageUrl != null)
               Image.network(
                 _generatedImageUrl!,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)));
+                },
+                errorBuilder: (context, error, stackTrace) => Center(child: Icon(Icons.broken_image, size: 48, color: colorScheme.error)),
               ),
-            // Loading Overlay
             if (_isLoading)
               Container(
-                color: Colors.black.withOpacity(0.5),
+                color: colorScheme.scrim.withOpacity(0.6), // Use scrim for overlays
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text("Generating...", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  children: [
+                    CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)), // White indicator on dark scrim
+                    const SizedBox(height: 16),
+                    Text("Generating...", style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
-            // Action Buttons Overlay
             if (_generatedImageUrl != null && !_isLoading)
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Adjusted padding
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
                       colors: [
-                        // Fix: Replaced deprecated withOpacity
-                        Colors.black.withOpacity(0.7),
-                        Colors.transparent
+                        colorScheme.scrim.withOpacity(0.7), // Use scrim
+                        colorScheme.scrim.withOpacity(0.0), // Fade to transparent
                       ],
+                      stops: const [0.0, 1.0] // Ensure full gradient effect
                     ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       _buildActionButton(
-                          context, 'Save', Icons.save_alt, _isSavingImage, _saveImage),
+                          context, 'Save', Icons.save_alt, _isSavingImage, _saveImage, colorScheme),
                       _buildActionButton(
-                          context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery),
+                          context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery, colorScheme),
                     ],
                   ),
                 ),
@@ -575,17 +590,24 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     );
   }
   
-  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback onPressed) {
+  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback onPressed, ColorScheme colorScheme) {
+    // Action buttons on a scrim background, so light foreground color is appropriate.
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         FloatingActionButton.small(
           onPressed: isLoading ? null : onPressed,
-          heroTag: label,
-          child: isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(icon),
+          heroTag: label, // Ensure heroTags are unique if multiple FABs are on screen (not the case here per button)
+          backgroundColor: colorScheme.surface.withOpacity(0.85), // Semi-transparent surface
+          foregroundColor: colorScheme.onSurface, // Text/icon color on that surface
+          elevation: 2, // Subtle elevation
+          child: isLoading
+            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)))
+            : Icon(icon, size: 22),
         ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        const SizedBox(height: 6), // Slightly more space
+        Text(label, style: textTheme.labelSmall?.copyWith(color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500)), // White text on scrim
       ],
     );
   }

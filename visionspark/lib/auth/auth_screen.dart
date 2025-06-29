@@ -149,13 +149,18 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildGoogleSignInButton(ColorScheme colorScheme, TextTheme textTheme) {
-    // This is a common style for Google Sign-In buttons.
-    // In a real app, you would use an Image.asset for the Google logo.
+    final isDarkTheme = Theme.of(context).brightness == Brightness.dark;
+
+    // Define button colors based on theme
+    final Color buttonBackgroundColor = isDarkTheme ? colorScheme.surface : Colors.white;
+    final Color buttonForegroundColor = isDarkTheme ? colorScheme.onSurface : Colors.black87;
+    final Color iconColor = colorScheme.primary; // Keep using primary for the icon
+
     return ElevatedButton(
       onPressed: _isLoading ? null : _googleSignIn,
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white, // Google's recommended button color
-        foregroundColor: Colors.black87, // Google's recommended text color
+        backgroundColor: buttonBackgroundColor,
+        foregroundColor: buttonForegroundColor,
         minimumSize: const Size(double.infinity, 50),
         padding: const EdgeInsets.symmetric(vertical: 14),
         shape: RoundedRectangleBorder(
@@ -169,20 +174,21 @@ class _AuthScreenState extends State<AuthScreen> {
               width: 24,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                valueColor: AlwaysStoppedAnimation<Color>(iconColor), // Use iconColor for consistency
               ),
             )
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Placeholder icon. Use Image.asset('assets/google_logo.png') in a real app.
-                Icon(Icons.login, color: colorScheme.primary), 
+                // In a real app, you might use an Image.asset for the Google logo.
+                // If using a themed icon, ensure it contrasts with buttonBackgroundColor.
+                Icon(Icons.login, color: iconColor),
                 const SizedBox(width: 12),
                 Text(
                   'Sign In with Google',
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: buttonForegroundColor, // Use the adaptive foreground color
                   ),
                 ),
               ],
