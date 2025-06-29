@@ -180,7 +180,7 @@ serve(async (req) => {
 
     // --- Attempt OpenAI Generation First ---
     const body = await req.json();
-    const { prompt, n: requestedN = 1, size: requestedSize = "1024x1024" } = body;
+    const { prompt, n: requestedN = 1, size: requestedSize = "1024x1024", negative_prompt: requestedNegativePrompt, style: requestedStyle } = body;
 
     // Validate prompt
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
@@ -213,6 +213,41 @@ serve(async (req) => {
       });
     }
     const size = requestedSize; // Use validated size
+
+    // Validate negative_prompt
+    let negative_prompt: string | undefined = undefined;
+    if (requestedNegativePrompt !== undefined && requestedNegativePrompt !== null) {
+      if (typeof requestedNegativePrompt !== 'string') {
+        return new Response(JSON.stringify({ error: "negative_prompt must be a string." }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        });
+      }
+      if (requestedNegativePrompt.length > 4000) { // Assuming same limit as prompt
+        return new Response(JSON.stringify({ error: "negative_prompt is too long. Maximum 4000 characters allowed." }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        });
+      }
+      negative_prompt = requestedNegativePrompt.trim().length > 0 ? requestedNegativePrompt.trim() : undefined;
+    }
+
+    // Validate style
+    let style: string | undefined = undefined;
+    const allowedStyles = [
+      'Cartoon', 'Photorealistic', 'Fantasy Art', 'Abstract',
+      'Anime', 'Comic Book', 'Impressionistic', 'Pixel Art', 'Watercolor'
+    ];
+    if (requestedStyle !== undefined && requestedStyle !== null && typeof requestedStyle === 'string' && requestedStyle.toLowerCase() !== 'none') {
+      const foundStyle = allowedStyles.find(s => s.toLowerCase() === requestedStyle.toLowerCase());
+      if (foundStyle) {
+        style = foundStyle; // Use the exact casing from allowedStyles if matched
+      } else {
+        console.warn(`User ${user?.id} provided invalid style: '${requestedStyle}'. It will be ignored.`);
+        // No error, just ignore invalid style as per new understanding (client sends 'None' or omits for no style)
+      }
+    }
+    // If requestedStyle is 'None', undefined, null, or not in allowedStyles, 'style' remains undefined and won't be sent to OpenAI.
     
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
@@ -233,7 +268,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${openaiApiKey}`,
         },
-        body: JSON.stringify({ model: "dall-e-3", prompt, n, size }),
+        body: JSON.stringify({
+          model: "dall-e-3",
+          prompt,
+          n,
+          size,
+          ...(negative_prompt && { negative_prompt }), // Add if defined and not empty
+          ...(style && { style }) // Add if defined (i.e., valid and not 'None')
+        }),
       });
 
       openaiDataResponse = await openaiResponse.json();
