@@ -219,16 +219,23 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
     return RefreshIndicator(
       color: colorScheme.primary, // Color of the refresh indicator
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12.0), // Slightly reduced padding
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12.0, // Slightly reduced spacing
-          mainAxisSpacing: 12.0,  // Slightly reduced spacing
-          childAspectRatio: 0.70, // Adjusted for potentially better fit with new card style
-        ),
-        itemCount: imagesToShow.length,
-        itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double maxWidth = constraints.maxWidth;
+          // Determine number of columns dynamically – min 2, max 6
+          int crossAxisCount = (maxWidth ~/ 220).clamp(2, 6);
+          return GridView.builder(
+            padding: const EdgeInsets.all(12.0),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 12.0,
+              mainAxisSpacing: 12.0,
+              childAspectRatio: 0.70,
+            ),
+            itemCount: imagesToShow.length,
+            itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
+          );
+        },
       ),
     );
   }

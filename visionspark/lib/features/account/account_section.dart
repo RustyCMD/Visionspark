@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../../shared/widgets/page_container.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -196,15 +197,17 @@ class _AccountSectionState extends State<AccountSection> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
-          child: _isDeleting ? const Center(child: CircularProgressIndicator()) : Column(
-            children: [
-              _buildProfileHeader(),
-              const SizedBox(height: 32),
-              _buildAccountSettingsCard(),
-              const SizedBox(height: 24),
-              _buildDangerZoneCard(),
-            ],
+          child: PageContainer(
+            padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+            child: _isDeleting ? const Center(child: CircularProgressIndicator()) : Column(
+              children: [
+                _buildProfileHeader(),
+                const SizedBox(height: 32),
+                _buildAccountSettingsCard(),
+                const SizedBox(height: 24),
+                _buildDangerZoneCard(),
+              ],
+            ),
           ),
         ),
       ),

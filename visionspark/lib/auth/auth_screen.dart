@@ -4,6 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import '../shared/widgets/page_container.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -90,7 +91,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
+          child: PageContainer(
             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

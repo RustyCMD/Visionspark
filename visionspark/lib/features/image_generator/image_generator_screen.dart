@@ -10,6 +10,7 @@ import 'package:image/image.dart' as img;
 import '../../shared/utils/snackbar_utils.dart';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/widgets/page_container.dart';
 
 const String _kCachedLimit = 'cached_generation_limit';
 const String _kCachedGenerationsToday = 'cached_generations_today';
@@ -329,38 +330,40 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildGenerationStatus(context, remaining, _generationLimit),
-              const SizedBox(height: 24),
-              _buildPromptInput(context),
-              const SizedBox(height: 16),
-              _buildNegativePromptInput(context), // New Negative Prompt Field
-              const SizedBox(height: 16),
-              Row( // Row for Aspect Ratio and Style selectors
-                children: [
-                  Expanded(child: _buildAspectRatioSelector(context)),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildStyleSelector(context)), // New Style Selector
-                ],
-              ),
-              const SizedBox(height: 24), // Increased spacing before result
-              _buildResultSection(context),
-              const SizedBox(height: 24), // Increased spacing
-              _buildLastPromptDisplay(context),
-              const SizedBox(height: 24), // Increased spacing
-              ElevatedButton(
-                onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: PageContainer(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildGenerationStatus(context, remaining, _generationLimit),
+                const SizedBox(height: 24),
+                _buildPromptInput(context),
+                const SizedBox(height: 16),
+                _buildNegativePromptInput(context), // New Negative Prompt Field
+                const SizedBox(height: 16),
+                Row( // Row for Aspect Ratio and Style selectors
+                  children: [
+                    Expanded(child: _buildAspectRatioSelector(context)),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildStyleSelector(context)), // New Style Selector
+                  ],
                 ),
-                child: const Text('Generate'),
-              ),
-            ],
+                const SizedBox(height: 24), // Increased spacing before result
+                _buildResultSection(context),
+                const SizedBox(height: 24), // Increased spacing
+                _buildLastPromptDisplay(context),
+                const SizedBox(height: 24), // Increased spacing
+                ElevatedButton(
+                  onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text('Generate'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

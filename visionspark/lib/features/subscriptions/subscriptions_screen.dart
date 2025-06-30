@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../shared/widgets/page_container.dart';
 // import 'package:functions_client/functions_client.dart' as fn_client; // Not directly used anymore
 
 class SubscriptionsScreen extends StatefulWidget {
@@ -341,98 +342,101 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     }
 
 
-    return Scaffold( // Added Scaffold
-      // appBar: AppBar(title: Text('Manage Subscriptions')), // Optional: Add AppBar
-      body: ListView(
-        padding: const EdgeInsets.all(16), // Adjusted padding
-        children: [
-          Text('Manage Your Subscription', // Changed title
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), // Adjusted style
-              textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          
-          statusSection, // Display current subscription status
-
-          if (_iapLoading) const Center(child: CircularProgressIndicator())
-          else if (_iapError != null && _products.isEmpty) // Show IAP error only if no products loaded
-             Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Card(
-                  color: colorScheme.errorContainer.withOpacity(0.5),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
-                  )
-                ),
-              )
-          else ...[ // Display products if available or a message if not
-            const SizedBox(height: 16),
-            Text('Available Plans',
-                style: Theme.of(context).textTheme.titleLarge,
+    return Scaffold(
+      body: PageContainer(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          shrinkWrap: true,
+          physics: const ClampingScrollPhysics(),
+          children: [
+            Text('Manage Your Subscription', // Changed title
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), // Adjusted style
                 textAlign: TextAlign.center),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
+            
+            statusSection, // Display current subscription status
 
-            if (_purchaseSuccessMessage != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical:8.0),
-                child: Card(
-                  color: colorScheme.primaryContainer.withOpacity(0.2), // Themed success indication
+            if (_iapLoading) const Center(child: CircularProgressIndicator())
+            else if (_iapError != null && _products.isEmpty) // Show IAP error only if no products loaded
+               Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Card(
+                    color: colorScheme.errorContainer.withOpacity(0.5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
+                    )
+                  ),
+                )
+            else ...[ // Display products if available or a message if not
+              const SizedBox(height: 16),
+              Text('Available Plans',
+                  style: Theme.of(context).textTheme.titleLarge,
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+
+              if (_purchaseSuccessMessage != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical:8.0),
+                  child: Card(
+                    color: colorScheme.primaryContainer.withOpacity(0.2), // Themed success indication
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(_purchaseSuccessMessage!, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onPrimaryContainer))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              
+              if (_purchaseSuccessMessage == null && _iapError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical:8.0),
+                  child: Card(
+                    color: colorScheme.errorContainer.withOpacity(0.5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
+                    )
+                  ),
+                ),
+
+              if (_products.isNotEmpty)
+                ..._products.map((product) => _SubscriptionCard(
+                      product: product,
+                      onPressed: _purchasePending || (_activeSubscriptionType == product.id) ? null : () => _buy(product),
+                      isLoading: _purchasePending,
+                      isActive: _activeSubscriptionType == product.id,
+                    ))
+              else if (!_iapLoading) // Only show "No subscriptions" if not loading and no IAP error blocking products.
+                Card(
+                  color: colorScheme.surfaceVariant,
+                  margin: const EdgeInsets.symmetric(vertical: 12),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.check_circle, color: colorScheme.primary),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(_purchaseSuccessMessage!, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onPrimaryContainer))),
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: const [
+                        Text('No subscription plans available at the moment.',
+                            style: TextStyle(fontSize: 18)),
+                        SizedBox(height: 8),
+                        Text('Please check back later.'),
                       ],
                     ),
                   ),
                 ),
+              const SizedBox(height: 24),
+              Text(
+                'Payments are securely processed by the play store. You can manage or cancel your subscription anytime through your play store account settings.',
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                textAlign: TextAlign.center,
               ),
-            
-            if (_purchaseSuccessMessage == null && _iapError != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical:8.0),
-                child: Card(
-                  color: colorScheme.errorContainer.withOpacity(0.5),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
-                  )
-                ),
-              ),
-
-            if (_products.isNotEmpty)
-              ..._products.map((product) => _SubscriptionCard(
-                    product: product,
-                    onPressed: _purchasePending || (_activeSubscriptionType == product.id) ? null : () => _buy(product),
-                    isLoading: _purchasePending,
-                    isActive: _activeSubscriptionType == product.id,
-                  ))
-            else if (!_iapLoading) // Only show "No subscriptions" if not loading and no IAP error blocking products.
-              Card(
-                color: colorScheme.surfaceVariant,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: const [
-                      Text('No subscription plans available at the moment.',
-                          style: TextStyle(fontSize: 18)),
-                      SizedBox(height: 8),
-                      Text('Please check back later.'),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 24),
-            Text(
-              'Payments are securely processed by the play store. You can manage or cancel your subscription anytime through your play store account settings.',
-              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ]
-        ],
+            ]
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/widgets/page_container.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -75,44 +76,46 @@ class _SupportScreenState extends State<SupportScreen> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(context),
-                const SizedBox(height: 40),
-                _buildSupportFormField(
-                  controller: _titleController,
-                  hintText: 'Title',
-                  icon: Icons.title_rounded,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter a title.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                _buildSupportFormField(
-                  controller: _contentController,
-                  hintText: 'Describe your issue or feedback...',
-                  icon: Icons.article_outlined,
-                  maxLines: 5,
-                   validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please provide some content.';
-                    }
-                    if(value.trim().length < 10){
-                      return 'Please provide at least 10 characters.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 32),
-                _buildSubmitButton(),
-              ],
+          child: PageContainer(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildHeader(context),
+                  const SizedBox(height: 40),
+                  _buildSupportFormField(
+                    controller: _titleController,
+                    hintText: 'Title',
+                    icon: Icons.title_rounded,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Please enter a title.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  _buildSupportFormField(
+                    controller: _contentController,
+                    hintText: 'Describe your issue or feedback...',
+                    icon: Icons.article_outlined,
+                    maxLines: 5,
+                     validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Please provide some content.';
+                      }
+                      if(value.trim().length < 10){
+                        return 'Please provide at least 10 characters.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 32),
+                  _buildSubmitButton(),
+                ],
+              ),
             ),
           ),
         ),

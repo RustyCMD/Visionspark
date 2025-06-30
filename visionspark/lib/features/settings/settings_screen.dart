@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:url_launcher/url_launcher.dart'; // For launching URLs
+import '../../shared/widgets/page_container.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -198,96 +199,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // backgroundColor is inherited from theme.background automatically
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Card(
-                elevation: 2, // Standard elevation
-                color: colorScheme.surfaceContainerLow, // Use a M3 surface color
-                shadowColor: colorScheme.shadow,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        title: Text('Dark Mode', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Enable or disable dark theme', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        value: themeController.isDarkMode,
-                        onChanged: (value) => themeController.setDarkMode(value),
-                        activeColor: colorScheme.primary,
-                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: colorScheme.outline,
-                        inactiveTrackColor: colorScheme.surfaceVariant,
-                      ),
-                      SwitchListTile(
-                        title: Text('Auto-upload generated images to gallery', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Automatically share new images to the public gallery', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        value: _autoUpload,
-                        onChanged: _setAutoUpload,
-                        activeColor: colorScheme.primary,
-                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: colorScheme.outline,
-                        inactiveTrackColor: colorScheme.surfaceVariant,
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.delete_sweep_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Clear Image Cache', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Remove cached images from gallery and network', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        onTap: _clearImageCache,
-                      ),
-                      Divider(
-                        height: 32,
-                        thickness: 1,
-                        color: colorScheme.outlineVariant, // Standard M3 divider color
-                        indent: 16,
-                        endIndent: 16,
-                      ),
-                      ListTile(
-                        title: Text('App Version', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
-                        subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      ),
-                      ListTile(
-                        title: Text('Active Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
-                        subtitle: _isLoadingSubscription
-                            ? Row(
-                                children: [
-                                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary)),
-                                  const SizedBox(width: 8),
-                                  Text('Loading...', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                                ],
-                              )
-                            : Text(_activeSubscription ?? 'N/A', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      ),
-                      Divider(indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
-                      ListTile(
-                        leading: Icon(Icons.privacy_tip_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Privacy Policy', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.description_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Terms of Service', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.subscriptions_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Manage Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () {
-                          // General link for Google Play. For specific SKU management, a more detailed URL might be needed if available.
-                          // https://developer.android.com/google/play/billing/subscriptions#deep-link
-                          // Example: "https://play.google.com/store/account/subscriptions?sku=your-sku&package=com.example.app"
-                          _launchURL('https://play.google.com/store/account/subscriptions');
-                        },
-                      ),
-                    ],
+          child: PageContainer(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Card(
+                  elevation: 2, // Standard elevation
+                  color: colorScheme.surfaceContainerLow, // Use a M3 surface color
+                  shadowColor: colorScheme.shadow,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  margin: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          title: Text('Dark Mode', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          subtitle: Text('Enable or disable dark theme', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          value: themeController.isDarkMode,
+                          onChanged: (value) => themeController.setDarkMode(value),
+                          activeColor: colorScheme.primary,
+                          activeTrackColor: colorScheme.primary.withOpacity(0.5),
+                          inactiveThumbColor: colorScheme.outline,
+                          inactiveTrackColor: colorScheme.surfaceVariant,
+                        ),
+                        SwitchListTile(
+                          title: Text('Auto-upload generated images to gallery', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          subtitle: Text('Automatically share new images to the public gallery', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          value: _autoUpload,
+                          onChanged: _setAutoUpload,
+                          activeColor: colorScheme.primary,
+                          activeTrackColor: colorScheme.primary.withOpacity(0.5),
+                          inactiveThumbColor: colorScheme.outline,
+                          inactiveTrackColor: colorScheme.surfaceVariant,
+                        ),
+                        ListTile(
+                          leading: Icon(Icons.delete_sweep_outlined, color: colorScheme.onSurfaceVariant),
+                          title: Text('Clear Image Cache', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          subtitle: Text('Remove cached images from gallery and network', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          onTap: _clearImageCache,
+                        ),
+                        Divider(
+                          height: 32,
+                          thickness: 1,
+                          color: colorScheme.outlineVariant, // Standard M3 divider color
+                          indent: 16,
+                          endIndent: 16,
+                        ),
+                        ListTile(
+                          title: Text('App Version', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
+                          subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        ),
+                        ListTile(
+                          title: Text('Active Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
+                          subtitle: _isLoadingSubscription
+                              ? Row(
+                                  children: [
+                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary)),
+                                    const SizedBox(width: 8),
+                                    Text('Loading...', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                                  ],
+                                )
+                              : Text(_activeSubscription ?? 'N/A', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        ),
+                        Divider(indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
+                        ListTile(
+                          leading: Icon(Icons.privacy_tip_outlined, color: colorScheme.onSurfaceVariant),
+                          title: Text('Privacy Policy', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
+                        ),
+                        ListTile(
+                          leading: Icon(Icons.description_outlined, color: colorScheme.onSurfaceVariant),
+                          title: Text('Terms of Service', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
+                        ),
+                        ListTile(
+                          leading: Icon(Icons.subscriptions_outlined, color: colorScheme.onSurfaceVariant),
+                          title: Text('Manage Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
+                          onTap: () {
+                            // General link for Google Play. For specific SKU management, a more detailed URL might be needed if available.
+                            // https://developer.android.com/google/play/billing/subscriptions#deep-link
+                            // Example: "https://play.google.com/store/account/subscriptions?sku=your-sku&package=com.example.app"
+                            _launchURL('https://play.google.com/store/account/subscriptions');
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
