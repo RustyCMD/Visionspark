@@ -181,7 +181,6 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   Widget _buildGalleryBody({required bool isMyCreations}) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     if (_isLoading) return Center(child: CircularProgressIndicator(color: colorScheme.primary));
     if (_errorMessage != null) {
@@ -191,7 +190,7 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
           child: Text(
             _errorMessage!,
             textAlign: TextAlign.center,
-            style: textTheme.titleMedium?.copyWith(color: colorScheme.error),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.error),
           ),
         ),
       );
@@ -209,7 +208,7 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
             const SizedBox(height: 16),
             Text(
               isMyCreations ? "You haven't created any images yet." : 'The gallery is empty.',
-              style: textTheme.titleLarge?.copyWith(color: colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -217,40 +216,43 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
     }
 
     return RefreshIndicator(
-      color: colorScheme.primary, // Color of the refresh indicator
+      color: colorScheme.primary,
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12.0), // Slightly reduced padding
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12.0, // Slightly reduced spacing
-          mainAxisSpacing: 12.0,  // Slightly reduced spacing
-          childAspectRatio: 0.70, // Adjusted for potentially better fit with new card style
-        ),
-        itemCount: imagesToShow.length,
-        itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Responsive column count
+          final int crossAxisCount = constraints.maxWidth > 700 ? 3 : 2;
+          return GridView.builder(
+            padding: const EdgeInsets.all(16.0),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 16.0,
+              mainAxisSpacing: 16.0,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: imagesToShow.length,
+            itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
+          );
+        },
       ),
     );
   }
 
   Widget _buildImageCard(GalleryImage image) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Card(
-      elevation: 2,
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // Slightly smaller radius
-      color: colorScheme.surfaceContainerLow, // Use a themed surface color for cards
+      color: colorScheme.surfaceContainerLow,
       child: InkWell(
         onTap: () => GalleryImageDetailDialog.show(context, image),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            Hero(
-              tag: image.id,
-              child: AspectRatio(
-                aspectRatio: 1, // Square image preview
+            Positioned.fill(
+              child: Hero(
+                tag: image.id,
                 child: CachedNetworkImage(
                   imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
                   fit: BoxFit.cover,
@@ -259,27 +261,33 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
                 ),
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(10.0), // Adjusted padding
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween, // Ensure like button is at bottom
-                  children: [
-                    Text(
-                      image.prompt ?? 'No prompt provided.',
-                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-                      maxLines: 3, // Keep max lines
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // Spacer removed to allow MainAxisAlignment.spaceBetween to work
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: _buildLikeButton(image),
-                    ),
-                  ],
+            // Gradient overlay + prompt text
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8.0),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Colors.black87, Colors.transparent],
+                  ),
+                ),
+                child: Text(
+                  image.prompt ?? 'No prompt',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+            ),
+            // Like button floating top-right
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _buildLikeButton(image),
             ),
           ],
         ),
@@ -289,7 +297,6 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   Widget _buildLikeButton(GalleryImage image) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
     final isProcessing = _likeProcessing.contains(image.id);
 
     return Material(
@@ -314,7 +321,7 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
               const SizedBox(width: 6),
               Text(
                 '${image.likeCount}',
-                style: textTheme.labelMedium?.copyWith(
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: colorScheme.onSurfaceVariant.withOpacity(0.9)
                 ),

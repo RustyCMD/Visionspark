@@ -84,46 +84,52 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: Hero(
-                      tag: widget.galleryItem.id,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: InteractiveViewer(
-                          child: Image.network(
-                            widget.galleryItem.imageUrl,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
-                            errorBuilder: (context, error, stack) => const Center(child: Icon(Icons.broken_image, size: 60)),
+      child: SafeArea(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            padding: const EdgeInsets.all(16.0),
+            child: Stack(
+              alignment: Alignment.topRight,
+              children: [
+                SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 1,
+                        child: Hero(
+                          tag: widget.galleryItem.id,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: InteractiveViewer(
+                              child: Image.network(
+                                widget.galleryItem.imageUrl,
+                                fit: BoxFit.contain,
+                                loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
+                                errorBuilder: (context, error, stack) => const Center(child: Icon(Icons.broken_image, size: 60)),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 24),
+                      _buildPromptSection(colorScheme),
+                      const SizedBox(height: 24),
+                      _buildActionBar(),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  _buildPromptSection(colorScheme),
-                  const SizedBox(height: 20),
-                  _buildActionBar(),
-                ],
-              ),
-              IconButton(
-                icon: const CircleAvatar(backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white)),
-                onPressed: () => Navigator.of(context).pop(),
-                tooltip: 'Close',
-              ),
-            ],
+                ),
+                IconButton(
+                  icon: const CircleAvatar(backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white)),
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
