@@ -91,6 +91,10 @@ visionspark/web/main.dart.js
 visionspark/*.iml
 visionspark/visionspark.iml
 visionspark/visionspark.rar
+supabase/config.toml
+swtich_to_main.bat
+visionspark/android/local.properties
+visionspark/android/key.properties
 
 # Large files
 **/libVkLayer_khronos_validation.so
@@ -135,3 +139,7 @@ ToDo's.txt
 # Default ignored files
 /shelf/
 /workspace.xml
+
+# User-requested ignores
+visionspark/android/app/google-services.json
+visionspark/android/app/src/main/res/values/strings.xml
