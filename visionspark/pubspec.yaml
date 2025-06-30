@@ -33,6 +33,7 @@ dependencies:
   in_app_purchase: ^3.2.3
   image: ^4.1.7
   google_sign_in: ^6.2.1
+  flutter_staggered_grid_view: ^1.0.0
 
 dev_dependencies:
   flutter_test:

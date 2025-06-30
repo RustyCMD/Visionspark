@@ -12,8 +12,33 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   bool _isLoading = false;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   Future<void> _googleSignIn() async {
     setState(() => _isLoading = true);
@@ -75,144 +100,353 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      body: Container(
-        // Adding a subtle gradient background for more visual appeal
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.surface,
-              colorScheme.background,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const Spacer(),
-                // A more engaging visual element than a simple lock icon
-                _buildLogo(colorScheme),
-                const SizedBox(height: 24),
-                Text(
-                  'Welcome to VisionSpark',
-                  textAlign: TextAlign.center,
-                  style: textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Ignite your creativity with the power of AI',
-                  textAlign: TextAlign.center,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-                const Spacer(flex: 2),
-                _buildGoogleSignInButton(colorScheme, textTheme),
-                const SizedBox(height: 24),
-                _buildTermsAndPolicyFooter(context),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLogo(ColorScheme colorScheme) {
-    return Center(
-      child: Stack(
-        alignment: Alignment.center,
+      body: Stack(
         children: [
-          Icon(
-            Icons.lightbulb_outline,
-            size: 100,
-            color: colorScheme.secondary.withOpacity(0.5),
-          ),
-          Icon(
-            Icons.auto_awesome, // Sparkle icon
-            size: 60,
-            color: colorScheme.primary,
+          // Background with geometric shapes
+          _buildGeometricBackground(colorScheme, size),
+          
+          // Main content
+          SafeArea(
+            child: AnimatedBuilder(
+              animation: _animationController,
+              builder: (context, child) {
+                return FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: size.width * 0.08,
+                        vertical: size.height * 0.06,
+                      ),
+                      child: Column(
+                        children: [
+                          const Spacer(flex: 2),
+                          _buildBrandSection(colorScheme, textTheme, size),
+                          const Spacer(flex: 3),
+                          _buildSignInSection(colorScheme, textTheme, size),
+                          const Spacer(flex: 1),
+                          _buildFooterSection(colorScheme, textTheme),
+                          const Spacer(flex: 1),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGoogleSignInButton(ColorScheme colorScheme, TextTheme textTheme) {
-    final isDarkTheme = Theme.of(context).brightness == Brightness.dark;
-
-    // Define button colors based on theme
-    final Color buttonBackgroundColor = isDarkTheme ? colorScheme.surface : Colors.white;
-    final Color buttonForegroundColor = isDarkTheme ? colorScheme.onSurface : Colors.black87;
-    final Color iconColor = colorScheme.primary; // Keep using primary for the icon
-
-    return ElevatedButton(
-      onPressed: _isLoading ? null : _googleSignIn,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: buttonBackgroundColor,
-        foregroundColor: buttonForegroundColor,
-        minimumSize: const Size(double.infinity, 50),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        elevation: 2,
-      ),
-      child: _isLoading
-          ? SizedBox(
-              height: 24,
-              width: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                valueColor: AlwaysStoppedAnimation<Color>(iconColor), // Use iconColor for consistency
-              ),
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // In a real app, you might use an Image.asset for the Google logo.
-                // If using a themed icon, ensure it contrasts with buttonBackgroundColor.
-                Icon(Icons.login, color: iconColor),
-                const SizedBox(width: 12),
-                Text(
-                  'Sign In with Google',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: buttonForegroundColor, // Use the adaptive foreground color
-                  ),
-                ),
+  Widget _buildGeometricBackground(ColorScheme colorScheme, Size size) {
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                colorScheme.surface,
+                colorScheme.surfaceContainer,
+                colorScheme.surfaceContainerHighest,
               ],
+              stops: const [0.0, 0.6, 1.0],
             ),
+          ),
+        ),
+        Positioned(
+          top: -size.height * 0.15,
+          right: -size.width * 0.25,
+          child: Container(
+            width: size.width * 0.8,
+            height: size.width * 0.8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  colorScheme.primary.withOpacity(0.08),
+                  colorScheme.primary.withOpacity(0.02),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -size.height * 0.1,
+          left: -size.width * 0.3,
+          child: Container(
+            width: size.width * 0.7,
+            height: size.width * 0.7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  colorScheme.secondary.withOpacity(0.06),
+                  colorScheme.secondary.withOpacity(0.01),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildTermsAndPolicyFooter(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildBrandSection(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+    return Column(
+      children: [
+        Container(
+          width: size.width * 0.32,
+          height: size.width * 0.32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                colorScheme.primary,
+                colorScheme.secondary,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.primary.withOpacity(0.3),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                size: size.width * 0.14,
+                color: colorScheme.onPrimary,
+              ),
+              Positioned(
+                top: size.width * 0.06,
+                right: size.width * 0.06,
+                child: Container(
+                  width: size.width * 0.04,
+                  height: size.width * 0.04,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colorScheme.onPrimary.withOpacity(0.8),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: size.width * 0.08,
+                left: size.width * 0.08,
+                child: Container(
+                  width: size.width * 0.02,
+                  height: size.width * 0.02,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colorScheme.onPrimary.withOpacity(0.6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: size.height * 0.04),
+        Text(
+          'VisionSpark',
+          style: textTheme.displaySmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurface,
+            letterSpacing: 1.2,
+          ),
+        ),
+        SizedBox(height: size.height * 0.012),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            'Ignite your creativity with AI',
+            style: textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+  Widget _buildSignInSection(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(maxWidth: size.width * 0.85),
+      padding: EdgeInsets.all(size.width * 0.06),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.05),
+            blurRadius: 32,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Welcome Back',
+            style: textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          SizedBox(height: size.height * 0.008),
+          Text(
+            'Sign in to continue your creative journey',
+            style: textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: size.height * 0.032),
+          _buildGoogleSignInButton(colorScheme, textTheme, size),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleSignInButton(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+    return Container(
+      width: double.infinity,
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary,
+            colorScheme.primary.withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _isLoading ? null : _googleSignIn,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isLoading) ...[
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'Signing In...',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onPrimary,
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.onPrimary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.login_rounded,
+                      color: colorScheme.onPrimary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'Continue with Google',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onPrimary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooterSection(ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
       child: RichText(
         textAlign: TextAlign.center,
         text: TextSpan(
           text: 'By continuing, you agree to our ',
-          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withOpacity(0.6)),
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+            height: 1.4,
+          ),
           children: [
             TextSpan(
               text: 'Terms of Service',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
                 decoration: TextDecoration.underline,
+                decorationColor: colorScheme.primary.withOpacity(0.6),
               ),
               recognizer: TapGestureRecognizer()
                 ..onTap = () {
@@ -224,14 +458,15 @@ class _AuthScreenState extends State<AuthScreen> {
               text: 'Privacy Policy',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
                 decoration: TextDecoration.underline,
+                decorationColor: colorScheme.primary.withOpacity(0.6),
               ),
               recognizer: TapGestureRecognizer()
                 ..onTap = () {
                   _launchURL('https://visionspark.app/privacy-policy.html');
                 },
             ),
-            const TextSpan(text: '.'),
           ],
         ),
       ),
