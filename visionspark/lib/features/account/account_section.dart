@@ -199,7 +199,17 @@ class _AccountSectionState extends State<AccountSection> {
           padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
           child: _isDeleting ? const Center(child: CircularProgressIndicator()) : Column(
             children: [
-              _buildProfileHeader(),
+              // Profile Card
+              Card(
+                elevation: 4,
+                margin: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+                  child: _buildProfileHeader(),
+                ),
+              ),
               const SizedBox(height: 32),
               _buildAccountSettingsCard(),
               const SizedBox(height: 24),
@@ -321,7 +331,7 @@ class _AccountSectionState extends State<AccountSection> {
 
   Widget _buildSettingsCard({required String title, required List<Widget> children, Color? cardColor}) {
     return Card(
-      color: cardColor ?? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+      color: cardColor ?? Theme.of(context).colorScheme.surfaceContainerLow,
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
