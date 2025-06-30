@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import './gallery_image_detail_dialog.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 class GalleryImage {
   final String id;
@@ -370,26 +371,13 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
       child: FadeTransition(
         opacity: _fadeAnimation,
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: EdgeInsets.symmetric(
-                horizontal: size.width * 0.04,
-                vertical: size.height * 0.02,
-              ),
-              sliver: SliverMasonryGrid(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildImageCard(imagesToShow[index], index),
-                  childCount: imagesToShow.length,
-                ),
-                gridDelegate: const SliverSimpleGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                ),
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-              ),
-            ),
-          ],
+        child: StaggeredGrid.count(
+          crossAxisCount: 2, // Number of columns
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          children: List.generate(imagesToShow.length, (index) {
+            return _buildImageCard(imagesToShow[index], index);
+          }),
         ),
       ),
     );
@@ -400,12 +388,7 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
     final textTheme = Theme.of(context).textTheme;
     final size = MediaQuery.of(context).size;
     
-    // Alternate heights for masonry effect
-    final baseHeight = size.width * 0.4;
-    final randomHeight = baseHeight + ((index % 3) * 40) - 20;
-
     return Container(
-      height: randomHeight,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -586,34 +569,5 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
     } else {
       return 'Just now';
     }
-  }
-}
-
-// Custom SliverMasonryGrid implementation
-class SliverMasonryGrid extends StatelessWidget {
-  final SliverChildDelegate delegate;
-  final SliverSimpleGridDelegateWithFixedCrossAxisCount gridDelegate;
-  final double mainAxisSpacing;
-  final double crossAxisSpacing;
-
-  const SliverMasonryGrid({
-    super.key,
-    required this.delegate,
-    required this.gridDelegate,
-    this.mainAxisSpacing = 0,
-    this.crossAxisSpacing = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverGrid(
-      delegate: delegate,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: gridDelegate.crossAxisCount,
-        mainAxisSpacing: mainAxisSpacing,
-        crossAxisSpacing: crossAxisSpacing,
-        childAspectRatio: 0.75, // Adjust this for different aspect ratios
-      ),
-    );
   }
 }
