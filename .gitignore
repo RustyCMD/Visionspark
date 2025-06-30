@@ -102,3 +102,36 @@ visionspark/visionspark.rar
 **/zip-cache/*
 **/mergeJavaRes/zip-cache/*
 **/*.rar
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.packages
+
+# Android Studio
+captures/
+.externalNativeBuild/
+
+# IntelliJ
+*.iws
+*.iml
+*.ipr
+/out/
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+ToDo's.txt
+# Default ignored files
+/shelf/
+/workspace.xml
