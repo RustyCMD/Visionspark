@@ -1,0 +1,27 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Structure Guide
+
+This project is organized as follows:
+
+- [visionspark/](mdc:visionspark): Main Flutter app source code.
+  - [lib/](mdc:visionspark/lib): Dart source code for the app.
+    - [main.dart](mdc:visionspark/lib/main.dart): App entry point.
+    - [features/](mdc:visionspark/lib/features): Feature modules (e.g., account, gallery, image_generator, support).
+    - [shared/](mdc:visionspark/lib/shared): Shared widgets and utilities.
+    - [auth/](mdc:visionspark/lib/auth): Authentication screens and logic.
+  - [test/](mdc:visionspark/test): Dart test files.
+- [supabase/](mdc:supabase): Backend and database resources.
+  - [functions/](mdc:supabase/functions): Supabase Edge Functions (serverless backend code).
+  - [migrations/](mdc:supabase/migrations): SQL migration scripts for the database schema.
+  - [supabase/functions/](mdc:supabase/supabase/functions): Additional Edge Functions (nested structure).
+- [android/](mdc:android), [ios/](mdc:ios): Native platform code for Flutter.
+- [pubspec.yaml](mdc:pubspec.yaml): Flutter/Dart dependencies and project configuration.
+- [.gitignore](mdc:.gitignore): Git ignore rules.
+- [README.md](mdc:README.md): Project overview and instructions.
+
+Refer to feature-specific rules for details on each module.
+

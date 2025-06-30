@@ -1,0 +1,145 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.history
+ToDo's.txt
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.metadata
+
+# Android
+android/app/build/
+android/.gradle/
+android/build/
+android/.kotlin/
+
+# iOS
+ios/Pods/
+ios/Flutter/ephemeral/
+DerivedData/
+ios/build/
+
+# Web
+web/flutter_bootstrap.js
+web/main.dart.js
+
+# Desktop
+linux/build/
+macos/build/
+windows/build/
+
+# IDE specific
+.idea/
+.vscode/
+
+# Node
+node_modules/
+visionspark/node_modules/
+
+# Build outputs
+*.apk
+*.aab
+*.app
+*.ipa
+
+# Secrets
+.env
+google-services.json
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p7b
+*.p7c
+*.p7s
+*.pfx
+*.p12
+*.key.properties
+*.keystore.properties
+
+# Project-specific
+visionspark/.dart_tool/
+visionspark/build/
+visionspark/.idea/
+visionspark/.flutter-plugins
+visionspark/.flutter-plugins-dependencies
+visionspark/.metadata
+visionspark/ios/Pods/
+visionspark/ios/Flutter/ephemeral/
+visionspark/ios/build/
+visionspark/android/app/build/
+visionspark/android/.gradle/
+visionspark/android/build/
+visionspark/android/.kotlin/
+visionspark/linux/build/
+visionspark/macos/build/
+visionspark/windows/build/
+visionspark/web/flutter_bootstrap.js
+visionspark/web/main.dart.js
+visionspark/*.iml
+visionspark/visionspark.iml
+visionspark/visionspark.rar
+supabase/config.toml
+swtich_to_main.bat
+visionspark/android/local.properties
+visionspark/android/key.properties
+
+# Large files
+**/libVkLayer_khronos_validation.so
+**/mergeDebugNativeLibs/out/lib/arm64-v8a/libVkLayer_khronos_validation.so
+**/libflutter.so
+**/mergeDebugNativeLibs/out/lib/arm64-v8a/libflutter.so
+**/app.dill
+**/flutter_build/*/app.dill
+**/zip-cache/*
+**/mergeJavaRes/zip-cache/*
+**/*.rar
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.packages
+
+# Android Studio
+captures/
+.externalNativeBuild/
+
+# IntelliJ
+*.iws
+*.iml
+*.ipr
+/out/
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+ToDo's.txt
+# Default ignored files
+/shelf/
+/workspace.xml
+
+# User-requested ignores
+visionspark/android/app/google-services.json
+visionspark/android/app/src/main/res/values/strings.xml
