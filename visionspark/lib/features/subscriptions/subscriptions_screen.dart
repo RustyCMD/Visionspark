@@ -245,6 +245,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           String errorMessage = 'Purchase validation failed on backend.';
           if (response.data != null && response.data['error'] != null) {
             errorMessage = response.data['error'].toString();
+          } else if (response.status != null) {
+            // Add a more descriptive message if backend returns non-200 but no explicit error in data
+            errorMessage = 'Backend validation function returned non-200 status: ${response.status}.';
+            if (response.data != null) {
+               errorMessage += ' Response: ${jsonEncode(response.data)}';
+            }
           }
           setState(() => _iapError = errorMessage);
           return false;

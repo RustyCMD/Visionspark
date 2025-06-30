@@ -54,7 +54,7 @@ class _SupportScreenState extends State<SupportScreen> {
       if (mounted) {
         // Corrected line: Use e.toString() to avoid the undefined 'FunctionsException' type.
         // This is consistent with error handling in other parts of the app.
-        showErrorSnackbar(context, 'Failed to submit: ${(e as FunctionsException).details}');
+        showErrorSnackbar(context, 'Failed to submit: ${e.toString()}');
       }
     } finally {
       if (mounted) {
