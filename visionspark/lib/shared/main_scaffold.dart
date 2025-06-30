@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import '../features/image_generator/image_generator_screen.dart'; // Will be created
-import '../features/account/account_section.dart'; // Will be created
-import '../features/gallery/gallery_screen.dart'; // Import GalleryScreen
-import '../features/support/support_screen.dart'; // Import the new SupportScreen
-import '../features/settings/settings_screen.dart'; // Import the real SettingsScreen
-import '../features/subscriptions/subscriptions_screen.dart'; // Import the new SubscriptionsScreen
+import '../features/image_generator/image_generator_screen.dart';
+import '../features/account/account_section.dart';
+import '../features/gallery/gallery_screen.dart';
+import '../features/support/support_screen.dart';
+import '../features/settings/settings_screen.dart';
+import '../features/subscriptions/subscriptions_screen.dart';
+import 'widgets/page_container.dart';
 
 class MainScaffold extends StatefulWidget {
   final int selectedIndex;
@@ -58,18 +59,21 @@ class _MainScaffoldState extends State<MainScaffold> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.construction,
-              size: 64, color: colorScheme.primary),
-          const SizedBox(height: 16),
-          Text('$name Section',
-              style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('Work in progress...',
-              style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface.withOpacity(0.6))),
-        ],
+      child: PageContainer(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.construction,
+                size: 64, color: colorScheme.primary),
+            const SizedBox(height: 16),
+            Text('$name Section',
+                style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Work in progress...',
+                style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface.withOpacity(0.6))),
+          ],
+        ),
       ),
     );
   }
@@ -79,73 +83,103 @@ class _MainScaffoldState extends State<MainScaffold> {
     final colorScheme = Theme.of(context).colorScheme;
     // final textTheme = Theme.of(context).textTheme; // Not directly used here, but good to have if needed
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_selectedIndex]),
-        centerTitle: true,
-        // AppBar uses theme colors by default (colorScheme.primary for background, colorScheme.onPrimary for text)
-      ),
-      drawer: Drawer(
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            topRight: Radius.circular(32),
-            bottomRight: Radius.circular(32),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool wide = constraints.maxWidth >= 900;
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(_titles[_selectedIndex]),
+            centerTitle: true,
           ),
-        ),
-        backgroundColor: colorScheme.surface, // Correct: uses theme surface color
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: colorScheme.surface, // Correct
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(32),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow?.withOpacity(0.1) ?? colorScheme.onSurface.withOpacity(0.05), // Themed shadow
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text('Vision Spark',
-                      style: TextStyle( // Explicit styling is fine here for branding
-                          color: colorScheme.primary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text('AI Creativity Suite',
-                      style: TextStyle(
-                          color: colorScheme.onSurface.withOpacity(0.67),
-                          fontSize: 16)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            _drawerItem(Icons.image, 'Image', 0, colorScheme),
-            _drawerItem(Icons.videocam, 'Video', 1, colorScheme),
-            _drawerItem(Icons.photo_library, 'Gallery', 2, colorScheme),
-            _drawerItem(Icons.subscriptions, 'Subscriptions', 3, colorScheme),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
-              // Use outlineVariant for a more subtle, Material 3 aligned divider
-              child: Divider(color: colorScheme.outlineVariant, thickness: 1, height: 24),
-            ),
-            _drawerItem(Icons.settings, 'Settings', 4, colorScheme),
-            _drawerItem(Icons.support_agent, 'Support', 5, colorScheme),
-            _drawerItem(Icons.account_circle, 'Account', 6, colorScheme),
-            const SizedBox(height: 16),
-          ],
+          drawer: wide ? null : _buildDrawer(colorScheme),
+          body: Row(
+            children: [
+              if (wide) _buildNavigationRail(colorScheme),
+              Expanded(child: _getSectionWidget(_selectedIndex)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDrawer(ColorScheme colorScheme) {
+    return Drawer(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
       ),
-      body: _getSectionWidget(_selectedIndex),
+      backgroundColor: colorScheme.surface,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _buildDrawerHeader(colorScheme),
+          const SizedBox(height: 8),
+          ..._drawerItems(colorScheme),
+          const SizedBox(height: 16),
+        ],
+      ),
     );
+  }
+
+  Widget _buildNavigationRail(ColorScheme colorScheme) {
+    return NavigationRail(
+      selectedIndex: _selectedIndex,
+      onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+      labelType: NavigationRailLabelType.all,
+      destinations: [
+        const NavigationRailDestination(icon: Icon(Icons.image), label: Text('Image')),
+        const NavigationRailDestination(icon: Icon(Icons.videocam), label: Text('Video')),
+        const NavigationRailDestination(icon: Icon(Icons.photo_library), label: Text('Gallery')),
+        const NavigationRailDestination(icon: Icon(Icons.subscriptions), label: Text('Subs')),
+        const NavigationRailDestination(icon: Icon(Icons.settings), label: Text('Settings')),
+        const NavigationRailDestination(icon: Icon(Icons.support_agent), label: Text('Support')),
+        const NavigationRailDestination(icon: Icon(Icons.account_circle), label: Text('Account')),
+      ],
+    );
+  }
+
+  Widget _buildDrawerHeader(ColorScheme colorScheme) {
+    return DrawerHeader(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.only(topRight: Radius.circular(32)),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow?.withOpacity(0.1) ?? colorScheme.onSurface.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text('Vision Spark', style: TextStyle(color: colorScheme.primary, fontSize: 28, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text('AI Creativity Suite', style: TextStyle(color: colorScheme.onSurface.withOpacity(0.67), fontSize: 16)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _drawerItems(ColorScheme colorScheme) {
+    return [
+      _drawerItem(Icons.image, 'Image', 0, colorScheme),
+      _drawerItem(Icons.videocam, 'Video', 1, colorScheme),
+      _drawerItem(Icons.photo_library, 'Gallery', 2, colorScheme),
+      _drawerItem(Icons.subscriptions, 'Subscriptions', 3, colorScheme),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
+        child: Divider(color: colorScheme.outlineVariant, thickness: 1, height: 24),
+      ),
+      _drawerItem(Icons.settings, 'Settings', 4, colorScheme),
+      _drawerItem(Icons.support_agent, 'Support', 5, colorScheme),
+      _drawerItem(Icons.account_circle, 'Account', 6, colorScheme),
+    ];
   }
 
   Widget _drawerItem(IconData icon, String title, int index, ColorScheme colorScheme) {

@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import './gallery_screen.dart'; // Contains GalleryImage
 import 'package:http/http.dart' as http;
+import '../../shared/widgets/page_container.dart';
 
 class GalleryImageDetailDialog extends StatefulWidget {
   final GalleryImage galleryItem;
@@ -84,46 +85,49 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: Hero(
-                      tag: widget.galleryItem.id,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: InteractiveViewer(
-                          child: Image.network(
-                            widget.galleryItem.imageUrl,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
-                            errorBuilder: (context, error, stack) => const Center(child: Icon(Icons.broken_image, size: 60)),
+      child: PageContainer(
+        maxWidth: 600,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: Hero(
+                        tag: widget.galleryItem.id,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: InteractiveViewer(
+                            child: Image.network(
+                              widget.galleryItem.imageUrl,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
+                              errorBuilder: (context, error, stack) => const Center(child: Icon(Icons.broken_image, size: 60)),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildPromptSection(colorScheme),
-                  const SizedBox(height: 20),
-                  _buildActionBar(),
-                ],
-              ),
-              IconButton(
-                icon: const CircleAvatar(backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white)),
-                onPressed: () => Navigator.of(context).pop(),
-                tooltip: 'Close',
-              ),
-            ],
-          ),
-        ],
+                    const SizedBox(height: 16),
+                    _buildPromptSection(colorScheme),
+                    const SizedBox(height: 20),
+                    _buildActionBar(),
+                  ],
+                ),
+                IconButton(
+                  icon: const CircleAvatar(backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white)),
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
