@@ -335,22 +335,36 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             children: [
               _buildGenerationStatus(context, remaining, _generationLimit),
               const SizedBox(height: 24),
-              _buildPromptInput(context),
-              const SizedBox(height: 16),
-              _buildNegativePromptInput(context), // New Negative Prompt Field
-              const SizedBox(height: 16),
-              Row( // Row for Aspect Ratio and Style selectors
-                children: [
-                  Expanded(child: _buildAspectRatioSelector(context)),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildStyleSelector(context)), // New Style Selector
-                ],
+              // Prompt & parameters Card
+              Card(
+                elevation: 3,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildPromptInput(context),
+                      const SizedBox(height: 12),
+                      _buildNegativePromptInput(context),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: _buildAspectRatioSelector(context)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildStyleSelector(context)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 24), // Increased spacing before result
+              const SizedBox(height: 24),
               _buildResultSection(context),
-              const SizedBox(height: 24), // Increased spacing
+              const SizedBox(height: 24),
               _buildLastPromptDisplay(context),
-              const SizedBox(height: 24), // Increased spacing
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
                 style: ElevatedButton.styleFrom(
@@ -376,36 +390,37 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
     double progress = limit <= 0 ? 1.0 : remaining / limit.clamp(0.0, 1.0);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow, // M3 standard surface color
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Generations Remaining', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-              Text(
-                limit == -1 ? 'Unlimited' : '$remaining / $limit',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 8, // Slightly thicker for better visibility
-            borderRadius: BorderRadius.circular(4),
-            backgroundColor: colorScheme.surfaceVariant, // Themed background for progress bar
-            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary), // Explicitly use primary
-          ),
-          const SizedBox(height: 8),
-          if (limit != -1)
-            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
-        ],
+    return Card(
+      elevation: 3,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Generations Remaining', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                Text(
+                  limit == -1 ? 'Unlimited' : '$remaining / $limit',
+                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 8, // Slightly thicker for better visibility
+              borderRadius: BorderRadius.circular(4),
+              backgroundColor: colorScheme.surfaceVariant, // Themed background for progress bar
+              valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary), // Explicitly use primary
+            ),
+            const SizedBox(height: 8),
+            if (limit != -1)
+              Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
+          ],
+        ),
       ),
     );
   }
@@ -416,34 +431,34 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     }
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest, // Use a very subtle background
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant) // Standard border
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Last Used Prompt:",
-            style: textTheme.labelMedium?.copyWith( // Slightly larger label
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 4),
-          SelectableText(
-            _lastSuccessfulPrompt,
-            style: textTheme.bodyMedium?.copyWith( // Slightly larger body
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.9),
-                  fontStyle: FontStyle.italic,
-                ),
-            maxLines: 3,
-            minLines: 1,
-          ),
-        ],
+    return Card(
+      elevation: 1,
+      color: colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Last Used Prompt:",
+              style: textTheme.labelMedium?.copyWith( // Slightly larger label
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              _lastSuccessfulPrompt,
+              style: textTheme.bodyMedium?.copyWith( // Slightly larger body
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.9),
+                    fontStyle: FontStyle.italic,
+                  ),
+              maxLines: 3,
+              minLines: 1,
+            ),
+          ],
+        ),
       ),
     );
   }
