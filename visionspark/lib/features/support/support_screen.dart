@@ -82,36 +82,49 @@ class _SupportScreenState extends State<SupportScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildHeader(context),
-                const SizedBox(height: 40),
-                _buildSupportFormField(
-                  controller: _titleController,
-                  hintText: 'Title',
-                  icon: Icons.title_rounded,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter a title.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                _buildSupportFormField(
-                  controller: _contentController,
-                  hintText: 'Describe your issue or feedback...',
-                  icon: Icons.article_outlined,
-                  maxLines: 5,
-                   validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please provide some content.';
-                    }
-                    if(value.trim().length < 10){
-                      return 'Please provide at least 10 characters.';
-                    }
-                    return null;
-                  },
-                ),
                 const SizedBox(height: 32),
-                _buildSubmitButton(),
+                Card(
+                  elevation: 3,
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSupportFormField(
+                          controller: _titleController,
+                          hintText: 'Title',
+                          icon: Icons.title_rounded,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter a title.';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSupportFormField(
+                          controller: _contentController,
+                          hintText: 'Describe your issue or feedback...',
+                          icon: Icons.article_outlined,
+                          maxLines: 5,
+                           validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please provide some content.';
+                            }
+                            if(value.trim().length < 10){
+                              return 'Please provide at least 10 characters.';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        _buildSubmitButton(),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

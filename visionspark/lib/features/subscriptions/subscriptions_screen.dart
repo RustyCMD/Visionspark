@@ -456,7 +456,7 @@ class _SubscriptionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      color: isActive ? colorScheme.primaryContainer.withOpacity(0.5) : colorScheme.surfaceContainerHighest, // Highlight if active
+      color: isActive ? colorScheme.primaryContainer.withOpacity(0.5) : colorScheme.surfaceContainerLow,
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: isActive ? 4 : 2,
