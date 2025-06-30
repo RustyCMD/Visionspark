@@ -152,6 +152,24 @@ class MyApp extends StatelessWidget {
           theme: _buildTheme(lightScheme),
           darkTheme: _buildTheme(darkScheme),
           themeMode: themeController.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          // Globally apply a subtle gradient backdrop. Individual Screens can still override if needed.
+          builder: (context, child) {
+            final scheme = Theme.of(context).colorScheme;
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.background.withOpacity(0.98),
+                    scheme.surfaceVariant.withOpacity(0.96),
+                    scheme.primary.withOpacity(0.06),
+                  ],
+                ),
+              ),
+              child: child!,
+            );
+          },
           home: const AuthGate(),
           debugShowCheckedModeBanner: false,
         );
@@ -162,6 +180,7 @@ class MyApp extends StatelessWidget {
 
 ThemeData _buildTheme(ColorScheme colorScheme) {
   return ThemeData.from(colorScheme: colorScheme, useMaterial3: true).copyWith(
+    scaffoldBackgroundColor: Colors.transparent,
     cardTheme: CardTheme(
       elevation: 2, // Default elevation for cards
       shape: RoundedRectangleBorder(
