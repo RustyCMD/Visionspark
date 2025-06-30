@@ -371,13 +371,19 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
       child: FadeTransition(
         opacity: _fadeAnimation,
-        child: StaggeredGrid.count(
-          crossAxisCount: 2, // Number of columns
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          children: List.generate(imagesToShow.length, (index) {
-            return _buildImageCard(imagesToShow[index], index);
-          }),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: StaggeredGrid.count(
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            children: List.generate(imagesToShow.length, (index) {
+              return StaggeredGridTile.fit(
+                crossAxisExtent: MediaQuery.of(context).size.width / 2 - 24,
+                child: _buildImageCard(imagesToShow[index], index),
+              );
+            }),
+          ),
         ),
       ),
     );
