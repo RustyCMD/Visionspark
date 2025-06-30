@@ -1,258 +1,208 @@
-✨ Visionspark: AI-Powered Image Generation & Gallery 🎨
+<div align="center">
+  <img src="visionspark/assets/logo.png" alt="Visionspark Logo" width="150"/>
+  <h1>Visionspark</h1>
+  <p>✨ AI-Powered Image Generation & Gallery 🎨</p>
+</div>
+
+<div align="center">
+  <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge" alt="Contributions Welcome">
+</div>
+
 Welcome to Visionspark, a cutting-edge cross-platform application built with Flutter and powered by a robust Supabase backend. Visionspark offers a seamless and intuitive experience for generating stunning AI-driven images and exploring a vibrant community gallery.
 
-🌟 Features at a Glance
-User Management: Secure authentication (sign-up, login, password reset), comprehensive account management including username updates, profile pictures, and join date tracking.
+---
 
-AI Image Generation:
+## 📜 Table of Contents
 
-Unleash creativity with advanced AI models (DALL-E 3 via Supabase Edge Functions).
+- [🌟 Features at a Glance](#-features-at-a-glance)
+- [📸 App Showcase](#-app-showcase)
+- [🏗️ Project Architecture](#️-project-architecture)
+- [🚀 Getting Started](#-getting-started)
+- [🛠️ Supabase Backend Deep Dive](#️-supabase-backend-deep-dive)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
-Get intelligent prompt improvement suggestions.
+---
 
-Manage daily generation limits, precisely tracked by user timezone.
+## 🌟 Features at a Glance
 
-Option to automatically publish generated images to the public gallery.
+-   👤 **User Management**: Secure authentication (sign-up, login, password reset), comprehensive account management including username updates, profile pictures, and join date tracking.
+-   🤖 **AI Image Generation**: Unleash creativity with advanced AI models (DALL-E 3 via Supabase Edge Functions), get intelligent prompt suggestions, and manage daily generation limits tracked by user timezone.
+-   🖼️ **Dynamic Image Gallery**: Explore a public showcase of AI-generated masterpieces, view your own creations, and engage with content through likes. Features optimized loading and easy image downloads.
+-   ⚙️ **Customizable Settings**: Seamlessly switch between Dark and Light themes and toggle auto-upload for generated images.
+-   💳 **Subscription Framework**: Integrated UI for exploring and selecting in-app purchase subscriptions.
+-   🆘 **Dedicated Support System**: In-app reporting for support issues via a Discord webhook with robust, database-backed rate limiting.
+-   📱 **Cross-Platform Excellence**: A consistent experience across Android, iOS, and future platforms, built with Flutter.
+-   🌐 **Offline Resilience**: A user-friendly offline screen with a retry option ensures a smooth experience without an internet connection.
 
-Dynamic Image Gallery:
+---
 
-Explore a public showcase of AI-generated masterpieces.
+## 📸 App Showcase
 
-"My Creations" tab for a personalized view of your own art.
+*(Add your screenshots here to showcase the app's beautiful UI!)*
 
-Immersive image detail view with interactive zoom.
+| Auth Screen                                     | Image Generator                               | Gallery                                       |
+| ----------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
+| ![Auth Screen](link-to-your-screenshot.png)     | ![Generator](link-to-your-screenshot.png)     | ![Gallery](link-to-your-screenshot.png)       |
 
-Engage with content through the "Liking" feature.
+---
 
-Optimized loading with cached network images and secure signed URLs for thumbnails.
+## 🏗️ Project Architecture
 
-Effortless image downloads to your device (with proper permission handling).
+Visionspark's codebase is thoughtfully organized into the Flutter front-end and the Supabase back-end.
 
-Profile & Account: Streamlined secure account deletion, managing all associated data (Supabase auth, profiles, gallery images, and storage).
-
-Customizable Settings:
-
-Seamlessly switch between Dark and Light themes.
-
-Toggle auto-upload for generated images.
-
-View app version information.
-
-Subscription Framework: Integrated UI for exploring and selecting in-app purchase subscriptions (ready for platform store integrations).
-
-Dedicated Support System:
-
-In-app reporting for support issues via a Discord webhook.
-
-Robust, database-backed rate limiting to prevent abuse.
-
-Cross-Platform Excellence: Developed with Flutter for a consistent experience across Android, iOS, and future desktop/web platforms.
-
-Offline Resilience: A user-friendly offline screen with a retry option ensures a smooth experience even without an internet connection.
-
-🏗️ Project Architecture Overview
-Visionspark's codebase is thoughtfully organized into two primary components: the Flutter front-end and the Supabase back-end.
-
+```
 Visionspark/
 ├── visionspark/           # Main Flutter app source code
-│   ├── lib/               # Dart source code (Flutter application logic and UI)
-│   ├── android/           # Native Android specific code
-│   ├── ios/               # Native iOS specific code
-│   ├── assets/            # App assets (e.g., images, fonts - if any)
-│   ├── test/              # Dart tests for Flutter app
-│   ├── pubspec.yaml       # Flutter/Dart dependencies and project metadata
-│   └── .env               # Local environment variables (Supabase URL & Anon Key) - IMPORTANT: Add to .gitignore
-├── supabase/              # Supabase backend resources (database schema, serverless functions)
-│   ├── functions/         # Supabase Edge Functions (serverless backend logic)
-│   ├── migrations/        # SQL migration scripts for database schema management
-│   ├── config.toml        # Supabase CLI configuration
-│   └── SECURITY_GUIDANCE.md # Security best practices for Supabase
-├── .cursor/               # Cursor navigation and rules (Auto-updated)
+│   ├── lib/               # Dart source code
+│   ├── android/           # Native Android code
+│   ├── ios/               # Native iOS code
+│   └── pubspec.yaml       # Dependencies
+├── supabase/              # Supabase backend resources
+│   ├── functions/         # Edge Functions (serverless logic)
+│   ├── migrations/        # SQL migration scripts
+│   └── config.toml        # Supabase CLI configuration
+├── .cursor/               # Cursor navigation rules
 ├── .gitignore             # Git ignore rules
-├── README.md              # This file: Project overview and instructions
-└── TODOOOO.TXT            # Project TODOs and completed tasks list
+└── README.md              # This file
+```
 
-📱 visionspark/lib (Flutter/Dart Files)
-This directory houses the core Flutter application logic and UI components. It's structured to promote modularity and maintainability:
+### 📱 `visionspark/lib` (Flutter/Dart Files)
 
-lib/auth/: Contains all screens and logic related to user authentication, including AuthGate for routing based on authentication status and AuthScreen for sign-up/login flows.
+This directory houses the core Flutter application logic and UI components, structured for modularity:
 
-lib/features/: Organized into distinct feature modules, each encapsulating its own UI, logic, and state management:
+-   `auth/`: Screens and logic for user authentication.
+-   `features/`: Distinct feature modules (account, gallery, image_generator, etc.).
+-   `shared/`: Common widgets, utilities, and services.
+-   `main.dart`: The application's entry point.
 
-account/: Manages user account details and actions.
+### 🚀 `supabase/` (Supabase Backend)
 
-gallery/: Handles the display, interaction, and detail views of generated images.
+This folder contains all files to manage the Supabase backend:
 
-image_generator/: Contains the UI and logic for AI image generation.
+-   `functions/`: TypeScript Edge Functions for server-side operations like AI image generation, account deletion, and gallery feeds.
+-   `migrations/`: Version-controlled SQL scripts that define and evolve the database schema.
+-   `config.toml`: Configuration for the Supabase CLI.
+-   `SECURITY_GUIDANCE.md`: Important security best practices.
 
-settings/: Manages application settings like theme and auto-upload preferences.
+---
 
-subscriptions/: Provides the interface for in-app purchase subscriptions.
+## 🚀 Getting Started
 
-support/: Implements the in-app support issue reporting system.
-
-lib/shared/: Houses common widgets, utility functions, and services used across the application, such as MainScaffold for consistent layout, ConnectivityService for network status, and OfflineScreen for handling connectivity issues.
-
-lib/main.dart: The application's entry point, responsible for initializing the app, setting up the theme, and handling deep linking.
-
-🚀 supabase/ (Supabase Backend)
-This folder contains all the necessary files to manage the Supabase backend, including database schema migrations and serverless functions.
-
-supabase/functions/: This directory is crucial for the application's backend logic, hosting Supabase Edge Functions written in TypeScript. These functions handle various server-side operations, including:
-
-_shared/: Common utilities shared across functions (e.g., CORS handling).
-
-delete-account/: Logic for securely deleting user accounts and associated data.
-
-generate-image-proxy/: A proxy for image generation requests.
-
-get-gallery-feed/: Fetches images for the public gallery.
-
-get-generation-status/: Checks the status of AI image generation requests.
-
-get-random-prompt/: Provides random prompts for image generation.
-
-validate-purchase-and-update-profile/: Handles subscription validation and profile updates.
-
-(Note: The report-support-issue function, critical for the support system, is also located here, potentially nested within supabase/supabase/functions/ for specific deployment setups, and includes robust rate-limiting.)
-
-supabase/migrations/: Contains SQL scripts that define and evolve the database schema. These scripts are essential for version controlling the database structure and ensuring consistency across environments. Examples include:
-
-create_gallery_images_table.sql
-
-add_likes_tables.sql
-
-create_profiles_and_trigger.sql
-
-add_generation_limits_to_profiles.sql
-
-create_webhook_rate_limits.sql
-
-supabase/config.toml: Configuration file for the Supabase CLI, defining local development settings and linking to your remote Supabase project.
-
-supabase/SECURITY_GUIDANCE.md: Provides important security best practices and considerations for the Supabase backend.
-
-🚀 Getting Started
 Follow these steps to set up and run Visionspark locally.
 
-Prerequisites
-Before you begin, ensure you have the following installed:
+### Prerequisites
 
-Flutter SDK: The latest stable release is recommended.
+-   **Flutter SDK**: Latest stable release recommended.
+-   **Dart SDK**: Bundled with Flutter.
+-   **Supabase CLI**: For managing the backend.
+-   **Node.js & npm**: For Supabase Edge Functions development.
+-   An active **Supabase account**.
 
-Dart SDK: Comes bundled with Flutter.
+### Setup Guide
 
-Supabase CLI: Essential for managing your Supabase backend.
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/RustyCMD/Visionspark.git
+    cd Visionspark
+    ```
 
-Node.js & npm: Often required for Supabase Edge Functions development and tooling.
+2.  **Set up Your Supabase Project**:
+    -   Create a new project on [Supabase.com](https://supabase.com).
+    -   Retrieve your **Project URL** and **Anon Key**.
+    -   Configure these **Environment Variables** in your Supabase project dashboard (Project Settings > Edge Functions):
+        -   `SUPABASE_SERVICE_ROLE_KEY`: Found in your project's API Settings.
+        -   `OPENAI_API_KEY`: Your OpenAI API key.
+        -   `DISCORD_WEBHOOK`: Your Discord webhook URL for support messages.
 
-An active account on Supabase to host your backend services.
+3.  **Configure the Flutter Application**:
+    -   Navigate to the Flutter app directory:
+        ```bash
+        cd visionspark
+        ```
+    -   Create a `.env` file (`visionspark/.env`) and add your credentials:
+        ```
+        SUPABASE_URL=YOUR_SUPABASE_PROJECT_URL
+        SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+        ```
+    -   **Security Note**: Ensure `.env` is listed in your root `.gitignore`.
 
-Setup Guide
-Clone the Repository:
+4.  **Install Dependencies**:
+    ```bash
+    flutter pub get
+    ```
 
-git clone https://github.com/RustyCMD/Visionspark.git
-cd Visionspark
+5.  **Set up Local Supabase Environment**:
+    -   Navigate to the Supabase directory:
+        ```bash
+        cd ../supabase
+        ```
+    -   Log in and link your project:
+        ```bash
+        supabase login
+        supabase link --project-ref YOUR_PROJECT_REF
+        ```
+    -   To run services locally:
+        ```bash
+        supabase start
+        ```
 
-Set up Your Supabase Project:
+6.  **Deploy Supabase Migrations & Functions**:
+    -   Push database migrations:
+        ```bash
+        supabase db push
+        ```
+    -   Deploy Edge Functions:
+        ```bash
+        # Deploy specific functions
+        supabase functions deploy --project-ref YOUR_PROJECT_REF [FUNCTION_NAME]
 
-Create a new project on Supabase.com.
+        # Or deploy all functions
+        supabase functions deploy --project-ref YOUR_PROJECT_REF --all
+        ```
 
-Retrieve your Project URL and Anon Key from your Supabase project settings.
+7.  **Run the Flutter App**:
+    -   Return to the Flutter app directory:
+        ```bash
+        cd ../visionspark
+        ```
+    -   Launch the app:
+        ```bash
+        flutter run
+        ```
 
-Configure the following Environment Variables within your Supabase project dashboard (under Project Settings > Edge Functions > Environment Variables):
+---
 
-SUPABASE_SERVICE_ROLE_KEY: Found in your project's API Settings.
+## 🛠️ Supabase Backend Deep Dive
 
-OPENAI_API_KEY: Your personal OpenAI API key for image generation.
+The Supabase backend powers Visionspark's data, authentication, and serverless logic.
 
-DISCORD_WEBHOOK: The URL for your Discord webhook to receive support messages.
+-   **Edge Functions**: Low-latency TypeScript functions handling critical operations. Ensure all required environment variables (`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK`) are correctly set.
+-   **Database Migrations**: Version-controlled SQL scripts in `supabase/migrations/` define the database schema, including tables, triggers, and functions to maintain data integrity.
 
-Configure the Flutter Application:
+---
 
-Navigate into the Flutter app directory:
+## 🤝 Contributing
 
-cd visionspark
-
-Create a new file named .env in this directory (visionspark/.env).
-
-Add your Supabase project credentials to this .env file:
-
-SUPABASE_URL=YOUR_SUPABASE_PROJECT_URL
-SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-
-Crucial Security Note: Verify that .env is explicitly listed in your root .gitignore file to prevent accidental exposure of sensitive keys.
-
-Install Flutter Dependencies:
-
-flutter pub get
-
-Set up Local Supabase Environment (Optional for Development):
-
-Change directory to the Supabase backend:
-
-cd ../supabase
-
-Log in to Supabase CLI and link your local project to your hosted one (replace YOUR_PROJECT_REF with your actual Supabase project reference):
-
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-
-To run the Supabase services locally for testing (e.g., functions or migrations):
-
-supabase start
-
-Deploy Supabase Migrations & Functions:
-
-Apply the database schema migrations to your hosted Supabase project:
-
-supabase db push
-
-Deploy your Supabase Edge Functions. You can deploy them individually or all at once (replace YOUR_PROJECT_REF):
-
-# To deploy specific functions:
-supabase functions deploy --project-ref YOUR_PROJECT_REF delete-account get-gallery-feed generate-image-proxy get-generation-status get-random-prompt validate-purchase-and-update-profile report-support-issue
-
-# Or to deploy all functions (ensure they are correctly configured in supabase/config.toml):
-# supabase functions deploy --project-ref YOUR_PROJECT_REF --all
-
-Ensure all functions listed in the supabase/functions/ and nested directories are deployed.
-
-Run the Flutter App:
-
-Return to the Flutter app directory:
-
-cd ../visionspark
-
-Launch the application on your connected device or simulator:
-
-flutter run
-
-🛠️ Supabase Backend Deep Dive
-The Supabase backend is the powerhouse of Visionspark, managing data persistence, user authentication, and serverless logic.
-
-Edge Functions: These are TypeScript functions deployed to Supabase's global edge network, providing low-latency responses. They are responsible for critical operations like AI image generation requests, handling user account deletions, managing gallery feeds, and processing support submissions with built-in rate limiting. Ensure all required environment variables (SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY, DISCORD_WEBHOOK) are correctly set in your Supabase project settings.
-
-Database Migrations: The supabase/migrations/ directory contains version-controlled SQL scripts. These scripts define the database schema, including tables for gallery images, user profiles, likes, and rate limits, along with triggers and functions to maintain data integrity and automate processes (e.g., handle_new_user trigger). Applying these migrations via supabase db push ensures your database structure is always up-to-date.
-
-For more detailed guidance on Supabase functions and best practices, refer to the documentation within the .cursor/rules/ directory.
-
-🤝 Contributing
 We warmly welcome contributions to Visionspark! If you're interested in improving the app or adding new features, please follow these guidelines:
 
-Fork the repository.
+1.  **Fork** the repository.
+2.  Create a new feature branch: `git checkout -b feature/your-awesome-feature`.
+3.  Implement your changes and ensure tests pass.
+4.  Commit your changes with a clear message: `git commit -m 'Feat: Add a new awesome feature'`.
+5.  Push to your branch and open a **Pull Request**.
 
-Create a new feature branch: git checkout -b feature/your-awesome-feature.
+---
 
-Implement your changes and ensure tests pass.
+## 📄 License
 
-Commit your changes with a clear and descriptive message: git commit -m 'Feat: Add a new awesome feature'.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-Push your branch to your forked repository: git push origin feature/your-awesome-feature.
-
-Open a Pull Request to the main branch of the original repository.
-
-📄 License
-This project is open-sourced under the MIT License. For full details, please refer to the LICENSE file in the root of the repository.
-
-This README is regularly updated. For specific coding guidelines, detailed project structure, and security considerations, please consult the documentation within the .cursor/rules/ and supabase/ directories.
+---
+<div align="center">
+  <p>Made with ❤️ and a bit of ✨</p>
+</div>
