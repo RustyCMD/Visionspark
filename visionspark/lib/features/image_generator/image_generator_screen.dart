@@ -325,49 +325,57 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
   @override
   Widget build(BuildContext context) {
     int remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
+    final colorScheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildGenerationStatus(context, remaining, _generationLimit),
-              const SizedBox(height: 24),
-              _buildPromptInput(context),
-              const SizedBox(height: 16),
-              _buildNegativePromptInput(context), // New Negative Prompt Field
-              const SizedBox(height: 16),
-              Row( // Row for Aspect Ratio and Style selectors
-                children: [
-                  Expanded(child: _buildAspectRatioSelector(context)),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildStyleSelector(context)), // New Style Selector
-                ],
-              ),
-              const SizedBox(height: 24), // Increased spacing before result
-              _buildResultSection(context),
-              const SizedBox(height: 24), // Increased spacing
-              _buildLastPromptDisplay(context),
-              const SizedBox(height: 24), // Increased spacing
-              ElevatedButton(
-                onPressed: (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving ? null : _generateImage,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                child: const Text('Generate'),
-              ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.surface,
+              colorScheme.surfaceContainer.withOpacity(0.3),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: size.height * 0.02),
+                _buildModernGenerationStatus(context, remaining, _generationLimit),
+                SizedBox(height: size.height * 0.04),
+                _buildModernResultSection(context),
+                SizedBox(height: size.height * 0.04),
+                _buildModernPromptInput(context),
+                const SizedBox(height: 20),
+                _buildNegativePromptInput(context),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(child: _buildAspectRatioSelector(context)),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildStyleSelector(context)),
+                  ],
+                ),
+                SizedBox(height: size.height * 0.04),
+                _buildLastPromptDisplay(context),
+                SizedBox(height: size.height * 0.04),
+                _buildModernGenerateButton(context, remaining),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildGenerationStatus(BuildContext context, int remaining, int limit) {
+  Widget _buildModernGenerationStatus(BuildContext context, int remaining, int limit) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
     
@@ -377,35 +385,543 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
     double progress = limit <= 0 ? 1.0 : remaining / limit.clamp(0.0, 1.0);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow, // M3 standard surface color
-        borderRadius: BorderRadius.circular(16),
+        color: colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Generations Remaining', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-              Text(
-                limit == -1 ? 'Unlimited' : '$remaining / $limit',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Generations',
+                    style: textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.7),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    limit == -1 ? 'Unlimited' : '$remaining / $limit',
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 16,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Available',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 8, // Slightly thicker for better visibility
-            borderRadius: BorderRadius.circular(4),
-            backgroundColor: colorScheme.surfaceVariant, // Themed background for progress bar
-            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary), // Explicitly use primary
+          const SizedBox(height: 20),
+          Container(
+            height: 8,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
-          if (limit != -1)
-            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
+          if (limit != -1) ...[
+            const SizedBox(height: 12),
+            Text(
+              _timeUntilReset,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withOpacity(0.6),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildModernResultSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    double cardAspectRatio = 1.0;
+    if (_selectedAspectRatioValue == "1792x1024") {
+      cardAspectRatio = 1792 / 1024;
+    } else if (_selectedAspectRatioValue == "1024x1792") {
+      cardAspectRatio = 1024 / 1792;
+    }
+
+    return AspectRatio(
+      aspectRatio: cardAspectRatio,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.shadow.withOpacity(0.15),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_generatedImageUrl == null && !_isLoading)
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        colorScheme.surfaceContainer.withOpacity(0.5),
+                        colorScheme.surfaceContainer.withOpacity(0.2),
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainer.withOpacity(0.8),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.image_search_rounded,
+                          size: 40,
+                          color: colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Your AI creation will appear here",
+                        style: textTheme.titleMedium?.copyWith(
+                          color: colorScheme.onSurface.withOpacity(0.7),
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              if (_generatedImageUrl != null)
+                Image.network(
+                  _generatedImageUrl!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                        strokeWidth: 3,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) => Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.broken_image_rounded,
+                          size: 48,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Failed to load image',
+                          style: textTheme.titleMedium?.copyWith(
+                            color: colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (_isLoading)
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        colorScheme.scrim.withOpacity(0.8),
+                        colorScheme.scrim.withOpacity(0.6),
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: CircularProgressIndicator(
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                          strokeWidth: 3,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        "Creating your masterpiece...",
+                        style: textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "This may take a few moments",
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_generatedImageUrl != null && !_isLoading)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          colorScheme.scrim.withOpacity(0.8),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildModernActionButton(
+                            context, 'Save', Icons.download_rounded, _isSavingImage, _saveImage, colorScheme,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildModernActionButton(
+                            context, 'Share', Icons.share_rounded, _isSharingToGallery, _shareToGallery, colorScheme,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernPromptInput(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _promptController,
+        minLines: 3,
+        maxLines: 5,
+        style: TextStyle(
+          fontSize: 16,
+          color: colorScheme.onSurface,
+          height: 1.4,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Describe your vision... Be creative and detailed!',
+          hintStyle: TextStyle(
+            color: colorScheme.onSurface.withOpacity(0.5),
+          ),
+          labelText: 'Prompt',
+          labelStyle: TextStyle(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+          contentPadding: const EdgeInsets.all(20),
+          border: InputBorder.none,
+          suffixIcon: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildPromptActionButton(
+                  icon: _isImproving ? null : Icons.auto_awesome_rounded,
+                  onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
+                  isLoading: _isImproving,
+                  tooltip: 'Improve Prompt',
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(width: 8),
+                _buildPromptActionButton(
+                  icon: _isFetchingRandomPrompt ? null : Icons.casino_rounded,
+                  onPressed: _isImproving ? null : _fetchRandomPrompt,
+                  isLoading: _isFetchingRandomPrompt,
+                  tooltip: 'Surprise Me!',
+                  colorScheme: colorScheme,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPromptActionButton({
+    IconData? icon,
+    required VoidCallback? onPressed,
+    bool isLoading = false,
+    required String tooltip,
+    required ColorScheme colorScheme,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainer.withOpacity(0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(12),
+            child: Center(
+              child: isLoading
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colorScheme.primary,
+                    ),
+                  )
+                : Icon(
+                    icon,
+                    size: 20,
+                    color: colorScheme.onSurface,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernGenerateButton(BuildContext context, int remaining) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDisabled = (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving;
+    
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        gradient: !isDisabled
+          ? LinearGradient(
+              colors: [colorScheme.primary, colorScheme.secondary],
+            )
+          : null,
+        color: isDisabled ? colorScheme.surfaceContainer : null,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDisabled 
+            ? colorScheme.outline.withOpacity(0.2)
+            : Colors.transparent,
+          width: 1,
+        ),
+        boxShadow: !isDisabled ? [
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ] : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isDisabled ? null : _generateImage,
+          borderRadius: BorderRadius.circular(20),
+          child: Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isLoading)
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isDisabled ? colorScheme.onSurface.withOpacity(0.4) : colorScheme.onPrimary,
+                      ),
+                    ),
+                  )
+                else ...[
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 24,
+                    color: isDisabled ? colorScheme.onSurface.withOpacity(0.4) : colorScheme.onPrimary,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Generate',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDisabled ? colorScheme.onSurface.withOpacity(0.4) : colorScheme.onPrimary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildModernActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback onPressed, ColorScheme colorScheme) {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isLoading ? null : onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isLoading)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                    ),
+                  )
+                else ...[
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -524,158 +1040,6 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         // prefixIcon: Icon(Icons.style_outlined, color: colorScheme.onSurfaceVariant),
       ),
       dropdownColor: colorScheme.surfaceContainerHigh, // Background color of the dropdown menu
-    );
-  }
-
-  Widget _buildPromptInput(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    // Uses global InputDecorationTheme, only specific overrides here
-    return TextField(
-      controller: _promptController,
-      minLines: 3,
-      maxLines: 5,
-      decoration: InputDecoration(
-        hintText: 'Describe the image you want to create...',
-        labelText: 'Prompt', // Added label
-        // fillColor is from global theme
-        // border is from global theme
-        // enabledBorder is from global theme
-        // focusedBorder is from global theme
-        suffixIcon: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: _isImproving
-                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
-                  : Icon(Icons.auto_awesome, color: colorScheme.onSurfaceVariant),
-              tooltip: 'Improve Prompt',
-              onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
-            ),
-            IconButton(
-              icon: _isFetchingRandomPrompt
-                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
-                  : Icon(Icons.casino, color: colorScheme.onSurfaceVariant),
-              tooltip: 'Surprise Me!',
-              onPressed: _isImproving ? null : _fetchRandomPrompt,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultSection(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    double cardAspectRatio = 1.0;
-    if (_selectedAspectRatioValue == "1792x1024") {
-      cardAspectRatio = 1792 / 1024;
-    } else if (_selectedAspectRatioValue == "1024x1792") {
-      cardAspectRatio = 1024 / 1792;
-    }
-
-    return AspectRatio(
-      aspectRatio: cardAspectRatio,
-      child: Card(
-        elevation: 2, // Add a bit of elevation
-        color: colorScheme.surfaceContainerLowest, // Use a very subtle background for the card itself
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_generatedImageUrl == null && !_isLoading)
-              Container(
-                color: colorScheme.surfaceContainerLow, // A bit darker than card for placeholder bg
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.image_search, size: 64, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
-                    const SizedBox(height: 16),
-                    Text("Your image will appear here", style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
-                  ],
-                ),
-              ),
-            if (_generatedImageUrl != null)
-              Image.network(
-                _generatedImageUrl!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)));
-                },
-                errorBuilder: (context, error, stackTrace) => Center(child: Icon(Icons.broken_image, size: 48, color: colorScheme.error)),
-              ),
-            if (_isLoading)
-              Container(
-                color: colorScheme.scrim.withOpacity(0.6), // Use scrim for overlays
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)), // White indicator on dark scrim
-                    const SizedBox(height: 16),
-                    Text("Generating...", style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            if (_generatedImageUrl != null && !_isLoading)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Adjusted padding
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        colorScheme.scrim.withOpacity(0.7), // Use scrim
-                        colorScheme.scrim.withOpacity(0.0), // Fade to transparent
-                      ],
-                      stops: const [0.0, 1.0] // Ensure full gradient effect
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildActionButton(
-                          context, 'Save', Icons.save_alt, _isSavingImage, _saveImage, colorScheme),
-                      _buildActionButton(
-                          context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery, colorScheme),
-                    ],
-                  ),
-                ),
-              )
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback onPressed, ColorScheme colorScheme) {
-    // Action buttons on a scrim background, so light foreground color is appropriate.
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FloatingActionButton.small(
-          onPressed: isLoading ? null : onPressed,
-          heroTag: label, // Ensure heroTags are unique if multiple FABs are on screen (not the case here per button)
-          backgroundColor: colorScheme.surface.withOpacity(0.85), // Semi-transparent surface
-          foregroundColor: colorScheme.onSurface, // Text/icon color on that surface
-          elevation: 2, // Subtle elevation
-          child: isLoading
-            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)))
-            : Icon(icon, size: 22),
-        ),
-        const SizedBox(height: 6), // Slightly more space
-        Text(label, style: textTheme.labelSmall?.copyWith(color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500)), // White text on scrim
-      ],
     );
   }
 }

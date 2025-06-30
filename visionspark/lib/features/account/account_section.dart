@@ -14,7 +14,7 @@ class AccountSection extends StatefulWidget {
   State<AccountSection> createState() => _AccountSectionState();
 }
 
-class _AccountSectionState extends State<AccountSection> {
+class _AccountSectionState extends State<AccountSection> with TickerProviderStateMixin {
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
   String? _profileImageUrl;
@@ -23,16 +23,27 @@ class _AccountSectionState extends State<AccountSection> {
   final TextEditingController _usernameController = TextEditingController();
   bool _isSavingUsername = false;
   bool _isDeleting = false;
+  late AnimationController _profileAnimationController;
+  late Animation<double> _profileScaleAnimation;
 
   @override
   void initState() {
     super.initState();
+    _profileAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _profileScaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _profileAnimationController, curve: Curves.elasticOut),
+    );
     _loadProfileData();
+    _profileAnimationController.forward();
   }
   
   @override
   void dispose() {
     _usernameController.dispose();
+    _profileAnimationController.dispose();
     super.dispose();
   }
 
@@ -68,21 +79,19 @@ class _AccountSectionState extends State<AccountSection> {
   Future<void> _loadProfileImage() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-    // Check common image extensions
     for (final ext in ['png', 'jpg']) {
       final storagePath = '${user.id}/profile.$ext';
       try {
         final urlResponse = await Supabase.instance.client.storage
             .from('profilepictures')
-            .createSignedUrl(storagePath, 60 * 60); // 1 hour validity
+            .createSignedUrl(storagePath, 60 * 60);
         if (mounted) {
           setState(() {
             _profileImageUrl = urlResponse;
           });
         }
-        return; // Exit after finding the first valid image
+        return;
       } catch (_) {
-        // Silently continue to the next extension if image is not found
       }
     }
   }
@@ -102,7 +111,6 @@ class _AccountSectionState extends State<AccountSection> {
           .from('profilepictures')
           .uploadBinary(storagePath, bytes, fileOptions: const FileOptions(upsert: true));
       
-      // After upload, reload the image to get the new signed URL
       await _loadProfileImage();
 
     } catch (e) {
@@ -122,11 +130,10 @@ class _AccountSectionState extends State<AccountSection> {
       return;
     }
     if (newUsername == _username) {
-      Navigator.of(dialogContext).pop(); // Close dialog if no change
+      Navigator.of(dialogContext).pop();
       return;
     }
 
-    // This setState call needs to be managed carefully with a StatefulBuilder in the dialog
     (dialogContext as Element).markNeedsBuild();
     setState(() => _isSavingUsername = true);
 
@@ -139,7 +146,7 @@ class _AccountSectionState extends State<AccountSection> {
           _username = newUsername;
         });
         showSuccessSnackbar(context, 'Username updated successfully.');
-        Navigator.of(dialogContext).pop(); // Close dialog on success
+        Navigator.of(dialogContext).pop();
       }
     } on PostgrestException catch (e) {
       if(mounted) showErrorSnackbar(context, 'Error: ${e.message}');
@@ -154,7 +161,6 @@ class _AccountSectionState extends State<AccountSection> {
     try {
       await Supabase.instance.client.auth.signOut();
       await GoogleSignIn().signOut();
-      // AuthGate will handle navigation
     } on AuthException catch (e) {
       if(mounted) showErrorSnackbar(context, e.message);
     } catch (e) {
@@ -178,7 +184,6 @@ class _AccountSectionState extends State<AccountSection> {
 
       if (response.statusCode == 200) {
         if(mounted) await Supabase.instance.client.auth.signOut();
-        // AuthGate will handle navigation
       } else {
         if(mounted) showErrorSnackbar(context, 'Failed to delete account: ${response.body}');
       }
@@ -189,30 +194,44 @@ class _AccountSectionState extends State<AccountSection> {
     }
   }
 
-  // --- UI Builder Methods ---
-
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.of(context).size;
+
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
-          child: _isDeleting ? const Center(child: CircularProgressIndicator()) : Column(
-            children: [
-              _buildProfileHeader(),
-              const SizedBox(height: 32),
-              _buildAccountSettingsCard(),
-              const SizedBox(height: 24),
-              _buildDangerZoneCard(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.surface,
+              colorScheme.surfaceContainer.withOpacity(0.3),
             ],
           ),
+        ),
+        child: SafeArea(
+          child: _isDeleting 
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    SizedBox(height: size.height * 0.03),
+                    _buildModernProfileHeader(colorScheme, size),
+                    SizedBox(height: size.height * 0.05),
+                    _buildSettingsGrid(colorScheme),
+                    SizedBox(height: size.height * 0.03),
+                  ],
+                ),
+              ),
         ),
       ),
     );
   }
 
-  Widget _buildProfileHeader() {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildModernProfileHeader(ColorScheme colorScheme, Size size) {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return const SizedBox.shrink();
 
@@ -230,155 +249,427 @@ class _AccountSectionState extends State<AccountSection> {
 
     final initials = getInitials(_username, user.email);
 
-    return Column(
-      children: [
-        Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            CircleAvatar(
-              radius: 52,
-              backgroundColor: colorScheme.primary.withOpacity(0.2),
-              child: _isUploading
-                  ? CircularProgressIndicator(color: colorScheme.primary)
-                  : _profileImageUrl != null
-                      ? CircleAvatar(radius: 50, backgroundImage: NetworkImage(_profileImageUrl!))
-                      : CircleAvatar(
-                          radius: 50,
-                          backgroundColor: colorScheme.primary,
-                          child: Text(initials, style: TextStyle(fontSize: 40, color: colorScheme.onPrimary, fontWeight: FontWeight.bold)),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          ScaleTransition(
+            scale: _profileScaleAnimation,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        colorScheme.primary.withOpacity(0.1),
+                        colorScheme.secondary.withOpacity(0.1),
+                      ],
+                    ),
+                  ),
+                ),
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.outline.withOpacity(0.2),
+                          width: 2,
                         ),
+                      ),
+                      child: _isUploading
+                          ? CircularProgressIndicator(color: colorScheme.primary)
+                          : _profileImageUrl != null
+                              ? ClipOval(
+                                  child: Image.network(
+                                    _profileImageUrl!,
+                                    width: 110,
+                                    height: 110,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : Container(
+                                  width: 110,
+                                  height: 110,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        colorScheme.primary,
+                                        colorScheme.secondary,
+                                      ],
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      initials,
+                                      style: TextStyle(
+                                        fontSize: 36,
+                                        color: colorScheme.onPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                    ),
+                    GestureDetector(
+                      onTap: _isUploading ? null : _pickAndUploadProfilePicture,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.outline.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.shadow.withOpacity(0.15),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.camera_alt_rounded,
+                          size: 18,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            InkWell(
-              onTap: _isUploading ? null : _pickAndUploadProfilePicture,
-              customBorder: const CircleBorder(),
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: colorScheme.surface,
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: colorScheme.secondary,
-                  child: Icon(Icons.camera_alt, size: 18, color: colorScheme.onSecondary),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _username ?? user.email ?? 'VisionSpark User',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+              letterSpacing: -0.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (_username != null && user.email != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              user.email!,
+              style: TextStyle(
+                fontSize: 16,
+                color: colorScheme.onSurface.withOpacity(0.7),
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+          if (_joinDate != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Member since ${_formatJoinDate(_joinDate!)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colorScheme.onSurface.withOpacity(0.6),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          _username ?? user.email ?? 'Visionspark User',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        if (_username != null && user.email != null)
-          Text(user.email!, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface.withOpacity(0.7))),
-        if (_joinDate != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              'Joined ${_formatJoinDate(_joinDate!)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withOpacity(0.5)),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildAccountSettingsCard() {
-    return _buildSettingsCard(
-      title: 'Account Settings',
-      children: [
-        _buildSettingsTile(
-          icon: Icons.edit_outlined,
-          title: 'Edit Username',
-          subtitle: _username ?? 'Set your display name',
-          onTap: () => _showEditUsernameDialog(context),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDangerZoneCard() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return _buildSettingsCard(
-      title: 'Danger Zone',
-      cardColor: colorScheme.errorContainer.withOpacity(0.4),
-      children: [
-        _buildSettingsTile(
-          icon: Icons.logout,
-          title: 'Logout',
-          onTap: _signOut,
-        ),
-        const Divider(),
-        _buildSettingsTile(
-          icon: Icons.delete_forever_outlined,
-          title: 'Delete Account',
-          textColor: colorScheme.error,
-          onTap: _showDeleteAccountConfirmation,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSettingsCard({required String title, required List<Widget> children, Color? cardColor}) {
-    return Card(
-      color: cardColor ?? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          ),
-          ...children,
         ],
       ),
     );
   }
 
-  Widget _buildSettingsTile({required IconData icon, required String title, String? subtitle, required VoidCallback onTap, Color? textColor}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return ListTile(
-      leading: Icon(icon, color: textColor ?? colorScheme.onSurfaceVariant),
-      title: Text(title, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500, color: textColor ?? colorScheme.onSurface)),
-      subtitle: subtitle != null ? Text(subtitle, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.7))) : null,
-      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant.withOpacity(0.7)),
-      onTap: onTap,
+  Widget _buildSettingsGrid(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          _buildModernSettingsCard(
+            colorScheme,
+            title: 'Profile Settings',
+            items: [
+              _SettingsItem(
+                icon: Icons.edit_rounded,
+                title: 'Edit Username',
+                subtitle: _username ?? 'Set your display name',
+                onTap: () => _showModernEditDialog(context),
+                trailing: Icons.arrow_forward_ios_rounded,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildModernSettingsCard(
+            colorScheme,
+            title: 'Account Actions',
+            isWarning: true,
+            items: [
+              _SettingsItem(
+                icon: Icons.logout_rounded,
+                title: 'Sign Out',
+                subtitle: 'Sign out of your account',
+                onTap: _signOut,
+                trailing: Icons.arrow_forward_ios_rounded,
+              ),
+              _SettingsItem(
+                icon: Icons.delete_forever_rounded,
+                title: 'Delete Account',
+                subtitle: 'Permanently delete your account',
+                onTap: _showDeleteAccountConfirmation,
+                trailing: Icons.arrow_forward_ios_rounded,
+                isDestructive: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernSettingsCard(
+    ColorScheme colorScheme, {
+    required String title,
+    required List<_SettingsItem> items,
+    bool isWarning = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isWarning 
+          ? colorScheme.errorContainer.withOpacity(0.1)
+          : colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isWarning 
+            ? colorScheme.error.withOpacity(0.2)
+            : colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isWarning 
+                  ? colorScheme.error
+                  : colorScheme.onSurface,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+          ...items.asMap().entries.map((entry) {
+            final index = entry.key;
+            final item = entry.value;
+            final isLast = index == items.length - 1;
+            
+            return Column(
+              children: [
+                _buildModernSettingsTile(colorScheme, item),
+                if (!isLast)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    height: 1,
+                    color: colorScheme.outline.withOpacity(0.1),
+                  ),
+              ],
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernSettingsTile(ColorScheme colorScheme, _SettingsItem item) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.circular(16),
+        splashColor: item.isDestructive 
+          ? colorScheme.error.withOpacity(0.1)
+          : colorScheme.primary.withOpacity(0.1),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: item.isDestructive
+                    ? colorScheme.error.withOpacity(0.1)
+                    : colorScheme.surfaceContainer.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  item.icon,
+                  color: item.isDestructive
+                    ? colorScheme.error
+                    : colorScheme.onSurface,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: item.isDestructive
+                          ? colorScheme.error
+                          : colorScheme.onSurface,
+                      ),
+                    ),
+                    if (item.subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.subtitle!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: colorScheme.onSurface.withOpacity(0.6),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                item.trailing,
+                size: 18,
+                color: colorScheme.onSurface.withOpacity(0.4),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
   
-  void _showEditUsernameDialog(BuildContext context) {
-    showDialog(
+  void _showModernEditDialog(BuildContext context) {
+    showGeneralDialog(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Edit Username'),
-              content: TextField(
-                controller: _usernameController,
-                autofocus: true,
-                decoration: const InputDecoration(hintText: 'Enter new username'),
+      barrierDismissible: true,
+      barrierLabel: 'Edit Username',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+          ),
+          child: AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Edit Username',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
+            ),
+            content: TextField(
+              controller: _usernameController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Enter new username',
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.5),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
                 ),
-                ElevatedButton(
-                  onPressed: _isSavingUsername ? null : () async {
-                    // Manually trigger a rebuild of the dialog's state
-                    setDialogState(() { _isSavingUsername = true; });
-                    await _saveUsername(dialogContext);
-                    if(mounted) setDialogState(() { _isSavingUsername = false; });
-                  },
-                  child: _isSavingUsername ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _isSavingUsername ? null : () => _saveUsername(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: _isSavingUsername
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -387,15 +678,56 @@ class _AccountSectionState extends State<AccountSection> {
   void _showDeleteAccountConfirmation() async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierColor: Colors.black54,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text('Are you sure you want to delete your account? This action is permanent and cannot be undone.'),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_rounded,
+              color: Theme.of(context).colorScheme.error,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Delete Account',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete your account? This action is permanent and cannot be undone.',
+          style: TextStyle(
+            fontSize: 16,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+            height: 1.4,
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error, foregroundColor: Theme.of(context).colorScheme.onError),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -409,4 +741,22 @@ class _AccountSectionState extends State<AccountSection> {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
+}
+
+class _SettingsItem {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+  final IconData trailing;
+  final bool isDestructive;
+
+  const _SettingsItem({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+    required this.trailing,
+    this.isDestructive = false,
+  });
 }

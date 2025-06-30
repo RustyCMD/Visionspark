@@ -17,7 +17,16 @@ class GalleryImageDetailDialog extends StatefulWidget {
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       barrierColor: Colors.black87,
-      transitionDuration: const Duration(milliseconds: 300),
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        );
+      },
       pageBuilder: (context, animation, secondaryAnimation) {
         return GalleryImageDetailDialog(galleryItem: galleryItem);
       },
@@ -28,11 +37,29 @@ class GalleryImageDetailDialog extends StatefulWidget {
   State<GalleryImageDetailDialog> createState() => _GalleryImageDetailDialogState();
 }
 
-class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
+class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> with TickerProviderStateMixin {
   bool _isSaving = false;
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
+  late AnimationController _overlayController;
+  late Animation<double> _overlayOpacity;
 
-  // --- Permission Handling Logic (Unchanged but important) ---
+  @override
+  void initState() {
+    super.initState();
+    _overlayController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _overlayOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(_overlayController);
+    _overlayController.forward();
+  }
+
+  @override
+  void dispose() {
+    _overlayController.dispose();
+    super.dispose();
+  }
+
   Future<void> _saveImageFromUrl() async {
     if (!mounted || _isSaving) return;
     setState(() => _isSaving = true);
@@ -54,7 +81,10 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
         await _channel.invokeMethod('saveImageToGallery', {
           'imageBytes': response.bodyBytes, 'filename': filename, 'albumName': 'Visionspark'
         });
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Image saved to Gallery: $filename')));
+        scaffoldMessenger.showSnackBar(SnackBar(
+          content: Text('Image saved to Gallery: $filename'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ));
       } else {
         scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Storage permission denied.')));
       }
@@ -68,62 +98,168 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
   void _copyPrompt() {
     if (widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: widget.galleryItem.prompt!));
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Prompt copied to clipboard!')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Prompt copied to clipboard!'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+      ));
     }
   }
 
   void _shareImage() {
-    // In a real app, you would use the `share_plus` package here.
-    // For this example, we'll just show a snackbar.
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sharing image URL: ${widget.galleryItem.imageUrl}')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Sharing image URL: ${widget.galleryItem.imageUrl}'),
+      backgroundColor: Theme.of(context).colorScheme.primary,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.of(context).size;
+    
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
+      insetPadding: const EdgeInsets.all(20.0),
+      child: Container(
+        height: size.height * 0.85,
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.shadow.withOpacity(0.3),
+              blurRadius: 40,
+              offset: const Offset(0, 20),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Header with close button
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: Hero(
-                      tag: widget.galleryItem.id,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: InteractiveViewer(
-                          child: Image.network(
-                            widget.galleryItem.imageUrl,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
-                            errorBuilder: (context, error, stack) => const Center(child: Icon(Icons.broken_image, size: 60)),
+                  Text(
+                    'Image Detail',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainer.withOpacity(0.8),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.outline.withOpacity(0.2),
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: colorScheme.onSurface,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Main image with interactive viewer
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.shadow.withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Hero(
+                    tag: widget.galleryItem.id,
+                    child: InteractiveViewer(
+                      child: Image.network(
+                        widget.galleryItem.imageUrl,
+                        fit: BoxFit.contain,
+                        width: double.infinity,
+                        height: double.infinity,
+                        loadingBuilder: (context, child, progress) => progress == null 
+                          ? child 
+                          : Center(
+                              child: CircularProgressIndicator(
+                                color: colorScheme.primary,
+                                strokeWidth: 3,
+                              ),
+                            ),
+                        errorBuilder: (context, error, stack) => Container(
+                          color: colorScheme.surfaceContainer,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.broken_image_rounded,
+                                  size: 60,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Failed to load image',
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                ),
+              ),
+            ),
+            
+            // Bottom section with prompt and actions
+            Container(
+              margin: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: colorScheme.outline.withOpacity(0.1),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
                   _buildPromptSection(colorScheme),
                   const SizedBox(height: 20),
-                  _buildActionBar(),
+                  _buildActionButtons(colorScheme),
                 ],
               ),
-              IconButton(
-                icon: const CircleAvatar(backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white)),
-                onPressed: () => Navigator.of(context).pop(),
-                tooltip: 'Close',
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -132,59 +268,157 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
     return GestureDetector(
       onTap: _copyPrompt,
       child: Container(
-        padding: const EdgeInsets.all(12),
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(12),
+          color: colorScheme.surface.withOpacity(0.8),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                'Prompt: ${widget.galleryItem.prompt ?? "Not available"}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+            Row(
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Prompt',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  Icons.copy_rounded,
+                  size: 16,
+                  color: colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.galleryItem.prompt ?? "No prompt available",
+              style: TextStyle(
+                fontSize: 15,
+                color: colorScheme.onSurface.withOpacity(0.8),
+                height: 1.4,
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(Icons.copy_all_outlined, color: Colors.white70, size: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionBar() {
+  Widget _buildActionButtons(ColorScheme colorScheme) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildActionButton(
-          onPressed: _isSaving ? null : _saveImageFromUrl,
-          icon: Icons.save_alt_outlined,
-          label: 'Save',
-          child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : null,
+        Expanded(
+          child: _buildModernActionButton(
+            colorScheme: colorScheme,
+            icon: _isSaving ? null : Icons.download_rounded,
+            label: 'Save',
+            onPressed: _isSaving ? null : _saveImageFromUrl,
+            isLoading: _isSaving,
+          ),
         ),
-        _buildActionButton(onPressed: _shareImage, icon: Icons.share_outlined, label: 'Share'),
-        _buildActionButton(onPressed: _copyPrompt, icon: Icons.copy_all_outlined, label: 'Copy Prompt'),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildModernActionButton(
+            colorScheme: colorScheme,
+            icon: Icons.share_rounded,
+            label: 'Share',
+            onPressed: _shareImage,
+            isPrimary: false,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildActionButton({required VoidCallback? onPressed, required IconData icon, required String label, Widget? child}) {
-    return Column(
-      children: [
-        ElevatedButton(
-          onPressed: onPressed,
-          style: ElevatedButton.styleFrom(
-            shape: const CircleBorder(),
-            padding: const EdgeInsets.all(16),
-            backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.2),
-            foregroundColor: Colors.white,
-          ),
-          child: child ?? Icon(icon, size: 24),
+  Widget _buildModernActionButton({
+    required ColorScheme colorScheme,
+    IconData? icon,
+    required String label,
+    required VoidCallback? onPressed,
+    bool isLoading = false,
+    bool isPrimary = true,
+  }) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        gradient: isPrimary
+          ? LinearGradient(
+              colors: [colorScheme.primary, colorScheme.secondary],
+            )
+          : null,
+        color: isPrimary ? null : colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isPrimary 
+            ? Colors.transparent 
+            : colorScheme.outline.withOpacity(0.3),
+          width: 1,
         ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-      ],
+        boxShadow: isPrimary ? [
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ] : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isLoading)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isPrimary ? colorScheme.onPrimary : colorScheme.primary,
+                      ),
+                    ),
+                  )
+                else if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isPrimary ? colorScheme.onPrimary : colorScheme.onSurface,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isPrimary ? colorScheme.onPrimary : colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

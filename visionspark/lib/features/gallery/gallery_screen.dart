@@ -158,165 +158,386 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 0, // Keeps app bar minimal, only showing the TabBar below
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: colorScheme.primary, // Active tab text color
-          unselectedLabelColor: colorScheme.onSurfaceVariant, // Inactive tab text color
-          indicatorColor: colorScheme.primary, // Indicator line color
-          tabs: const [Tab(text: 'All'), Tab(text: 'My Creations')],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.surface,
+              colorScheme.surfaceContainer.withOpacity(0.3),
+            ],
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildGalleryBody(isMyCreations: false),
-          _buildGalleryBody(isMyCreations: true),
-        ],
+        child: Column(
+          children: [
+            // Custom tab bar with modern design
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: colorScheme.outline.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: colorScheme.onPrimary,
+                unselectedLabelColor: colorScheme.onSurface.withOpacity(0.7),
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                ),
+                dividerColor: Colors.transparent,
+                tabs: const [
+                  Tab(text: 'Explore'),
+                  Tab(text: 'My Gallery'),
+                ],
+              ),
+            ),
+            
+            // Tab bar view content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildModernGalleryBody(isMyCreations: false),
+                  _buildModernGalleryBody(isMyCreations: true),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildGalleryBody({required bool isMyCreations}) {
+  Widget _buildModernGalleryBody({required bool isMyCreations}) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    if (_isLoading) return Center(child: CircularProgressIndicator(color: colorScheme.primary));
+    if (_isLoading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              color: colorScheme.primary,
+              strokeWidth: 3,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Loading gallery...',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface.withOpacity(0.7),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
     if (_errorMessage != null) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            _errorMessage!,
-            textAlign: TextAlign.center,
-            style: textTheme.titleMedium?.copyWith(color: colorScheme.error),
+        child: Container(
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: colorScheme.errorContainer.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: colorScheme.error.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 48,
+                color: colorScheme.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Oops! Something went wrong',
+                style: textTheme.titleLarge?.copyWith(
+                  color: colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       );
     }
     
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    final imagesToShow = isMyCreations ? _galleryImages.where((img) => img.userId == currentUserId).toList() : _galleryImages;
+    final imagesToShow = isMyCreations 
+      ? _galleryImages.where((img) => img.userId == currentUserId).toList() 
+      : _galleryImages;
 
     if (imagesToShow.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.photo_library_outlined, size: 64, color: colorScheme.onSurface.withOpacity(0.5)),
-            const SizedBox(height: 16),
-            Text(
-              isMyCreations ? "You haven't created any images yet." : 'The gallery is empty.',
-              style: textTheme.titleLarge?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-          ],
+        child: Container(
+          margin: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isMyCreations ? Icons.add_photo_alternate_rounded : Icons.photo_library_outlined,
+                  size: 60,
+                  color: colorScheme.onSurface.withOpacity(0.4),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                isMyCreations ? "No creations yet" : 'Gallery is empty',
+                style: textTheme.headlineSmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isMyCreations 
+                  ? "Your amazing creations will appear here"
+                  : 'Be the first to share something beautiful',
+                style: textTheme.bodyLarge?.copyWith(
+                  color: colorScheme.onSurface.withOpacity(0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return RefreshIndicator(
-      color: colorScheme.primary, // Color of the refresh indicator
+      color: colorScheme.primary,
+      backgroundColor: colorScheme.surface,
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
       child: GridView.builder(
-        padding: const EdgeInsets.all(12.0), // Slightly reduced padding
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        padding: const EdgeInsets.all(20),
+        physics: const BouncingScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          crossAxisSpacing: 12.0, // Slightly reduced spacing
-          mainAxisSpacing: 12.0,  // Slightly reduced spacing
-          childAspectRatio: 0.70, // Adjusted for potentially better fit with new card style
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 0.75,
         ),
         itemCount: imagesToShow.length,
-        itemBuilder: (context, index) => _buildImageCard(imagesToShow[index]),
+        itemBuilder: (context, index) => _buildModernImageCard(imagesToShow[index]),
       ),
     );
   }
 
-  Widget _buildImageCard(GalleryImage image) {
+  Widget _buildModernImageCard(GalleryImage image) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Card(
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // Slightly smaller radius
-      color: colorScheme.surfaceContainerLow, // Use a themed surface color for cards
-      child: InkWell(
-        onTap: () => GalleryImageDetailDialog.show(context, image),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Hero(
-              tag: image.id,
-              child: AspectRatio(
-                aspectRatio: 1, // Square image preview
-                child: CachedNetworkImage(
-                  imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: colorScheme.surfaceVariant.withOpacity(0.5)),
-                  errorWidget: (context, url, error) => Center(child: Icon(Icons.broken_image, size: 40, color: colorScheme.onSurfaceVariant.withOpacity(0.7))),
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.1),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => GalleryImageDetailDialog.show(context, image),
+          borderRadius: BorderRadius.circular(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image section
+              Expanded(
+                flex: 3,
+                child: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Hero(
+                      tag: image.id,
+                      child: CachedNetworkImage(
+                        imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        placeholder: (context, url) => Container(
+                          color: colorScheme.surfaceContainer.withOpacity(0.5),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: colorScheme.primary,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: colorScheme.surfaceContainer,
+                          child: Center(
+                            child: Icon(
+                              Icons.broken_image_rounded,
+                              size: 40,
+                              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(10.0), // Adjusted padding
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween, // Ensure like button is at bottom
-                  children: [
-                    Text(
-                      image.prompt ?? 'No prompt provided.',
-                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-                      maxLines: 3, // Keep max lines
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // Spacer removed to allow MainAxisAlignment.spaceBetween to work
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: _buildLikeButton(image),
-                    ),
-                  ],
+              
+              // Content section
+              Expanded(
+                flex: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Prompt text
+                      Expanded(
+                        child: Text(
+                          image.prompt ?? 'No prompt provided.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurface.withOpacity(0.8),
+                            height: 1.3,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 12),
+                      
+                      // Like button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          _buildModernLikeButton(image),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildLikeButton(GalleryImage image) {
+  Widget _buildModernLikeButton(GalleryImage image) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final isProcessing = _likeProcessing.contains(image.id);
 
-    return Material(
-      color: Colors.transparent, // Keep transparent for InkWell effect
-      child: InkWell(
-        onTap: isProcessing ? null : () => _toggleLike(image.id),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: image.isLikedByCurrentUser 
+          ? colorScheme.primary.withOpacity(0.1)
+          : colorScheme.surfaceContainer.withOpacity(0.5),
         borderRadius: BorderRadius.circular(20),
-        splashColor: colorScheme.primary.withOpacity(0.12),
-        highlightColor: colorScheme.primary.withOpacity(0.08),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Adjusted padding
+        border: Border.all(
+          color: image.isLikedByCurrentUser 
+            ? colorScheme.primary.withOpacity(0.3)
+            : colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isProcessing ? null : () => _toggleLike(image.id),
+          borderRadius: BorderRadius.circular(20),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              isProcessing
-                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
-                  : Icon(
-                      image.isLikedByCurrentUser ? Icons.favorite : Icons.favorite_border,
-                      color: image.isLikedByCurrentUser ? colorScheme.primary : colorScheme.onSurfaceVariant.withOpacity(0.7),
-                      size: 20,
-                    ),
+              if (isProcessing)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.primary,
+                  ),
+                )
+              else
+                Icon(
+                  image.isLikedByCurrentUser ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: image.isLikedByCurrentUser ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.7),
+                  size: 18,
+                ),
               const SizedBox(width: 6),
               Text(
                 '${image.likeCount}',
                 style: textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.9)
+                  fontWeight: FontWeight.w600,
+                  color: image.isLikedByCurrentUser 
+                    ? colorScheme.primary 
+                    : colorScheme.onSurface.withOpacity(0.8),
                 ),
               ),
             ],
