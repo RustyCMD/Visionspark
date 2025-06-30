@@ -77,29 +77,16 @@ class _AuthScreenState extends State<AuthScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      body: Container(
-        // Adding a subtle gradient background for more visual appeal
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.surface,
-              colorScheme.background,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const Spacer(),
-                // A more engaging visual element than a simple lock icon
+              children: [
                 _buildLogo(colorScheme),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 Text(
                   'Welcome to VisionSpark',
                   textAlign: TextAlign.center,
@@ -116,9 +103,16 @@ class _AuthScreenState extends State<AuthScreen> {
                     color: colorScheme.onSurface.withOpacity(0.7),
                   ),
                 ),
-                const Spacer(flex: 2),
-                _buildGoogleSignInButton(colorScheme, textTheme),
-                const SizedBox(height: 24),
+                const SizedBox(height: 48),
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: _buildGoogleSignInButton(colorScheme, textTheme),
+                  ),
+                ),
+                const SizedBox(height: 32),
                 _buildTermsAndPolicyFooter(context),
               ],
             ),
