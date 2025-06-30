@@ -1,0 +1,10 @@
+cd visionspark
+
+# One-time setup
+make setup
+
+# Run all tests
+make test
+
+# Run with coverage
+make test-coverage
