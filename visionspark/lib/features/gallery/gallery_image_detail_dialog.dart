@@ -199,12 +199,6 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
           decoration: BoxDecoration(
             color: Colors.black.withOpacity(0.3),
             shape: BoxShape.circle,
-            backdropFilter: const ColorFilter.matrix(<double>[
-              0.2126, 0.7152, 0.0722, 0, 0,
-              0.2126, 0.7152, 0.0722, 0, 0,
-              0.2126, 0.7152, 0.0722, 0, 0,
-              0, 0, 0, 1, 0,
-            ]),
           ),
           child: IconButton(
             icon: const Icon(Icons.close_rounded, color: Colors.white),

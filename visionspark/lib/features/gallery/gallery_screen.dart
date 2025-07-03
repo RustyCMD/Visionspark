@@ -379,7 +379,7 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
             crossAxisSpacing: 16,
             children: List.generate(imagesToShow.length, (index) {
               return StaggeredGridTile.fit(
-                crossAxisExtent: MediaQuery.of(context).size.width / 2 - 24,
+                crossAxisCellCount: 1,
                 child: _buildImageCard(imagesToShow[index], index),
               );
             }),

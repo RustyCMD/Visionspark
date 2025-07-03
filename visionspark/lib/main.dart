@@ -162,15 +162,12 @@ class MyApp extends StatelessWidget {
 
 ThemeData _buildTheme(ColorScheme colorScheme) {
   return ThemeData.from(colorScheme: colorScheme, useMaterial3: true).copyWith(
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 2, // Default elevation for cards
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0), // Consistent border radius
       ),
-      // In M3, Card color defaults to surface. If we want a different default:
       // color: colorScheme.surfaceContainerLow, // Example: slightly off-surface
-      // However, explicit coloring on cards per-screen might be better for flexibility.
-      // For now, let's rely on local Card color settings if a deviation from `surface` is needed.
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
