@@ -3,33 +3,27 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Feature Integration Planning Rule
+# Feature Integration Planning
 
-For every new feature or task (especially those in [APP_IMPROVEMENT_TODO.md](mdc:visionspark/APP_IMPROVEMENT_TODO.md)), the model must:
+For new features (especially from [IMAGE_ENHANCEMENT_FEATURE.md](mdc:IMAGE_ENHANCEMENT_FEATURE.md)):
 
-1. **Fully Plan Integration:**
-   - Break down the feature into clear, actionable steps.
-   - Identify which Supabase MCP tools and other resources are required.
-   - Specify any database schema changes, migrations, or edge function deployments needed.
-   - Plan for both backend (Supabase) and frontend (Flutter) integration.
-2. **Error Handling & Validation:**
-   - Anticipate possible failure points (e.g., migration errors, API failures, auth issues).
-   - Include validation, rollback, and recovery strategies.
-   - Ensure robust error messages and user feedback.
-3. **Best Practices:**
-   - Use version control for all migrations and code changes.
-   - Write and run tests for new features (unit, integration, and end-to-end as appropriate).
-   - Document all changes and update relevant rules or documentation files.
-   - Use CI/CD pipelines for automated checks and deployments where possible.
-4. **Minimal Disruption:**
-   - Plan for backward compatibility and minimal downtime.
-   - Use feature flags or staged rollouts for risky changes.
-5. **Review & Iterate:**
-   - After implementation, review the feature for bugs, performance, and user experience.
-   - Iterate and improve based on feedback and monitoring.
+**Planning:**
+- Break into actionable steps
+- Identify required Supabase MCP tools
+- Plan database migrations and edge function deployments
+- Plan both backend (Supabase) and frontend (Flutter) integration
 
-## Additional Guidance
-- Always update [APP_IMPROVEMENT_TODO.md](mdc:visionspark/APP_IMPROVEMENT_TODO.md) and relevant rules when new features are added or completed.
-- Reference this rule when planning or executing any Supabase-related feature or migration.
-- For flawless integration, ensure all steps are followed and documented, and leverage the full set of Supabase MCP tools as needed.
+**Implementation:**
+- Include error handling and validation
+- Use version control for migrations and code changes
+- Test thoroughly (unit, integration, end-to-end)
+- Ensure backward compatibility and minimal downtime
+- Document changes and update relevant rules
+
+**Best Practices:**
+- Use feature flags for risky changes
+- Update [IMAGE_ENHANCEMENT_FEATURE.md](mdc:IMAGE_ENHANCEMENT_FEATURE.md) when features are completed
+- Leverage all available Supabase MCP tools for seamless integration
+
+
 

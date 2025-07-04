@@ -3,9 +3,13 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Shared Directory Guide
+# Shared Directory
 
-The [visionspark/lib/shared/](mdc:visionspark/lib/shared) directory contains shared widgets and utilities used across multiple features.
+The [visionspark/lib/shared/](mdc:visionspark/lib/shared) directory contains shared components:
 
-- [main_scaffold.dart](mdc:visionspark/lib/shared/main_scaffold.dart): Provides the main scaffold widget for the app layout.
+- [main_scaffold.dart](mdc:visionspark/lib/shared/main_scaffold.dart): Main app layout scaffold
+- [connectivity_service.dart](mdc:visionspark/lib/shared/connectivity_service.dart): Network connectivity management
+- [offline_screen.dart](mdc:visionspark/lib/shared/offline_screen.dart): Offline state UI
+- [utils/](mdc:visionspark/lib/shared/utils): Utility functions (snackbar_utils.dart)
+- [notifiers/](mdc:visionspark/lib/shared/notifiers): State management (subscription_status_notifier.dart)
 

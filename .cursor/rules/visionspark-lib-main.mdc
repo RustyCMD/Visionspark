@@ -3,7 +3,7 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Main Entry Point Guide
+# Main Entry Point
 
-The [visionspark/lib/main.dart](mdc:visionspark/lib/main.dart) file is the entry point for the Flutter application. It initializes the app and sets up the root widget.
+[visionspark/lib/main.dart](mdc:visionspark/lib/main.dart): Flutter app entry point that initializes the app and sets up the root widget with Supabase integration.
 

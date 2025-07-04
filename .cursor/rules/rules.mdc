@@ -3,10 +3,10 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Coding and Structure Rules
+# Coding Rules
 
-- Use PowerShell syntax for scripts and commands.
-- Do not chain commands in scripts.
-- Minimize code comments; keep code self-explanatory.
-- Maintain clean, uniform code style throughout the project.
-- Avoid files larger than ~300 lines; split large files into smaller modules when possible (exceptions allowed if necessary).
+- Use clean, self-explanatory code with minimal comments
+- Keep files under ~300 lines when possible
+- Maintain consistent coding style across the project
+- All Flutter commands must be run from the [visionspark/](mdc:visionspark) directory (contains pubspec.yaml)
+- Use Supabase MCP tools for backend/database operations

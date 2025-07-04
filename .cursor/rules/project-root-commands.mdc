@@ -3,20 +3,14 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Project Root Command Rule
+# Project Root Commands
 
-**All commands related to building, running, or managing the Flutter app must be executed from the project root directory:**
+**All Flutter commands must be run from [visionspark/](mdc:visionspark)** (contains pubspec.yaml)
 
-```
-E:/Visionspark/visionspark
-```
-
-This directory contains the `pubspec.yaml` and is the root for all Flutter operations. Running commands from any other directory (such as `E:/Visionspark`) will result in errors like "No pubspec.yaml file found."
-
-**Always `cd` into `visionspark/` before running any Flutter, Dart, or related commands.**
+Running from any other directory will fail with "No pubspec.yaml file found."
 
 Example:
-```
+```bash
 cd visionspark
 flutter build apk --split-per-abi
 ```
