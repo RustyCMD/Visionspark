@@ -48,11 +48,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
   // New state variables for advanced parameters
   late final TextEditingController _negativePromptController;
-  String _selectedStyle = 'None'; // Default style
-  final List<String> _availableStyles = [
-    'None', 'Cartoon', 'Photorealistic', 'Fantasy Art', 'Abstract',
-    'Anime', 'Comic Book', 'Impressionistic', 'Pixel Art', 'Watercolor'
-  ];
+  final Map<String, String> _styleDisplayMap = {
+    'None': 'None',
+    'vivid': 'Vivid',
+    'natural': 'Natural',
+  };
+  final List<String> _availableStyles = ['None', 'vivid', 'natural'];
+  String _selectedStyle = 'None';
 
   static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
@@ -510,10 +512,10 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
 
     return DropdownButtonFormField<String>(
       value: _selectedStyle,
-      items: _availableStyles.map((String style) {
+      items: _availableStyles.map((style) {
         return DropdownMenuItem<String>(
           value: style,
-          child: Text(style, style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface)),
+          child: Text(_styleDisplayMap[style] ?? style),
         );
       }).toList(),
       onChanged: (String? newValue) {

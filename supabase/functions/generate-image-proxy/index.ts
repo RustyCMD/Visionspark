@@ -234,17 +234,16 @@ serve(async (req) => {
 
     // Validate style
     let style: string | undefined = undefined;
-    const allowedStyles = [
-      'Cartoon', 'Photorealistic', 'Fantasy Art', 'Abstract',
-      'Anime', 'Comic Book', 'Impressionistic', 'Pixel Art', 'Watercolor'
-    ];
+    const allowedStyles = ['vivid', 'natural'];
     if (requestedStyle !== undefined && requestedStyle !== null && typeof requestedStyle === 'string' && requestedStyle.toLowerCase() !== 'none') {
       const foundStyle = allowedStyles.find(s => s.toLowerCase() === requestedStyle.toLowerCase());
       if (foundStyle) {
-        style = foundStyle; // Use the exact casing from allowedStyles if matched
+        style = foundStyle;
       } else {
-        console.warn(`User ${user?.id} provided invalid style: '${requestedStyle}'. It will be ignored.`);
-        // No error, just ignore invalid style as per new understanding (client sends 'None' or omits for no style)
+        return new Response(JSON.stringify({ error: `Invalid value: '${requestedStyle}'. Supported values are: ${allowedStyles.map(s => `'${s}'`).join(', ')}.`, details: { message: `Invalid value: '${requestedStyle}'. Supported values are: ${allowedStyles.map(s => `'${s}'`).join(', ')}`, type: 'invalid_request_error', param: 'style', code: 'invalid_value' } }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        });
       }
     }
     // If requestedStyle is 'None', undefined, null, or not in allowedStyles, 'style' remains undefined and won't be sent to OpenAI.
