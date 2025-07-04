@@ -395,7 +395,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     if (_isLoadingStatus) return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
     if (_statusErrorMessage != null) return Center(child: Text(_statusErrorMessage!, style: TextStyle(color: colorScheme.error)));
 
-    double progress = limit <= 0 ? 1.0 : remaining / limit.clamp(0.0, 1.0);
+    double progress = limit <= 0 ? 1.0 : (remaining / limit).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(16),
