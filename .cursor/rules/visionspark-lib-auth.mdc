@@ -3,10 +3,10 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Auth Directory Guide
+# Auth Directory
 
-The [visionspark/lib/auth/](mdc:visionspark/lib/auth) directory contains authentication-related screens and logic.
+Authentication components in [visionspark/lib/auth/](mdc:visionspark/lib/auth):
 
-- [auth_screen.dart](mdc:visionspark/lib/auth/auth_screen.dart): Main authentication screen.
-- [auth_gate.dart](mdc:visionspark/lib/auth/auth_gate.dart): Widget for handling authentication state and routing.
+- [auth_screen.dart](mdc:visionspark/lib/auth/auth_screen.dart): Main authentication screen with login/signup
+- [auth_gate.dart](mdc:visionspark/lib/auth/auth_gate.dart): Authentication state management and routing
 

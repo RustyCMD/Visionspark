@@ -3,9 +3,9 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Test Directory Guide
+# Test Directory
 
-The [visionspark/test/](mdc:visionspark/test) directory contains test files for the Flutter application.
+[visionspark/test/](mdc:visionspark/test): Flutter app test files including widget tests and unit tests.
 
 - [widget_test.dart](mdc:visionspark/test/widget_test.dart): Example widget test for the app.
 

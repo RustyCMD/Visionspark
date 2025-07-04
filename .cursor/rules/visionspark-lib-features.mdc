@@ -3,19 +3,17 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Features Directory Guide
+# Features Directory
 
-The [visionspark/lib/features/](mdc:visionspark/lib/features) directory contains feature modules, each in its own subdirectory:
+The [visionspark/lib/features/](mdc:visionspark/lib/features) directory contains feature modules:
 
-- [account/](mdc:visionspark/lib/features/account): Account management UI and logic.
-  - [account_section.dart](mdc:visionspark/lib/features/account/account_section.dart): Account section widget.
-- [gallery/](mdc:visionspark/lib/features/gallery): Image gallery features.
-  - [gallery_screen.dart](mdc:visionspark/lib/features/gallery/gallery_screen.dart): Main gallery screen.
-  - [gallery_image_detail_dialog.dart](mdc:visionspark/lib/features/gallery/gallery_image_detail_dialog.dart): Image detail dialog.
-- [image_generator/](mdc:visionspark/lib/features/image_generator): Image generation features.
-  - [image_generator_screen.dart](mdc:visionspark/lib/features/image_generator/image_generator_screen.dart): Main image generator screen.
-- [support/](mdc:visionspark/lib/features/support): Support and help features.
-  - [support_screen.dart](mdc:visionspark/lib/features/support/support_screen.dart): Support screen UI.
+- [account/](mdc:visionspark/lib/features/account): Account management and user profile
+- [gallery/](mdc:visionspark/lib/features/gallery): Image gallery and browsing
+- [image_generator/](mdc:visionspark/lib/features/image_generator): AI image generation
+- [image_enhancement/](mdc:visionspark/lib/features/image_enhancement): Image enhancement features
+- [settings/](mdc:visionspark/lib/features/settings): App settings and preferences
+- [subscriptions/](mdc:visionspark/lib/features/subscriptions): Subscription management
+- [support/](mdc:visionspark/lib/features/support): Help and support features
 
 Each feature directory contains the main screens and widgets for that feature.
 
