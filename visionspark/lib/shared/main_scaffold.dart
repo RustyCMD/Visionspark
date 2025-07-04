@@ -5,6 +5,7 @@ import '../features/gallery/gallery_screen.dart'; // Import GalleryScreen
 import '../features/support/support_screen.dart'; // Import the new SupportScreen
 import '../features/settings/settings_screen.dart'; // Import the real SettingsScreen
 import '../features/subscriptions/subscriptions_screen.dart'; // Import the new SubscriptionsScreen
+import '../features/image_enhancement/image_enhancement_screen.dart'; // Import the new Image Enhancement Screen
 
 class MainScaffold extends StatefulWidget {
   final int selectedIndex;
@@ -19,7 +20,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   final List<String> _titles = [
     'Image',
-    'Video',
+    'Image Enhancement',
     'Gallery',
     'Subscriptions',
     'Settings',
@@ -38,7 +39,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       case 0:
         return const ImageGeneratorScreen();
       case 1:
-        return _wipSection('Video');
+        return const ImageEnhancementScreen();
       case 2:
         return const GalleryScreen();
       case 3:
@@ -129,7 +130,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             ),
             const SizedBox(height: 8),
             _drawerItem(Icons.image, 'Image', 0, colorScheme),
-            _drawerItem(Icons.videocam, 'Video', 1, colorScheme),
+            _drawerItem(Icons.auto_fix_high, 'Image Enhancement', 1, colorScheme),
             _drawerItem(Icons.photo_library, 'Gallery', 2, colorScheme),
             _drawerItem(Icons.subscriptions, 'Subscriptions', 3, colorScheme),
             Padding(
