@@ -414,9 +414,10 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Hero(
-                  tag: image.id,
+              Hero(
+                tag: image.id,
+                child: AspectRatio(
+                  aspectRatio: 1,
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(

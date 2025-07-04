@@ -24,6 +24,9 @@ BEGIN
 END;
 $$;
 
+-- Drop the trigger if it exists
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 -- Create a trigger to execute the function after a new user is added to auth.users
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users

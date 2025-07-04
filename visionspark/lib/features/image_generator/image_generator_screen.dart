@@ -238,6 +238,13 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
             _lastSuccessfulPrompt = _promptController.text; // Store the successful prompt
           });
           await _fetchGenerationStatus();
+
+          // Auto-upload to gallery if enabled
+          final prefs = await SharedPreferences.getInstance();
+          final autoUpload = prefs.getBool('auto_upload_to_gallery') ?? false;
+          if (autoUpload) {
+            await _shareToGallery();
+          }
         }
       }
     } catch (e) {
@@ -339,13 +346,9 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
               const SizedBox(height: 16),
               _buildNegativePromptInput(context), // New Negative Prompt Field
               const SizedBox(height: 16),
-              Row( // Row for Aspect Ratio and Style selectors
-                children: [
-                  Expanded(child: _buildAspectRatioSelector(context)),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildStyleSelector(context)), // New Style Selector
-                ],
-              ),
+              _buildAspectRatioSelector(context),
+              const SizedBox(height: 16),
+              _buildStyleSelector(context),
               const SizedBox(height: 24), // Increased spacing before result
               _buildResultSection(context),
               const SizedBox(height: 24), // Increased spacing
@@ -458,27 +461,30 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
         children: [
           Text("Aspect Ratio", style: textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
           const SizedBox(height: 8), // Increased spacing slightly
-          ToggleButtons(
-            isSelected: _isSelected,
-            onPressed: (int index) {
-              if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
-              setState(() {
-                _selectedAspectRatioValue = _aspectRatioValues[index];
-              });
-            },
-            borderRadius: BorderRadius.circular(12),
-            selectedColor: colorScheme.onPrimary,
-            color: colorScheme.onSurfaceVariant, // Color for unselected text & icons
-            fillColor: colorScheme.primary, // Background for selected button
-            splashColor: colorScheme.primaryContainer.withOpacity(0.5), // Use primaryContainer for splash
-            highlightColor: colorScheme.primaryContainer.withOpacity(0.3), // Use primaryContainer for highlight
-            borderColor: colorScheme.outline, // Standard border color
-            selectedBorderColor: colorScheme.primary.withOpacity(0.8), // Slightly subtler selected border
-            constraints: const BoxConstraints(minHeight: 40.0, minWidth: 80.0), // Ensure buttons are easy to tap
-            children: _aspectRatioLabels.map((label) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0), // Adjusted padding
-              child: Text(label, style: textTheme.labelLarge), // Use a standard text style
-            )).toList(),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ToggleButtons(
+              isSelected: _isSelected,
+              onPressed: (int index) {
+                if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
+                setState(() {
+                  _selectedAspectRatioValue = _aspectRatioValues[index];
+                });
+              },
+              borderRadius: BorderRadius.circular(12),
+              selectedColor: colorScheme.onPrimary,
+              color: colorScheme.onSurfaceVariant,
+              fillColor: colorScheme.primary,
+              splashColor: colorScheme.primaryContainer.withOpacity(0.5),
+              highlightColor: colorScheme.primaryContainer.withOpacity(0.3),
+              borderColor: colorScheme.outline,
+              selectedBorderColor: colorScheme.primary.withOpacity(0.8),
+              constraints: const BoxConstraints(minHeight: 40.0, minWidth: 70.0), // reduced minWidth
+              children: _aspectRatioLabels.map((label) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0), // reduced padding
+                child: Text(label, style: textTheme.labelLarge),
+              )).toList(),
+            ),
           ),
         ],
       ),
@@ -610,18 +616,25 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
                 },
                 errorBuilder: (context, error, stackTrace) => Center(child: Icon(Icons.broken_image, size: 48, color: colorScheme.error)),
               ),
-            if (_isLoading)
-              Container(
-                color: colorScheme.scrim.withOpacity(0.6), // Use scrim for overlays
+            Visibility(
+              visible: _isLoading,
+              maintainState: true,
+              maintainAnimation: true,
+              maintainSize: true,
+              child: Container(
+                width: double.infinity,
+                height: double.infinity,
+                color: colorScheme.scrim.withOpacity(0.6),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)), // White indicator on dark scrim
+                    CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
                     const SizedBox(height: 16),
                     Text("Generating...", style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
+            ),
             if (_generatedImageUrl != null && !_isLoading)
               Positioned(
                 bottom: 0,
