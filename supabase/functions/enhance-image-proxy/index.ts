@@ -122,13 +122,19 @@ serve(async (req: Request) => {
     
     // For DALL-E 2, we use different endpoints based on mode
     let openaiEndpoint = '';
-    let additionalParams = {};
 
     switch (mode) {
       case 'edit':
         openaiEndpoint = 'https://api.openai.com/v1/images/edits';
-        // For edits, we need a mask image (we'll use the same image as mask for simplicity)
-        formData.append('mask', imageBlob, 'mask.png');
+        // Create a proper mask (white image with same dimensions for full image editing)
+        const canvas = new OffscreenCanvas(1024, 1024);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, 1024, 1024);
+        }
+        const maskBlob = await canvas.convertToBlob({ type: 'image/png' });
+        formData.append('mask', maskBlob, 'mask.png');
         break;
       case 'variation':
         openaiEndpoint = 'https://api.openai.com/v1/images/variations';
@@ -137,9 +143,10 @@ serve(async (req: Request) => {
         break;
       case 'enhance':
       default:
-        // Use edit endpoint for enhancement
-        openaiEndpoint = 'https://api.openai.com/v1/images/edits';
-        formData.append('mask', imageBlob, 'mask.png');
+        // For enhance mode, use variations endpoint for better results
+        openaiEndpoint = 'https://api.openai.com/v1/images/variations';
+        // Remove prompt for variations as it's not supported
+        formData.delete('prompt');
         break;
     }
 
