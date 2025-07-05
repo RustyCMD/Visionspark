@@ -30,13 +30,41 @@ Welcome to Visionspark, a cutting-edge cross-platform application built with Flu
 
 ## 🌟 Features at a Glance
 
--   👤 **User Management**: Secure authentication (sign-up, login, password reset), comprehensive account management including username updates, profile pictures, and join date tracking.
--   🤖 **AI Image Generation**: Unleash creativity with advanced AI models (DALL-E 3 via Supabase Edge Functions), get intelligent prompt suggestions, and manage daily generation limits tracked by user timezone.
--   🖼️ **Dynamic Image Gallery**: Explore a public showcase of AI-generated masterpieces, view your own creations, and engage with content through likes. Features optimized loading and easy image downloads.
--   ⚙️ **Customizable Settings**: Seamlessly switch between Dark and Light themes and toggle auto-upload for generated images.
--   💳 **Subscription Framework**: Integrated UI for exploring and selecting in-app purchase subscriptions.
--   🆘 **Dedicated Support System**: In-app reporting for support issues via a Discord webhook with robust, database-backed rate limiting.
--   📱 **Cross-Platform Excellence**: A consistent experience across Android, iOS, and future platforms, built with Flutter.
+-   👤 **Comprehensive User Management**:
+    -   Secure authentication (Google Sign-In, password reset via deep links).
+    -   Account management: Editable usernames, profile picture uploads (gallery/camera), join date tracking.
+    -   Full account deletion capability.
+-   🤖 **Advanced AI Image Generation (DALL-E 3)**:
+    -   Generate stunning images with DALL-E 3 via Supabase Edge Functions.
+    -   **Advanced Controls**: Specify aspect ratios (square, landscape, portrait), negative prompts, and styles (vivid, natural).
+    -   **AI Prompt Assistance**:
+        -   Improve your prompts with GPT-4o-mini.
+        -   Get random prompt suggestions for inspiration.
+    -   **Smart Generation Limits**: Daily limits reset based on user's local timezone. Monthly cycles and limits for subscribers.
+-   ✨ **AI Image Enhancement (DALL-E 2)**: **NEW**
+    -   Upload existing images or capture new ones for enhancement.
+    -   **Modes**: `Enhance` (general improvement), `Edit` (modify based on prompt), `Variation` (create variations).
+    -   Adjustable enhancement strength.
+    -   Utilizes the same generation limit and prompt assistance features.
+-   🖼️ **Dynamic Image Gallery**:
+    -   Explore a public showcase ("Discover" tab) of AI-generated masterpieces.
+    -   View your personal creations in "My Gallery" tab.
+    -   Engage with content through likes.
+    -   Optimized loading with cached images and thumbnails.
+    -   Detailed image view with options to save to device, copy prompt, and share.
+-   💳 **Full Subscription System (Google Play)**:
+    -   Explore and purchase subscription tiers (`monthly_30`, `monthly_unlimited`).
+    -   Secure server-side validation of Google Play purchases.
+    *   Automatic profile updates with subscription status, tier, and expiry.
+    *   Link to manage subscriptions directly in Google Play settings.
+-   ⚙️ **Customizable Settings**:
+    *   Seamlessly switch between Dark and Light themes (Material 3).
+    *   Toggle auto-upload for generated/enhanced images to the public gallery.
+    *   Option to clear local image cache.
+-   🆘 **Database-Backed Support System**:
+    *   In-app reporting for support issues or feedback.
+    *   Tickets are stored and managed in the backend database.
+-   📱 **Cross-Platform Excellence**: A consistent Material 3 themed experience across Android, iOS, and future platforms, built with Flutter.
 -   🌐 **Offline Resilience**: A user-friendly offline screen with a retry option ensures a smooth experience without an internet connection.
 
 ---
@@ -75,17 +103,33 @@ Visionspark/
 
 This directory houses the core Flutter application logic and UI components, structured for modularity:
 
--   `auth/`: Screens and logic for user authentication.
--   `features/`: Distinct feature modules (account, gallery, image_generator, etc.).
--   `shared/`: Common widgets, utilities, and services.
--   `main.dart`: The application's entry point.
+-   `auth/`: Screens and logic for user authentication (Google Sign-In, Auth Gate).
+-   `features/`: Distinct feature modules:
+    -   `account/`: User profile management, profile picture upload, username editing, account deletion.
+    -   `gallery/`: Public and user-specific image galleries, image detail view, liking system.
+    -   `image_enhancement/`: **New** screen for DALL-E 2 based image enhancement, editing, and variations.
+    -   `image_generator/`: DALL-E 3 based image generation with advanced controls (negative prompts, styles, aspect ratios) and prompt assistance.
+    -   `settings/`: Theme control, auto-upload toggle, cache clearing, subscription management links.
+    -   `subscriptions/`: **New** screen for viewing and purchasing Google Play subscriptions.
+    -   `support/`: **New** screen for submitting database-backed support tickets.
+-   `shared/`: Common widgets (e.g., `MainScaffold`), utilities (snackbar, connectivity), and notifiers (theme, subscription status).
+-   `main.dart`: The application's entry point, theme setup, Supabase initialization, and deep link handling.
 
 ### 🚀 `supabase/` (Supabase Backend)
 
 This folder contains all files to manage the Supabase backend:
 
--   `functions/`: TypeScript Edge Functions for server-side operations like AI image generation, account deletion, and gallery feeds.
--   `migrations/`: Version-controlled SQL scripts that define and evolve the database schema.
+-   `functions/`: TypeScript Edge Functions for server-side operations:
+    -   `delete-account`: Handles full user account deletion.
+    -   `enhance-image-proxy`: **New** DALL-E 2 image enhancement, editing, and variations.
+    -   `generate-image-proxy`: DALL-E 3 image generation with advanced limit logic.
+    -   `get-gallery-feed`: Fetches gallery images with signed URLs and like status.
+    -   `get-generation-status`: **New** Provides detailed generation limit/subscription status to the client.
+    -   `get-random-prompt`: **New** Returns a random prompt for image generation.
+    -   `improve-prompt-proxy`: **New** Enhances user prompts using GPT-4o-mini.
+    -   `report-support-issue`: **Updated** Submits user support tickets to the database.
+    -   `validate-purchase-and-update-profile`: **New** Securely validates Google Play purchases and updates user profiles.
+-   `migrations/`: Version-controlled SQL scripts that define and evolve the database schema (e.g., `profiles` enhancements, `gallery_images`, `gallery_likes`, `support_tickets`, `webhook_rate_limits`).
 -   `config.toml`: Configuration for the Supabase CLI.
 -   `SECURITY_GUIDANCE.md`: Important security best practices.
 
@@ -115,9 +159,11 @@ Follow these steps to set up and run Visionspark locally.
     -   Create a new project on [Supabase.com](https://supabase.com).
     -   Retrieve your **Project URL** and **Anon Key**.
     -   Configure these **Environment Variables** in your Supabase project dashboard (Project Settings > Edge Functions):
-        -   `SUPABASE_SERVICE_ROLE_KEY`: Found in your project's API Settings.
-        -   `OPENAI_API_KEY`: Your OpenAI API key.
-        -   `DISCORD_WEBHOOK`: Your Discord webhook URL for support messages.
+        -   `SUPABASE_SERVICE_ROLE_KEY`: Found in your project's API Settings. (Required by most functions)
+        -   `OPENAI_API_KEY`: Your OpenAI API key. (Required for `generate-image-proxy`, `enhance-image-proxy`, `improve-prompt-proxy`)
+        -   `GOOGLE_SERVICE_ACCOUNT_EMAIL`: Your Google Service Account email. (Required for `validate-purchase-and-update-profile`)
+        -   `GOOGLE_PRIVATE_KEY_PEM`: Your Google Service Account private key PEM string (ensure newlines are escaped as `\n` or handled correctly when setting). (Required for `validate-purchase-and-update-profile`)
+        -   `DISCORD_WEBHOOK`: (Optional) Your Discord webhook URL if you plan to integrate Discord notifications for support or other events. The current `report-support-issue` function saves to the database directly, but the `webhook_rate_limits` table exists for potential webhook usage.
 
 3.  **Configure the Flutter Application**:
     -   Navigate to the Flutter app directory:
@@ -181,8 +227,19 @@ Follow these steps to set up and run Visionspark locally.
 
 The Supabase backend powers Visionspark's data, authentication, and serverless logic.
 
--   **Edge Functions**: Low-latency TypeScript functions handling critical operations. Ensure all required environment variables (`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK`) are correctly set.
--   **Database Migrations**: Version-controlled SQL scripts in `supabase/migrations/` define the database schema, including tables, triggers, and functions to maintain data integrity.
+-   **Edge Functions**: Low-latency TypeScript functions handling critical operations:
+    -   **AI Operations**: `generate-image-proxy` (DALL-E 3), `enhance-image-proxy` (DALL-E 2), `improve-prompt-proxy` (GPT-4o-mini), `get-random-prompt`.
+    -   **User & Data Management**: `delete-account`, `get-gallery-feed`, `get-generation-status`.
+    -   **Monetization**: `validate-purchase-and-update-profile` for Google Play in-app purchases.
+    -   **Support**: `report-support-issue` (saves to database).
+    -   Ensure all required environment variables (see "Getting Started") are correctly set, especially `OPENAI_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `GOOGLE_PRIVATE_KEY_PEM`.
+-   **Database Migrations**: Version-controlled SQL scripts in `supabase/migrations/` define the database schema. Key tables include:
+    -   `profiles`: Stores extended user data like usernames, generation limits, timezone, and subscription details.
+    -   `gallery_images`: Contains metadata for images in the public gallery, including prompts and like counts.
+    -   `gallery_likes`: Tracks user likes on gallery images.
+    -   `support_tickets`: Stores user-submitted support issues.
+    -   `webhook_rate_limits`: Manages rate limiting for outgoing webhooks (e.g., for potential future Discord notifications).
+    -   Triggers and functions are used for tasks like automatic profile creation and like count updates.
 
 ---
 
