@@ -2,14 +2,17 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
+import 'package:http/http.dart' as http;
 import '../../shared/utils/snackbar_utils.dart';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
@@ -59,7 +62,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     super.initState();
     _loadCachedGenerationStatus();
     _fetchGenerationStatus();
-    _resetTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateResetsAtDisplay());
+    _resetTimer = Timer.periodic(const Duration(seconds: 30), (_) => _updateResetsAtDisplay());
   }
 
   @override
@@ -131,18 +134,31 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   void _updateResetsAtDisplay() {
     if (_resetsAtUtcIso == null) return;
     final resetTime = DateTime.tryParse(_resetsAtUtcIso!)?.toLocal();
-    if (resetTime == null) return;
-    
+    if (resetTime == null) {
+      final newTimeString = "Invalid reset time";
+      if (_timeUntilReset != newTimeString) {
+        _timeUntilReset = newTimeString;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
     final difference = resetTime.difference(DateTime.now());
+    final String newTimeString;
     if (difference.isNegative) {
-      _timeUntilReset = "Limit reset!";
+      newTimeString = "Limit reset!";
     } else {
       final h = difference.inHours;
       final m = difference.inMinutes.remainder(60);
       final s = difference.inSeconds.remainder(60);
-      _timeUntilReset = "Resets in ${h}h ${m}m ${s}s";
+      newTimeString = "Resets in ${h}h ${m}m ${s}s";
     }
-    if (mounted) setState(() {});
+
+    // Only update state if the display string has changed
+    if (_timeUntilReset != newTimeString) {
+      _timeUntilReset = newTimeString;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _pickImageFromGallery() async {
@@ -234,9 +250,17 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     setState(() { _isLoading = true; _enhancedImageUrl = null; });
 
     try {
-      // Convert image to base64
+      // Read and validate image size
       final imageBytes = await _selectedImage!.readAsBytes();
-      final base64Image = base64Encode(imageBytes);
+
+      // Validate image size before processing
+      if (!_validateImageSize(imageBytes)) {
+        if (mounted) showErrorSnackbar(context, 'Image too large. Please select an image smaller than 10MB.');
+        return;
+      }
+
+      // Convert image to base64 using isolate to prevent blocking UI
+      final base64Image = await compute(_encodeImageToBase64, imageBytes);
 
       final Map<String, dynamic> requestBody = {
         'image': base64Image,
@@ -281,20 +305,30 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     setState(() => _isSavingImage = true);
 
     try {
-      final photosPermission = Platform.isAndroid 
+      final photosPermission = Platform.isAndroid
           ? (await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33 ? Permission.photos : Permission.storage
           : Permission.photos;
-      
+
       PermissionStatus status = await photosPermission.request();
       if (status.isGranted) {
-        final ByteData imageData = await NetworkAssetBundle(Uri.parse(_enhancedImageUrl!)).load('');
+        // Use proper HTTP client to download the image
+        final response = await http.get(Uri.parse(_enhancedImageUrl!));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download image from server');
+        }
+
         final filename = 'Visionspark_Enhanced_${DateTime.now().millisecondsSinceEpoch}.png';
-        await _channel.invokeMethod('saveImageToGallery', {
-          'imageBytes': imageData.buffer.asUint8List(),
+        final result = await _channel.invokeMethod('saveImageToGallery', {
+          'imageBytes': response.bodyBytes,
           'filename': filename,
           'albumName': 'Visionspark'
         });
-        if (mounted) showSuccessSnackbar(context, 'Enhanced image saved to Gallery!');
+
+        if (result == true) {
+          if (mounted) showSuccessSnackbar(context, 'Enhanced image saved to Gallery!');
+        } else {
+          throw Exception('Failed to save image to gallery');
+        }
       } else {
         if (mounted) showErrorSnackbar(context, 'Storage permission is required to save images.');
       }
@@ -308,13 +342,18 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Future<void> _shareToGallery() async {
     if (_enhancedImageUrl == null || _isSharingToGallery) return;
     setState(() => _isSharingToGallery = true);
-    
+
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) throw Exception('You must be logged in to share.');
 
-      final ByteData imageData = await NetworkAssetBundle(Uri.parse(_enhancedImageUrl!)).load('');
-      final imageBytes = imageData.buffer.asUint8List();
+      // Use proper HTTP client to download the image
+      final response = await http.get(Uri.parse(_enhancedImageUrl!));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download image from server');
+      }
+
+      final imageBytes = response.bodyBytes;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final mainPath = 'public/${user.id}_enhanced_$timestamp.png';
 
@@ -343,10 +382,34 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   }
 
   Future<Uint8List> _createThumbnail(Uint8List imageBytes) async {
+    return await compute(_createThumbnailInIsolate, imageBytes);
+  }
+
+  // Static methods for isolate processing
+  static String _encodeImageToBase64(Uint8List imageBytes) {
+    return base64Encode(imageBytes);
+  }
+
+  static Uint8List _createThumbnailInIsolate(Uint8List imageBytes) {
     final originalImage = img.decodeImage(imageBytes);
     if (originalImage == null) throw Exception('Failed to decode image.');
     final thumbnail = img.copyResize(originalImage, width: 200);
     return Uint8List.fromList(img.encodePng(thumbnail));
+  }
+
+  // Helper method to validate image size
+  bool _validateImageSize(Uint8List imageBytes) {
+    const int maxSizeBytes = 10 * 1024 * 1024; // 10MB limit
+    return imageBytes.length <= maxSizeBytes;
+  }
+
+  // Computed getter for enhance button state
+  bool get _canEnhanceImage {
+    if (_selectedImage == null || _promptController.text.isEmpty) return false;
+    final remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
+    if (_generationLimit != -1 && remaining <= 0) return false;
+    if (_isLoading || _isFetchingRandomPrompt || _isImproving) return false;
+    return true;
   }
 
   @override
@@ -373,7 +436,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
               _buildLastPromptDisplay(context),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_selectedImage == null || _promptController.text.isEmpty || (remaining <= 0 && _generationLimit != -1) || _isLoading || _isFetchingRandomPrompt || _isImproving) ? null : _enhanceImage,
+                onPressed: _canEnhanceImage ? _enhanceImage : null,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

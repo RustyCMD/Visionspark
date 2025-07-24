@@ -1,9 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-# Main Entry Point
-
-[visionspark/lib/main.dart](mdc:visionspark/lib/main.dart): Flutter app entry point that initializes the app and sets up the root widget with Supabase integration.
-
