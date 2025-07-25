@@ -2,13 +2,13 @@
 // dependencies:
 //   in_app_purchase: ^3.1.11
 
-import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'dart:async';
 import 'dart:convert';
 // import 'package:http/http.dart' as http; // Not directly used anymore for validation
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/design_system/design_system.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:functions_client/functions_client.dart' as fn_client; // Not directly used anymore
 
@@ -245,7 +245,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           String errorMessage = 'Purchase validation failed on backend.';
           if (response.data != null && response.data['error'] != null) {
             errorMessage = response.data['error'].toString();
-          } else if (response.status != null) {
+          } else {
             // Add a more descriptive message if backend returns non-200 but no explicit error in data
             errorMessage = 'Backend validation function returned non-200 status: ${response.status}.';
             if (response.data != null) {
@@ -292,149 +292,256 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    Widget statusSection;
+    return Scaffold(
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: VSResponsive.getResponsivePadding(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(context, textTheme, colorScheme),
+                const VSResponsiveSpacing(),
+                _buildStatusSection(context, textTheme, colorScheme),
+                const VSResponsiveSpacing(),
+                _buildSubscriptionPlans(context, textTheme, colorScheme),
+                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
+    return Column(
+      children: [
+        Icon(
+          Icons.workspace_premium,
+          size: VSDesignTokens.iconXXL,
+          color: colorScheme.primary,
+        ),
+        const SizedBox(height: VSDesignTokens.space4),
+        VSResponsiveText(
+          text: 'VisionSpark Premium',
+          baseStyle: textTheme.headlineMedium?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: VSTypography.weightBold,
+          ),
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+        VSResponsiveText(
+          text: 'Unlock unlimited creativity with premium features',
+          baseStyle: textTheme.bodyLarge?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusSection(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
     if (_isLoadingStatus) {
-      statusSection = const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16.0),
-          child: Center(child: CircularProgressIndicator()));
+      return Center(
+        child: VSLoadingIndicator(
+          message: 'Loading subscription status...',
+          size: VSDesignTokens.iconL,
+        ),
+      );
     } else if (_statusErrorMessage != null) {
-      statusSection = Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Card(
-          color: colorScheme.errorContainer.withOpacity(0.5),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(_statusErrorMessage!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
-          )
+      return VSCard(
+        color: colorScheme.errorContainer.withValues(alpha: 0.5),
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        child: Text(
+          _statusErrorMessage!,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onErrorContainer,
+          ),
+          textAlign: TextAlign.center,
         ),
       );
     } else if (_activeSubscriptionType != null) {
-      statusSection = Card(
-        color: colorScheme.primaryContainer.withOpacity(0.3),
-        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text('Your Active Subscription', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: colorScheme.onPrimaryContainer)),
-              const SizedBox(height: 8),
-              Text(_formatSubscriptionType(_activeSubscriptionType), style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              if(_currentGenerationLimit != null)
-                 Text('Generation Limit: ${_currentGenerationLimit == -1 ? "Unlimited" : _currentGenerationLimit}', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: colorScheme.onPrimaryContainer)),
+      return VSCard(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+        elevation: VSDesignTokens.elevation2,
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        child: Column(
+          children: [
+            Icon(
+              Icons.check_circle,
+              color: colorScheme.primary,
+              size: VSDesignTokens.iconL,
+            ),
+            const SizedBox(height: VSDesignTokens.space3),
+            Text(
+              'Your Active Subscription',
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.onPrimaryContainer,
+                fontWeight: VSTypography.weightSemiBold,
+              ),
+            ),
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              _formatSubscriptionType(_activeSubscriptionType),
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onPrimaryContainer,
+                fontWeight: VSTypography.weightBold,
+              ),
+            ),
+            if (_currentGenerationLimit != null) ...[
+              const SizedBox(height: VSDesignTokens.space1),
+              Text(
+                'Generation Limit: ${_currentGenerationLimit == -1 ? "Unlimited" : _currentGenerationLimit}',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       );
     } else {
-       statusSection = Card(
-        color: colorScheme.secondaryContainer.withOpacity(0.3),
-        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text('No active subscription found.', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.onSecondaryContainer), textAlign: TextAlign.center),
+      return VSCard(
+        color: colorScheme.secondaryContainer.withValues(alpha: 0.3),
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        child: Column(
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: colorScheme.onSecondaryContainer,
+              size: VSDesignTokens.iconL,
+            ),
+            const SizedBox(height: VSDesignTokens.space3),
+            Text(
+              'No active subscription found',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+                fontWeight: VSTypography.weightMedium,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              'Choose a plan below to unlock premium features',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       );
     }
+  }
 
-
-    return Scaffold( // Added Scaffold
-      // appBar: AppBar(title: Text('Manage Subscriptions')), // Optional: Add AppBar
-      body: ListView(
-        padding: const EdgeInsets.all(16), // Adjusted padding
-        children: [
-          Text('Manage Your Subscription', // Changed title
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), // Adjusted style
-              textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          
-          statusSection, // Display current subscription status
-
-          if (_iapLoading) const Center(child: CircularProgressIndicator())
-          else if (_iapError != null && _products.isEmpty) // Show IAP error only if no products loaded
-             Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Card(
-                  color: colorScheme.errorContainer.withOpacity(0.5),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
-                  )
-                ),
-              )
-          else ...[ // Display products if available or a message if not
-            const SizedBox(height: 16),
-            Text('Available Plans',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-
-            if (_purchaseSuccessMessage != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical:8.0),
-                child: Card(
-                  color: colorScheme.primaryContainer.withOpacity(0.2), // Themed success indication
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.check_circle, color: colorScheme.primary),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(_purchaseSuccessMessage!, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onPrimaryContainer))),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            
-            if (_purchaseSuccessMessage == null && _iapError != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical:8.0),
-                child: Card(
-                  color: colorScheme.errorContainer.withOpacity(0.5),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(_iapError!, style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 16), textAlign: TextAlign.center),
-                  )
-                ),
-              ),
-
-            if (_products.isNotEmpty)
-              ..._products.map((product) => _SubscriptionCard(
-                    product: product,
-                    onPressed: _purchasePending || (_activeSubscriptionType == product.id) ? null : () => _buy(product),
-                    isLoading: _purchasePending,
-                    isActive: _activeSubscriptionType == product.id,
-                  ))
-            else if (!_iapLoading) // Only show "No subscriptions" if not loading and no IAP error blocking products.
-              Card(
-                color: colorScheme.surfaceVariant,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: const [
-                      Text('No subscription plans available at the moment.',
-                          style: TextStyle(fontSize: 18)),
-                      SizedBox(height: 8),
-                      Text('Please check back later.'),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 24),
+  Widget _buildSubscriptionPlans(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
+    if (_iapLoading) {
+      return Center(
+        child: VSLoadingIndicator(
+          message: 'Loading subscription plans...',
+          size: VSDesignTokens.iconL,
+        ),
+      );
+    } else if (_iapError != null && _products.isEmpty) {
+      return VSCard(
+        color: colorScheme.errorContainer.withValues(alpha: 0.5),
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        child: Column(
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: colorScheme.onErrorContainer,
+              size: VSDesignTokens.iconL,
+            ),
+            const SizedBox(height: VSDesignTokens.space3),
             Text(
-              'Payments are securely processed by the play store. You can manage or cancel your subscription anytime through your play store account settings.',
-              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+              'Unable to load subscription plans',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onErrorContainer,
+                fontWeight: VSTypography.weightMedium,
+              ),
               textAlign: TextAlign.center,
             ),
-          ]
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              _iapError!,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onErrorContainer,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          VSResponsiveText(
+            text: 'Available Plans',
+            baseStyle: textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: VSTypography.weightSemiBold,
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+
+          if (_purchaseSuccessMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: VSDesignTokens.space4),
+              child: VSCard(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.2),
+                padding: const EdgeInsets.all(VSDesignTokens.space4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: colorScheme.primary,
+                      size: VSDesignTokens.iconM,
+                    ),
+                    const SizedBox(width: VSDesignTokens.space3),
+                    Expanded(
+                      child: Text(
+                        _purchaseSuccessMessage!,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          if (_products.isEmpty)
+            VSEmptyState(
+              icon: Icons.shopping_cart_outlined,
+              title: 'No subscription plans available',
+              subtitle: 'Please try again later or contact support',
+            )
+          else
+            ...(_products.map((product) {
+              final isActive = _activeSubscriptionType != null &&
+                  ((_activeSubscriptionType == 'monthly_30' && product.id == monthly30Id) ||
+                   (_activeSubscriptionType == 'monthly_unlimited' && product.id == monthlyUnlimitedId));
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: VSDesignTokens.space4),
+                child: _SubscriptionCard(
+                  product: product,
+                  onPressed: isActive || _purchasePending ? null : () => _buy(product),
+                  isLoading: _purchasePending,
+                  isActive: isActive,
+                ),
+              );
+            }).toList()),
         ],
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -449,54 +556,95 @@ class _SubscriptionCard extends StatelessWidget {
   final ProductDetails product;
   final VoidCallback? onPressed;
   final bool isLoading;
-  final bool isActive; // New parameter
-  const _SubscriptionCard({required this.product, this.onPressed, this.isLoading = false, this.isActive = false});
+  final bool isActive;
+
+  const _SubscriptionCard({
+    required this.product,
+    this.onPressed,
+    this.isLoading = false,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      color: isActive ? colorScheme.primaryContainer.withOpacity(0.5) : colorScheme.surfaceContainerHighest, // Highlight if active
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: isActive ? 4 : 2,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(product.title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Text(product.description,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: isActive ? colorScheme.onPrimaryContainer.withOpacity(0.8) : colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(product.price,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface)),
-                ElevatedButton(
-                  onPressed: onPressed, // Will be null if active or purchase pending
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isActive ? colorScheme.outlineVariant : colorScheme.primary,
-                    foregroundColor: isActive ? colorScheme.onSurfaceVariant : colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Text(isActive ? 'Active' : 'Subscribe', style: const TextStyle(fontWeight: FontWeight.bold)),
+    final textTheme = Theme.of(context).textTheme;
+
+    return VSCard(
+      color: isActive
+        ? colorScheme.primaryContainer.withValues(alpha: 0.5)
+        : colorScheme.surfaceContainerHighest,
+      elevation: isActive ? VSDesignTokens.elevation4 : VSDesignTokens.elevation2,
+      borderRadius: VSDesignTokens.radiusL,
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (isActive) ...[
+                Icon(
+                  Icons.check_circle,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
                 ),
+                const SizedBox(width: VSDesignTokens.space2),
               ],
+              Expanded(
+                child: Text(
+                  product.title,
+                  style: textTheme.titleLarge?.copyWith(
+                    color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Text(
+            product.description,
+            style: textTheme.bodyMedium?.copyWith(
+              color: isActive
+                ? colorScheme.onPrimaryContainer.withValues(alpha: 0.8)
+                : colorScheme.onSurfaceVariant,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Price',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: isActive
+                        ? colorScheme.onPrimaryContainer.withValues(alpha: 0.7)
+                        : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    product.price,
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: VSTypography.weightBold,
+                      color: isActive ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              VSButton(
+                text: isActive ? 'Active' : 'Subscribe',
+                onPressed: onPressed,
+                isLoading: isLoading,
+                variant: isActive ? VSButtonVariant.outline : VSButtonVariant.primary,
+                size: VSButtonSize.medium,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
-} 
+}

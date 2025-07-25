@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import './gallery_image_detail_dialog.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import '../../shared/design_system/design_system.dart';
 
 class GalleryImage {
   final String id;
@@ -170,38 +170,39 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final size = MediaQuery.of(context).size;
-    
     return Scaffold(
-      body: Column(
-        children: [
-          _buildTabSection(colorScheme, size),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildGalleryBody(isMyCreations: false),
-                _buildGalleryBody(isMyCreations: true),
-              ],
+      body: VSResponsiveLayout(
+        child: Column(
+          children: [
+            _buildTabSection(),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildGalleryBody(isMyCreations: false),
+                  _buildGalleryBody(isMyCreations: true),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTabSection(ColorScheme colorScheme, Size size) {
+  Widget _buildTabSection() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: size.width * 0.06,
-        vertical: size.height * 0.02,
+      margin: VSResponsive.getResponsiveMargin(context).add(
+        const EdgeInsets.symmetric(vertical: VSDesignTokens.space4),
       ),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainer.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(20),
+        color: colorScheme.surfaceContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
         border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
+          color: colorScheme.outline.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -210,31 +211,29 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
         labelColor: colorScheme.onPrimary,
         unselectedLabelColor: colorScheme.onSurfaceVariant,
         indicator: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
           gradient: LinearGradient(
             colors: [
               colorScheme.primary,
-              colorScheme.primary.withOpacity(0.8),
+              colorScheme.primary.withValues(alpha: 0.8),
             ],
           ),
           boxShadow: [
             BoxShadow(
-              color: colorScheme.primary.withOpacity(0.3),
-              blurRadius: 8,
+              color: colorScheme.primary.withValues(alpha: 0.3),
+              blurRadius: VSDesignTokens.space2,
               offset: const Offset(0, 2),
             ),
           ],
         ),
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
-        padding: const EdgeInsets.all(4),
-        labelStyle: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
+        padding: const EdgeInsets.all(VSDesignTokens.space1),
+        labelStyle: textTheme.titleMedium?.copyWith(
+          fontWeight: VSTypography.weightBold,
         ),
-        unselectedLabelStyle: const TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
+        unselectedLabelStyle: textTheme.titleMedium?.copyWith(
+          fontWeight: VSTypography.weightMedium,
         ),
         tabs: const [
           Tab(text: 'Discover'),
@@ -247,60 +246,58 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
   Widget _buildGalleryBody({required bool isMyCreations}) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final size = MediaQuery.of(context).size;
 
     if (_isLoading) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              'Loading gallery...',
-              style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-          ],
+        child: VSLoadingIndicator(
+          message: 'Loading gallery...',
+          size: VSDesignTokens.iconXL,
         ),
       );
     }
     
     if (_errorMessage != null) {
       return Center(
-        child: Container(
-          margin: EdgeInsets.all(size.width * 0.06),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: colorScheme.errorContainer.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: colorScheme.error.withOpacity(0.3),
-              width: 1,
-            ),
+        child: VSCard(
+          margin: VSResponsive.getResponsiveMargin(context),
+          padding: const EdgeInsets.all(VSDesignTokens.space6),
+          color: colorScheme.errorContainer.withValues(alpha: 0.1),
+          border: Border.all(
+            color: colorScheme.error.withValues(alpha: 0.3),
+            width: 1,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.error_outline,
-                size: 48,
+                Icons.error_outline_rounded,
+                size: VSDesignTokens.iconXXL,
                 color: colorScheme.error,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: VSDesignTokens.space4),
+              VSResponsiveText(
+                text: 'Oops! Something went wrong',
+                baseStyle: textTheme.titleLarge?.copyWith(
+                  color: colorScheme.onErrorContainer,
+                  fontWeight: VSTypography.weightBold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: VSDesignTokens.space2),
               Text(
                 _errorMessage!,
-                textAlign: TextAlign.center,
-                style: textTheme.titleMedium?.copyWith(color: colorScheme.error),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () => _fetchGalleryImages(isRefresh: true),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.error,
-                  foregroundColor: colorScheme.onError,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onErrorContainer.withValues(alpha: 0.8),
                 ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: VSDesignTokens.space6),
+              VSButton(
+                text: 'Try Again',
+                icon: const Icon(Icons.refresh_rounded),
+                onPressed: () => _fetchGalleryImages(isRefresh: true),
+                variant: VSButtonVariant.danger,
+                isFullWidth: true,
               ),
             ],
           ),
@@ -315,53 +312,12 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
 
     if (imagesToShow.isEmpty) {
       return Center(
-        child: Container(
-          margin: EdgeInsets.all(size.width * 0.06),
-          padding: const EdgeInsets.all(32),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainer.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.2),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withOpacity(0.3),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isMyCreations ? Icons.add_photo_alternate_outlined : Icons.photo_library_outlined,
-                  size: 48,
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                isMyCreations ? "You haven't created any images yet." : 'The gallery is empty.',
-                style: textTheme.titleLarge?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isMyCreations 
-                    ? 'Start creating amazing images with AI!'
-                    : 'Check back later for new creations.',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.8),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+        child: VSEmptyState(
+          icon: isMyCreations ? Icons.add_photo_alternate_outlined : Icons.photo_library_outlined,
+          title: isMyCreations ? "You haven't created any images yet." : 'The gallery is empty.',
+          subtitle: isMyCreations
+            ? 'Start creating amazing images with AI!'
+            : 'Check back later for new creations.',
         ),
       );
     }
@@ -371,19 +327,17 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
       onRefresh: () => _fetchGalleryImages(isRefresh: true),
       child: FadeTransition(
         opacity: _fadeAnimation,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: StaggeredGrid.count(
-            crossAxisCount: 2,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            children: List.generate(imagesToShow.length, (index) {
-              return StaggeredGridTile.fit(
-                crossAxisCellCount: 1,
-                child: _buildImageCard(imagesToShow[index], index),
-              );
-            }),
-          ),
+        child: VSResponsiveGrid(
+          mobileColumns: 2,
+          tabletColumns: 3,
+          desktopColumns: 4,
+          mainAxisSpacing: VSDesignTokens.space4,
+          crossAxisSpacing: VSDesignTokens.space4,
+          padding: VSResponsive.getResponsivePadding(context),
+          childAspectRatio: 0.65, // Adjusted to provide sufficient space for text content below image
+          children: List.generate(imagesToShow.length, (index) {
+            return _buildImageCard(imagesToShow[index], index);
+          }),
         ),
       ),
     );
@@ -392,116 +346,117 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
   Widget _buildImageCard(GalleryImage image, int index) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final size = MediaQuery.of(context).size;
-    
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withOpacity(0.1),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => GalleryImageDetailDialog.show(context, image),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Hero(
-                tag: image.id,
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    width: double.infinity,
+
+    return VSAccessibleCard(
+      onTap: () => GalleryImageDetailDialog.show(context, image),
+      semanticLabel: 'Gallery image${image.prompt != null ? ": ${image.prompt}" : ""}',
+      semanticHint: 'Tap to view full image and details',
+      padding: EdgeInsets.zero,
+      elevation: VSDesignTokens.elevation2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Image section with fixed aspect ratio
+          Hero(
+            tag: image.id,
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer.withValues(alpha: 0.3),
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainer.withOpacity(0.3),
-                    ),
-                    child: CachedNetworkImage(
-                      imageUrl: image.thumbnailUrlSigned ?? image.imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              colorScheme.surfaceContainer.withOpacity(0.3),
-                              colorScheme.surfaceContainer.withOpacity(0.1),
-                            ],
-                          ),
-                        ),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                          ),
-                        ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          colorScheme.surfaceContainer.withValues(alpha: 0.3),
+                          colorScheme.surfaceContainer.withValues(alpha: 0.1),
+                        ],
                       ),
-                      errorWidget: (context, url, error) => Container(
-                        decoration: BoxDecoration(
-                          color: colorScheme.errorContainer.withOpacity(0.1),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.broken_image_rounded,
-                            size: 32,
-                            color: colorScheme.error.withOpacity(0.6),
-                          ),
-                        ),
+                    ),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer.withValues(alpha: 0.1),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image_rounded,
+                        size: 32,
+                        color: colorScheme.error.withValues(alpha: 0.6),
                       ),
                     ),
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (image.prompt != null && image.prompt!.isNotEmpty)
-                      Text(
-                        image.prompt!,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          height: 1.3,
+            ),
+          ),
+          // Content section with flexible sizing to prevent overflow
+          Flexible(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(VSDesignTokens.space3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Prompt text with constrained height
+                  Flexible(
+                    child: image.prompt != null && image.prompt!.isNotEmpty
+                      ? Text(
+                          image.prompt!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : Text(
+                          'No prompt available',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                            fontStyle: FontStyle.italic,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    else
-                      Text(
-                        'No prompt available',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant.withOpacity(0.6),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
+                  ),
+                  const SizedBox(height: VSDesignTokens.space2),
+                  // Bottom row with time and like button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
                           _formatTimeAgo(image.createdAt),
                           style: textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        _buildLikeButton(image),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                      const SizedBox(width: VSDesignTokens.space2),
+                      _buildLikeButton(image),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -511,53 +466,55 @@ class _GalleryScreenState extends State<GalleryScreen> with TickerProviderStateM
     final textTheme = Theme.of(context).textTheme;
     final isProcessing = _likeProcessing.contains(image.id);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: image.isLikedByCurrentUser 
-            ? colorScheme.primaryContainer.withOpacity(0.3)
-            : colorScheme.surfaceContainer.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(20),
+    return VSAccessibleButton(
+      onPressed: isProcessing ? null : () => _toggleLike(image.id),
+      semanticLabel: image.isLikedByCurrentUser
+        ? 'Unlike image. Currently ${image.likeCount} likes'
+        : 'Like image. Currently ${image.likeCount} likes',
+      backgroundColor: image.isLikedByCurrentUser
+        ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+        : colorScheme.surfaceContainer.withValues(alpha: 0.5),
+      borderRadius: VSDesignTokens.radiusXL,
+      padding: const EdgeInsets.symmetric(
+        horizontal: VSDesignTokens.space3,
+        vertical: VSDesignTokens.space1,
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isProcessing ? null : () => _toggleLike(image.id),
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isProcessing)
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                    ),
-                  )
-                else
-                  Icon(
-                    image.isLikedByCurrentUser ? Icons.favorite : Icons.favorite_border,
-                    color: image.isLikedByCurrentUser 
-                        ? colorScheme.primary 
-                        : colorScheme.onSurfaceVariant.withOpacity(0.7),
-                    size: 16,
-                  ),
-                const SizedBox(width: 6),
-                Text(
-                  '${image.likeCount}',
-                  style: textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: image.isLikedByCurrentUser 
-                        ? colorScheme.onPrimaryContainer 
-                        : colorScheme.onSurfaceVariant.withOpacity(0.8),
-                  ),
+      child: IntrinsicWidth(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isProcessing)
+              SizedBox(
+                width: VSDesignTokens.iconXS,
+                height: VSDesignTokens.iconXS,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.primary,
                 ),
-              ],
+              )
+            else
+              Icon(
+                image.isLikedByCurrentUser ? Icons.favorite : Icons.favorite_border,
+                color: image.isLikedByCurrentUser
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                size: VSDesignTokens.iconXS,
+              ),
+            const SizedBox(width: VSDesignTokens.space1),
+            Flexible(
+              child: Text(
+                '${image.likeCount}',
+                style: textTheme.labelSmall?.copyWith(
+                  fontWeight: VSTypography.weightSemiBold,
+                  color: image.isLikedByCurrentUser
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

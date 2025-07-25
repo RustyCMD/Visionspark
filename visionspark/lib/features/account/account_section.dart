@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/design_system/design_system.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AccountSection extends StatefulWidget {
@@ -202,51 +203,58 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    
-    return Scaffold(
-      body: _isDeleting 
-        ? Center(child: CircularProgressIndicator()) 
-        : AnimatedBuilder(
-            animation: _animationController,
-            builder: (context, child) {
-              return FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: CustomScrollView(
-                    slivers: [
-                      _buildHeroSection(size),
-                      SliverPadding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: size.width * 0.06,
-                          vertical: size.height * 0.02,
-                        ),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            SizedBox(height: size.height * 0.02),
-                            _buildAccountManagementCard(),
-                            SizedBox(height: size.height * 0.024),
-                            _buildDangerZoneCard(),
-                            SizedBox(height: size.height * 0.04),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+    if (_isDeleting) {
+      return Scaffold(
+        body: Center(
+          child: VSLoadingIndicator(
+            message: 'Deleting account...',
+            size: VSDesignTokens.iconXL,
           ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      body: VSResponsiveLayout(
+        child: AnimatedBuilder(
+          animation: _animationController,
+          builder: (context, child) {
+            return FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: CustomScrollView(
+                  slivers: [
+                    _buildHeroSection(),
+                    SliverPadding(
+                      padding: VSResponsive.getResponsivePadding(context),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          const VSResponsiveSpacing(),
+                          _buildAccountManagementCard(),
+                          const VSResponsiveSpacing(),
+                          _buildDangerZoneCard(),
+                          const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
-  Widget _buildHeroSection(Size size) {
+  Widget _buildHeroSection() {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final user = Supabase.instance.client.auth.currentUser;
-    
-    if (user == null) return SliverToBoxAdapter(child: SizedBox.shrink());
+    final size = MediaQuery.of(context).size;
+
+    if (user == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
     String getInitials(String? name, String? email) {
       if (name != null && name.isNotEmpty) {
@@ -263,225 +271,283 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     final initials = getInitials(_username, user.email);
 
     return SliverToBoxAdapter(
-      child: Container(
-        height: size.height * 0.45,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primaryContainer.withOpacity(0.3),
-              colorScheme.surface,
-            ],
-            stops: const [0.0, 0.8],
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Background decoration
-            Positioned(
-              top: -size.height * 0.1,
-              right: -size.width * 0.2,
-              child: Container(
-                width: size.width * 0.6,
-                height: size.width * 0.6,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      colorScheme.primary.withOpacity(0.1),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
+      child: VSResponsiveBuilder(
+        builder: (context, breakpoint) {
+          final heroHeight = breakpoint == VSBreakpoint.mobile
+            ? size.height * 0.45
+            : size.height * 0.35;
+
+          return Container(
+            height: heroHeight,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  colorScheme.surface,
+                ],
+                stops: const [0.0, 0.8],
               ),
             ),
-            Positioned(
-              bottom: -size.height * 0.05,
-              left: -size.width * 0.15,
-              child: Container(
-                width: size.width * 0.4,
-                height: size.width * 0.4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      colorScheme.secondary.withOpacity(0.08),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // Profile content
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: size.width * 0.06,
-                vertical: size.height * 0.06,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Profile picture with edit button
-                  Container(
+            child: Stack(
+              children: [
+                // Background decoration
+                Positioned(
+                  top: -size.height * 0.1,
+                  right: -size.width * 0.2,
+                  child: Container(
+                    width: size.width * 0.6,
+                    height: size.width * 0.6,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: colorScheme.primary.withOpacity(0.2),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
+                      gradient: RadialGradient(
+                        colors: [
+                          colorScheme.primary.withValues(alpha: 0.1),
+                          Colors.transparent,
+                        ],
+                      ),
                     ),
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        Container(
-                          width: size.width * 0.32,
-                          height: size.width * 0.32,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: colorScheme.outline.withOpacity(0.2),
-                              width: 3,
-                            ),
-                          ),
-                          child: _isUploading
-                              ? CircularProgressIndicator(color: colorScheme.primary)
-                              : _profileImageUrl != null
-                                  ? ClipOval(
-                                      child: Image.network(
-                                        _profileImageUrl!,
-                                        fit: BoxFit.cover,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                      ),
-                                    )
-                                  : Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            colorScheme.primary,
-                                            colorScheme.secondary,
-                                          ],
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          initials,
-                                          style: textTheme.displaySmall?.copyWith(
-                                            color: colorScheme.onPrimary,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -size.height * 0.05,
+                  left: -size.width * 0.15,
+                  child: Container(
+                    width: size.width * 0.4,
+                    height: size.width * 0.4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          colorScheme.secondary.withValues(alpha: 0.08),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Profile content
+                Positioned.fill(
+                  child: SafeArea(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: VSResponsive.isMobile(context)
+                            ? size.width - (VSDesignTokens.space6 * 2)
+                            : 500,
                         ),
-                        Container(
-                          width: size.width * 0.12,
-                          height: size.width * 0.12,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: colorScheme.surface,
-                            border: Border.all(
-                              color: colorScheme.outline.withOpacity(0.3),
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: colorScheme.shadow.withOpacity(0.15),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: VSDesignTokens.space6,
+                            vertical: VSDesignTokens.space4,
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Profile picture with edit button
+                              Flexible(
+                                child: _buildProfilePicture(size, colorScheme, textTheme, initials),
+                              ),
+
+                              SizedBox(height: VSDesignTokens.space4),
+
+                              // User info card
+                              Flexible(
+                                child: _buildUserInfoCard(user, colorScheme, textTheme),
                               ),
                             ],
                           ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: _isUploading ? null : _pickAndUploadProfilePicture,
-                              borderRadius: BorderRadius.circular(size.width * 0.06),
-                              child: Icon(
-                                Icons.camera_alt_rounded,
-                                size: size.width * 0.06,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                  
-                  SizedBox(height: size.height * 0.03),
-                  
-                  // User info
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surface.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: colorScheme.outline.withOpacity(0.15),
-                        width: 1,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: colorScheme.shadow.withOpacity(0.08),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          _username ?? user.email ?? 'VisionSpark User',
-                          style: textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.onSurface,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        if (_username != null && user.email != null) ...[
-                          SizedBox(height: size.height * 0.006),
-                          Text(
-                            user.email!,
-                            style: textTheme.bodyLarge?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                        if (_joinDate != null) ...[
-                          SizedBox(height: size.height * 0.012),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'Member since ${_formatJoinDate(_joinDate!)}',
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onPrimaryContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildProfilePicture(Size size, ColorScheme colorScheme, TextTheme textTheme, String initials) {
+    final profileSize = VSResponsive.isMobile(context)
+      ? size.width * 0.32
+      : VSDesignTokens.iconXXL * 2;
+
+    return Center(
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.2),
+              blurRadius: VSDesignTokens.space6,
+              offset: const Offset(0, VSDesignTokens.space2),
             ),
           ],
         ),
+        child: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+          // Profile picture container
+          VSAccessibleButton(
+            onPressed: _isUploading ? null : _pickAndUploadProfilePicture,
+            semanticLabel: 'Profile picture. Tap to change.',
+            child: Container(
+              width: profileSize,
+              height: profileSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.2),
+                  width: 3,
+                ),
+              ),
+              child: _isUploading
+                ? VSLoadingIndicator(
+                    size: VSDesignTokens.iconL,
+                  )
+                : _profileImageUrl != null
+                  ? ClipOval(
+                      child: Image.network(
+                        _profileImageUrl!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildInitialsAvatar(colorScheme, textTheme, initials);
+                        },
+                      ),
+                    )
+                  : _buildInitialsAvatar(colorScheme, textTheme, initials),
+            ),
+          ),
+
+          // Edit button
+          if (!_isUploading)
+            Container(
+              width: VSDesignTokens.touchTargetMin * 0.7,
+              height: VSDesignTokens.touchTargetMin * 0.7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorScheme.surface,
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.3),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withValues(alpha: 0.15),
+                    blurRadius: VSDesignTokens.space2,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: VSAccessibleButton(
+                onPressed: _pickAndUploadProfilePicture,
+                semanticLabel: 'Change profile picture',
+                tooltip: 'Change profile picture',
+                child: Icon(
+                  Icons.camera_alt_rounded,
+                  size: VSDesignTokens.iconS,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
+        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInitialsAvatar(ColorScheme colorScheme, TextTheme textTheme, String initials) {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary,
+            colorScheme.secondary,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initials,
+          style: textTheme.displaySmall?.copyWith(
+            color: colorScheme.onPrimary,
+            fontWeight: VSTypography.weightBold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserInfoCard(User user, ColorScheme colorScheme, TextTheme textTheme) {
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space6),
+      color: colorScheme.surface.withValues(alpha: 0.8),
+      borderRadius: VSDesignTokens.radiusXXL,
+      border: Border.all(
+        color: colorScheme.outline.withValues(alpha: 0.15),
+        width: 1,
+      ),
+      elevation: VSDesignTokens.elevation2,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          VSResponsiveText(
+            text: _username ?? user.email ?? 'VisionSpark User',
+            baseStyle: textTheme.headlineSmall?.copyWith(
+              fontWeight: VSTypography.weightBold,
+              color: colorScheme.onSurface,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (_username != null && user.email != null) ...[
+            const SizedBox(height: VSDesignTokens.space1),
+            Text(
+              user.email!,
+              style: textTheme.bodyLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ],
+          if (_joinDate != null) ...[
+            const SizedBox(height: VSDesignTokens.space3),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: VSDesignTokens.space3,
+                  vertical: VSDesignTokens.space1,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+                ),
+                child: Text(
+                  'Member since ${_formatJoinDate(_joinDate!)}',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -490,61 +556,58 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.15),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return VSCard(
+      color: colorScheme.surface,
+      borderRadius: VSDesignTokens.radiusXXL,
+      border: Border.all(
+        color: colorScheme.outline.withValues(alpha: 0.15),
+        width: 1,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      elevation: VSDesignTokens.elevation2,
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          // Header
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(VSDesignTokens.space6),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(VSDesignTokens.space3),
                   decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(12),
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
                   ),
                   child: Icon(
                     Icons.manage_accounts_rounded,
                     color: colorScheme.onPrimaryContainer,
-                    size: 24,
+                    size: VSDesignTokens.iconM,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: VSDesignTokens.space4),
                 Text(
                   'Account Management',
                   style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: VSTypography.weightBold,
                     color: colorScheme.onSurface,
                   ),
                 ),
               ],
             ),
           ),
-          _buildModernSettingsTile(
+
+          // Settings tiles
+          _buildSettingsTile(
             icon: Icons.edit_rounded,
             title: 'Edit Username',
             subtitle: _username ?? 'Set your display name',
             onTap: () => _showEditUsernameDialog(context),
-            colorScheme: colorScheme,
-            textTheme: textTheme,
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -553,145 +616,141 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: colorScheme.error.withOpacity(0.2),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.error.withOpacity(0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return VSCard(
+      color: colorScheme.surface,
+      borderRadius: VSDesignTokens.radiusXXL,
+      border: Border.all(
+        color: colorScheme.error.withValues(alpha: 0.2),
+        width: 1,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      elevation: VSDesignTokens.elevation2,
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          // Header
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(VSDesignTokens.space6),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(VSDesignTokens.space3),
                   decoration: BoxDecoration(
-                    color: colorScheme.errorContainer.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(12),
+                    color: colorScheme.errorContainer.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
                   ),
                   child: Icon(
                     Icons.warning_rounded,
                     color: colorScheme.onErrorContainer,
-                    size: 24,
+                    size: VSDesignTokens.iconM,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: VSDesignTokens.space4),
                 Text(
                   'Danger Zone',
                   style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: VSTypography.weightBold,
                     color: colorScheme.error,
                   ),
                 ),
               ],
             ),
           ),
-          _buildModernSettingsTile(
+
+          // Settings tiles
+          _buildSettingsTile(
             icon: Icons.logout_rounded,
             title: 'Sign Out',
             subtitle: 'Sign out of your account',
             onTap: _signOut,
-            colorScheme: colorScheme,
-            textTheme: textTheme,
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.symmetric(horizontal: VSDesignTokens.space6),
             child: Divider(
-              color: colorScheme.outline.withOpacity(0.2),
+              color: colorScheme.outline.withValues(alpha: 0.2),
               height: 1,
             ),
           ),
-          _buildModernSettingsTile(
+          _buildSettingsTile(
             icon: Icons.delete_forever_rounded,
             title: 'Delete Account',
             subtitle: 'Permanently delete your account and all data',
             onTap: _showDeleteAccountConfirmation,
             textColor: colorScheme.error,
-            colorScheme: colorScheme,
-            textTheme: textTheme,
             isDestructive: true,
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildModernSettingsTile({
+  Widget _buildSettingsTile({
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
-    required ColorScheme colorScheme,
-    required TextTheme textTheme,
     Color? textColor,
     bool isDestructive = false,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDestructive 
-                    ? colorScheme.errorContainer.withOpacity(0.2)
-                    : colorScheme.surfaceContainer.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: textColor ?? colorScheme.onSurfaceVariant,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: textColor ?? colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withOpacity(0.8),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colorScheme.onSurfaceVariant.withOpacity(0.6),
-                size: 20,
-              ),
-            ],
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return VSAccessibleCard(
+      onTap: onTap,
+      semanticLabel: '$title. $subtitle',
+      semanticHint: 'Tap to ${title.toLowerCase()}',
+      padding: const EdgeInsets.all(VSDesignTokens.space6),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(VSDesignTokens.space3),
+            decoration: BoxDecoration(
+              color: isDestructive
+                ? colorScheme.errorContainer.withValues(alpha: 0.2)
+                : colorScheme.surfaceContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+            ),
+            child: Icon(
+              icon,
+              color: textColor ?? (isDestructive
+                ? colorScheme.onErrorContainer
+                : colorScheme.onSurfaceVariant),
+              size: VSDesignTokens.iconS,
+            ),
           ),
-        ),
+          const SizedBox(width: VSDesignTokens.space4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: textTheme.titleMedium?.copyWith(
+                    color: textColor ?? colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+                const SizedBox(height: VSDesignTokens.space1),
+                Text(
+                  subtitle,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            size: VSDesignTokens.iconS,
+          ),
+        ],
       ),
     );
   }

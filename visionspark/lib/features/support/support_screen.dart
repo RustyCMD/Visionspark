@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/design_system/design_system.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -73,48 +74,100 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Form(
-            key: _formKey,
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: VSResponsive.getResponsivePadding(context),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildHeader(context),
-                const SizedBox(height: 40),
-                _buildSupportFormField(
-                  controller: _titleController,
-                  hintText: 'Title',
-                  icon: Icons.title_rounded,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter a title.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                _buildSupportFormField(
-                  controller: _contentController,
-                  hintText: 'Describe your issue or feedback...',
-                  icon: Icons.article_outlined,
-                  maxLines: 5,
-                   validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please provide some content.';
-                    }
-                    if(value.trim().length < 10){
-                      return 'Please provide at least 10 characters.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 32),
-                _buildSubmitButton(),
+                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+                _buildContactForm(context),
+                const VSResponsiveSpacing(),
+                _buildDisclaimer(context),
+                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactForm(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space6),
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.contact_support,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
+                ),
+                const SizedBox(width: VSDesignTokens.space3),
+                VSResponsiveText(
+                  text: 'Contact Support',
+                  baseStyle: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: VSDesignTokens.space6),
+            VSAccessibleTextField(
+              controller: _titleController,
+              labelText: 'Subject',
+              hintText: 'Brief description of your issue',
+              semanticLabel: 'Support request subject',
+              prefixIcon: const Icon(Icons.title_rounded),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter a subject.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: VSDesignTokens.space5),
+            VSAccessibleTextField(
+              controller: _contentController,
+              labelText: 'Message',
+              hintText: 'Describe your issue or feedback in detail...',
+              semanticLabel: 'Support request message',
+              prefixIcon: const Icon(Icons.article_outlined),
+              maxLines: 6,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please provide a message.';
+                }
+                if (value.trim().length < 10) {
+                  return 'Please provide at least 10 characters.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: VSDesignTokens.space6),
+            VSButton(
+              text: 'Submit Request',
+              icon: _isLoading ? null : const Icon(Icons.send_rounded),
+              onPressed: _isLoading ? null : _submitSupport,
+              isLoading: _isLoading,
+              isFullWidth: true,
+              size: VSButtonSize.large,
+              variant: VSButtonVariant.primary,
+            ),
+          ],
         ),
       ),
     );
@@ -126,86 +179,91 @@ class _SupportScreenState extends State<SupportScreen> {
 
     return Column(
       children: [
-        Icon(Icons.support_agent_outlined, size: 64, color: colorScheme.primary),
-        const SizedBox(height: 16),
-        Text(
-          'Support & Feedback',
-          style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+        Icon(
+          Icons.support_agent_outlined,
+          size: VSDesignTokens.iconXXL,
+          color: colorScheme.primary,
+        ),
+        const SizedBox(height: VSDesignTokens.space4),
+        VSResponsiveText(
+          text: 'Support & Feedback',
+          baseStyle: textTheme.headlineMedium?.copyWith(
+            fontWeight: VSTypography.weightBold,
+            color: colorScheme.onSurface,
+          ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Report a bug or suggest a feature. Our team will review your message.',
-          style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface.withOpacity(0.7)),
+        const SizedBox(height: VSDesignTokens.space2),
+        VSResponsiveText(
+          text: 'Get help with VisionSpark or share your feedback with our team',
+          baseStyle: textTheme.bodyLarge?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
           textAlign: TextAlign.center,
         ),
       ],
     );
   }
 
-  Widget _buildSupportFormField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData icon,
-    int maxLines = 1,
-    required String? Function(String?) validator,
-  }) {
+  Widget _buildDisclaimer(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      validator: validator,
-      textInputAction: maxLines > 1 ? TextInputAction.newline : TextInputAction.next,
-      decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: colorScheme.onSurfaceVariant), // Use onSurfaceVariant for icons in inputs
-        hintText: hintText,
-        filled: true,
-        fillColor: colorScheme.surfaceContainer, // Standard M3 fill color for text fields
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outlineVariant), // Default border
-        ),
-        enabledBorder: OutlineInputBorder( // Explicitly define enabled border
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.error, width: 1.5),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.error, width: 2),
-        ),
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      color: colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+      borderRadius: VSDesignTokens.radiusM,
+      border: Border.all(
+        color: colorScheme.outline.withValues(alpha: 0.2),
+        width: 1,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: colorScheme.primary,
+            size: VSDesignTokens.iconM,
+          ),
+          const SizedBox(width: VSDesignTokens.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Disclaimer',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+                const SizedBox(height: VSDesignTokens.space2),
+                RichText(
+                  text: TextSpan(
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                    children: [
+                      const TextSpan(
+                        text: 'If we need more information from you, we will contact you by email from ',
+                      ),
+                      TextSpan(
+                        text: 'visionsparkai@gmail.com',
+                        style: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: VSTypography.weightSemiBold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildSubmitButton() {
-    return ElevatedButton.icon(
-      onPressed: _isLoading ? null : _submitSupport,
-      icon: _isLoading 
-        ? const SizedBox.shrink() // The label handles the loading state
-        : const Icon(Icons.send_rounded, size: 20),
-      label: _isLoading
-          ? const SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Text('Submit'),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-    );
-  }
 }

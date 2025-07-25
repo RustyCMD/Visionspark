@@ -5,6 +5,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import './gallery_screen.dart'; // Contains GalleryImage
 import 'package:http/http.dart' as http;
+import '../../shared/design_system/design_system.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
 class GalleryImageDetailDialog extends StatefulWidget {
   final GalleryImage galleryItem;
@@ -96,51 +98,12 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
         await _channel.invokeMethod('saveImageToGallery', {
           'imageBytes': response.bodyBytes, 'filename': filename, 'albumName': 'Visionspark'
         });
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Image saved to Gallery: $filename'),
-              ],
-            ),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        VSSnackbar.showSuccess(context, 'Image saved to Gallery: $filename');
       } else {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Storage permission denied.'),
-              ],
-            ),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        VSSnackbar.showError(context, 'Storage permission denied.');
       }
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.error, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Failed to save image: ${e.toString()}')),
-            ],
-          ),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      VSSnackbar.showError(context, 'Failed to save image: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -195,29 +158,33 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: Container(
-          margin: const EdgeInsets.all(8),
+          margin: const EdgeInsets.all(VSDesignTokens.space2),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.3),
+            color: VSColors.black38,
             shape: BoxShape.circle,
           ),
-          child: IconButton(
-            icon: const Icon(Icons.close_rounded, color: Colors.white),
+          child: VSAccessibleButton(
             onPressed: () => Navigator.of(context).pop(),
+            semanticLabel: 'Close image viewer',
+            tooltip: 'Close',
+            child: const Icon(Icons.close_rounded, color: Colors.white),
           ),
         ),
         actions: [
           Container(
-            margin: const EdgeInsets.all(8),
+            margin: const EdgeInsets.all(VSDesignTokens.space2),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
+              color: VSColors.black38,
               shape: BoxShape.circle,
             ),
-            child: IconButton(
-              icon: Icon(
+            child: VSAccessibleButton(
+              onPressed: _toggleDetails,
+              semanticLabel: _showDetails ? 'Hide image details' : 'Show image details',
+              tooltip: _showDetails ? 'Hide details' : 'Show details',
+              child: Icon(
                 _showDetails ? Icons.info : Icons.info_outline,
                 color: Colors.white,
               ),
-              onPressed: _toggleDetails,
             ),
           ),
         ],
@@ -245,25 +212,14 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
                         width: size.width * 0.8,
                         height: size.height * 0.6,
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade900,
-                          borderRadius: BorderRadius.circular(16),
+                          color: VSColors.gray900,
+                          borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
                         ),
                         child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                value: progress.expectedTotalBytes != null
-                                    ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
-                                    : null,
-                                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Loading image...',
-                                style: textTheme.bodyLarge?.copyWith(color: Colors.white70),
-                              ),
-                            ],
+                          child: VSLoadingIndicator(
+                            message: 'Loading image...',
+                            size: VSDesignTokens.iconXL,
+                            color: colorScheme.primary,
                           ),
                         ),
                       );
@@ -272,24 +228,14 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
                       width: size.width * 0.8,
                       height: size.height * 0.6,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade900,
-                        borderRadius: BorderRadius.circular(16),
+                        color: VSColors.gray900,
+                        borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
                       ),
                       child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.broken_image_rounded,
-                              size: 64,
-                              color: Colors.white54,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Failed to load image',
-                              style: textTheme.bodyLarge?.copyWith(color: Colors.white70),
-                            ),
-                          ],
+                        child: VSEmptyState(
+                          icon: Icons.broken_image_rounded,
+                          title: 'Failed to load image',
+                          subtitle: 'Please check your connection and try again',
                         ),
                       ),
                     ),
@@ -297,6 +243,24 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
                 ),
               ),
             ),
+          ),
+
+          // Action buttons (positioned first so details overlay can push them up)
+          AnimatedBuilder(
+            animation: _detailsAnimation,
+            builder: (context, child) {
+              // Calculate dynamic bottom position based on details overlay state
+              // Push action buttons up by the height of the details overlay when shown
+              final detailsOverlayHeight = size.height * 0.4 + 72; // Max height + margins/padding
+              final actionButtonsBottom = size.height * 0.05 + (detailsOverlayHeight * _detailsAnimation.value);
+
+              return Positioned(
+                bottom: actionButtonsBottom,
+                left: 0,
+                right: 0,
+                child: _buildActionButtons(colorScheme, textTheme, size),
+              );
+            },
           ),
 
           // Details overlay
@@ -308,7 +272,7 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
                 left: 0,
                 right: 0,
                 child: Transform.translate(
-                  offset: Offset(0, (1 - _detailsAnimation.value) * 200),
+                  offset: Offset(0, (1 - _detailsAnimation.value) * (size.height * 0.4 + 72)),
                   child: Opacity(
                     opacity: _detailsAnimation.value,
                     child: _buildDetailsOverlay(colorScheme, textTheme, size),
@@ -316,14 +280,6 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
                 ),
               );
             },
-          ),
-
-          // Action buttons
-          Positioned(
-            bottom: size.height * 0.05,
-            left: 0,
-            right: 0,
-            child: _buildActionButtons(colorScheme, textTheme, size),
           ),
         ],
       ),
@@ -333,26 +289,30 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
   Widget _buildDetailsOverlay(ColorScheme colorScheme, TextTheme textTheme, Size size) {
     return Container(
       margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
+      constraints: BoxConstraints(
+        maxHeight: size.height * 0.4, // Limit height to 40% of screen
+      ),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(24),
+        color: VSColors.black87,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: VSColors.white12,
           width: 1,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
           Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: colorScheme.primary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
+                  color: colorScheme.primary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusS),
                 ),
                 child: Icon(
                   Icons.auto_awesome,
@@ -385,10 +345,10 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
+                color: VSColors.white12.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.1),
+                  color: VSColors.white12,
                   width: 1,
                 ),
               ),
@@ -417,7 +377,8 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
               ),
             ],
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -426,8 +387,8 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
+        color: VSColors.white12,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -452,10 +413,10 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
       margin: EdgeInsets.symmetric(horizontal: size.width * 0.08),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(24),
+        color: VSColors.black87.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: VSColors.white12,
           width: 1,
         ),
       ),
@@ -496,55 +457,50 @@ class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog>
     bool isLoading = false,
   }) {
     final isEnabled = onPressed != null;
-    
+
     return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        child: Material(
-          color: isEnabled 
-              ? colorScheme.primary.withOpacity(0.15)
-              : Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isLoading)
-                    SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          isEnabled ? colorScheme.primary : Colors.white38,
-                        ),
-                      ),
-                    )
-                  else
-                    Icon(
-                      icon,
-                      size: 24,
-                      color: isEnabled ? colorScheme.primary : Colors.white38,
-                    ),
-                  const SizedBox(height: 8),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: isEnabled ? Colors.white : Colors.white38,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+      child: VSAccessibleButton(
+        onPressed: onPressed,
+        semanticLabel: '$label button',
+        tooltip: label,
+        backgroundColor: isEnabled
+          ? colorScheme.primary.withValues(alpha: 0.15)
+          : VSColors.white12.withValues(alpha: 0.05),
+        borderRadius: VSDesignTokens.radiusL,
+        padding: const EdgeInsets.symmetric(
+          vertical: VSDesignTokens.space4,
+          horizontal: VSDesignTokens.space3,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isLoading)
+              SizedBox(
+                width: VSDesignTokens.iconM,
+                height: VSDesignTokens.iconM,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: isEnabled ? colorScheme.primary : Colors.white38,
+                ),
+              )
+            else
+              Icon(
+                icon,
+                size: VSDesignTokens.iconM,
+                color: isEnabled ? colorScheme.primary : Colors.white38,
               ),
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              label,
+              style: TextStyle(
+                color: isEnabled ? Colors.white : Colors.white38,
+                fontSize: VSTypography.fontSize12,
+                fontWeight: VSTypography.weightSemiBold,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
+          ],
         ),
       ),
     );

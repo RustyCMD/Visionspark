@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
 import 'package:http/http.dart' as http;
 import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/design_system/design_system.dart';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 
@@ -259,8 +260,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
         return;
       }
 
-      // Convert image to base64 using isolate to prevent blocking UI
-      final base64Image = await compute(_encodeImageToBase64, imageBytes);
+      // Convert image to PNG format and then to base64 using isolate to prevent blocking UI
+      final base64Image = await compute(_convertToPngAndEncode, imageBytes);
 
       final Map<String, dynamic> requestBody = {
         'image': base64Image,
@@ -386,8 +387,18 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   }
 
   // Static methods for isolate processing
-  static String _encodeImageToBase64(Uint8List imageBytes) {
-    return base64Encode(imageBytes);
+  static String _convertToPngAndEncode(Uint8List imageBytes) {
+    // Decode the image from any format
+    final originalImage = img.decodeImage(imageBytes);
+    if (originalImage == null) {
+      throw Exception('Failed to decode image. Please ensure the image is in a supported format.');
+    }
+
+    // Encode as PNG to ensure compatibility with OpenAI API
+    final pngBytes = img.encodePng(originalImage);
+
+    // Convert to base64
+    return base64Encode(pngBytes);
   }
 
   static Uint8List _createThumbnailInIsolate(Uint8List imageBytes) {
@@ -417,34 +428,36 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     int remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildGenerationStatus(context, remaining, _generationLimit),
-              const SizedBox(height: 24),
-              _buildImageUploadSection(context),
-              const SizedBox(height: 24),
-              _buildPromptInput(context),
-              const SizedBox(height: 16),
-              _buildEnhancementSettings(context),
-              const SizedBox(height: 24),
-              _buildResultSection(context),
-              const SizedBox(height: 24),
-              _buildLastPromptDisplay(context),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _canEnhanceImage ? _enhanceImage : null,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: VSResponsive.getResponsivePadding(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildGenerationStatus(context, remaining, _generationLimit),
+                const VSResponsiveSpacing(),
+                _buildImageUploadSection(context),
+                const VSResponsiveSpacing(),
+                _buildPromptInput(context),
+                const VSResponsiveSpacing(mobile: VSDesignTokens.space4),
+                _buildEnhancementSettings(context),
+                const VSResponsiveSpacing(),
+                _buildResultSection(context),
+                const VSResponsiveSpacing(),
+                _buildLastPromptDisplay(context),
+                const VSResponsiveSpacing(),
+                VSButton(
+                  text: 'Enhance Image',
+                  onPressed: _canEnhanceImage ? _enhanceImage : null,
+                  isLoading: _isLoading,
+                  isFullWidth: true,
+                  size: VSButtonSize.large,
+                  variant: VSButtonVariant.primary,
                 ),
-                child: const Text('Enhance Image'),
-              ),
-            ],
+                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+              ],
+            ),
           ),
         ),
       ),
@@ -454,41 +467,73 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Widget _buildGenerationStatus(BuildContext context, int remaining, int limit) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    
-    if (_isLoadingStatus) return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
-    if (_statusErrorMessage != null) return Center(child: Text(_statusErrorMessage!, style: TextStyle(color: colorScheme.error)));
+
+    if (_isLoadingStatus) {
+      return Center(
+        child: VSLoadingIndicator(
+          message: 'Loading status...',
+          size: VSDesignTokens.iconL,
+        ),
+      );
+    }
+
+    if (_statusErrorMessage != null) {
+      return Center(
+        child: VSCard(
+          padding: const EdgeInsets.all(VSDesignTokens.space4),
+          color: colorScheme.errorContainer.withValues(alpha: 0.1),
+          child: Text(
+            _statusErrorMessage!,
+            style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
 
     double progress = limit < 0 ? 1.0 : limit == 0 ? 0.0 : (remaining / limit).clamp(0.0, 1.0);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space4),
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Enhancements Remaining', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+              VSResponsiveText(
+                text: 'Enhancements Remaining',
+                baseStyle: textTheme.titleMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: VSTypography.weightMedium,
+                ),
+              ),
               Text(
                 limit == -1 ? 'Unlimited' : '$remaining / $limit',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: VSTypography.weightBold,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: VSDesignTokens.space3),
           LinearProgressIndicator(
             value: progress,
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(4),
-            backgroundColor: colorScheme.surfaceVariant,
+            minHeight: VSDesignTokens.space2,
+            borderRadius: BorderRadius.circular(VSDesignTokens.radiusXS),
+            backgroundColor: colorScheme.surfaceContainerHighest,
             valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: VSDesignTokens.space2),
           if (limit != -1)
-            Text(_timeUntilReset, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
+            Text(
+              _timeUntilReset,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+            ),
         ],
       ),
     );
@@ -498,139 +543,174 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
+    return VSCard(
+      padding: EdgeInsets.zero,
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      border: Border.all(
+        color: colorScheme.outline.withValues(alpha: 0.3),
+        width: 1,
       ),
-      child: _selectedImage == null 
-        ? Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.image_outlined, size: 48, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
-              const SizedBox(height: 16),
-              Text('Select an image to enhance', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _pickImageFromGallery,
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Gallery'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _takePhoto,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Camera'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  ),
-                ],
+      child: Container(
+        height: VSResponsive.isMobile(context) ? 200 : 250,
+        child: _selectedImage == null
+          ? VSEmptyState(
+              icon: Icons.image_outlined,
+              title: 'Select an image to enhance',
+              subtitle: 'Choose from gallery or take a new photo',
+              action: VSResponsiveBuilder(
+                builder: (context, breakpoint) {
+                  if (breakpoint == VSBreakpoint.mobile) {
+                    return Column(
+                      children: [
+                        VSButton(
+                          text: 'Gallery',
+                          icon: const Icon(Icons.photo_library),
+                          onPressed: _pickImageFromGallery,
+                          variant: VSButtonVariant.outline,
+                          size: VSButtonSize.small, // Smaller button
+                          isFullWidth: true,
+                        ),
+                        const SizedBox(height: VSDesignTokens.space1), // Reduced spacing
+                        VSButton(
+                          text: 'Camera',
+                          icon: const Icon(Icons.camera_alt),
+                          onPressed: _takePhoto,
+                          variant: VSButtonVariant.outline,
+                          size: VSButtonSize.small, // Smaller button
+                          isFullWidth: true,
+                        ),
+                      ],
+                    );
+                  } else {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        VSButton(
+                          text: 'Gallery',
+                          icon: const Icon(Icons.photo_library),
+                          onPressed: _pickImageFromGallery,
+                          variant: VSButtonVariant.outline,
+                        ),
+                        VSButton(
+                          text: 'Camera',
+                          icon: const Icon(Icons.camera_alt),
+                          onPressed: _takePhoto,
+                          variant: VSButtonVariant.outline,
+                        ),
+                      ],
+                    );
+                  }
+                },
               ),
-            ],
-          )
-        : Stack(
-            children: [
-              Container(
-                width: double.infinity,
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  image: DecorationImage(
-                    image: FileImage(_selectedImage!),
-                    fit: BoxFit.cover,
+            )
+          : Stack(
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
+                    image: DecorationImage(
+                      image: FileImage(_selectedImage!),
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: IconButton(
+                Positioned(
+                  top: VSDesignTokens.space2,
+                  right: VSDesignTokens.space2,
+                  child: VSAccessibleButton(
                     onPressed: () => setState(() {
                       _selectedImage = null;
                       _enhancedImageUrl = null;
                     }),
-                    icon: Icon(Icons.close, color: colorScheme.error),
+                    semanticLabel: 'Remove selected image',
+                    tooltip: 'Remove image',
+                    backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
+                    borderRadius: VSDesignTokens.radiusXL,
+                    child: Icon(Icons.close, color: colorScheme.error),
                   ),
                 ),
-              ),
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: IconButton(
+                Positioned(
+                  bottom: VSDesignTokens.space2,
+                  right: VSDesignTokens.space2,
+                  child: Row(
+                    children: [
+                      VSAccessibleButton(
                         onPressed: _pickImageFromGallery,
-                        icon: Icon(Icons.photo_library, color: colorScheme.primary),
+                        semanticLabel: 'Change image from gallery',
                         tooltip: 'Change from Gallery',
+                        backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
+                        borderRadius: VSDesignTokens.radiusXL,
+                        child: Icon(Icons.photo_library, color: colorScheme.primary),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: IconButton(
+                      const SizedBox(width: VSDesignTokens.space2),
+                      VSAccessibleButton(
                         onPressed: _takePhoto,
-                        icon: Icon(Icons.camera_alt, color: colorScheme.primary),
+                        semanticLabel: 'Take new photo',
                         tooltip: 'Take New Photo',
+                        backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
+                        borderRadius: VSDesignTokens.radiusXL,
+                        child: Icon(Icons.camera_alt, color: colorScheme.primary),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+      ),
     );
   }
 
   Widget _buildPromptInput(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return TextField(
-      controller: _promptController,
-      minLines: 3,
-      maxLines: 5,
-      decoration: InputDecoration(
-        hintText: 'Describe what you want to add or change in the image...',
-        labelText: 'Enhancement Prompt',
-        suffixIcon: Row(
-          mainAxisSize: MainAxisSize.min,
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        VSAccessibleTextField(
+          controller: _promptController,
+          labelText: 'Enhancement Prompt',
+          hintText: 'Describe what you want to add or change in the image...',
+          semanticLabel: 'Enhancement prompt input field',
+          maxLines: 5,
+          textAlignVertical: TextAlignVertical.top,
+          onChanged: (value) {
+            // Optional: Add real-time validation or suggestions
+          },
+        ),
+        const SizedBox(height: VSDesignTokens.space3),
+        Row(
           children: [
-            IconButton(
-              icon: _isImproving
-                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
-                  : Icon(Icons.auto_awesome, color: colorScheme.onSurfaceVariant),
-              tooltip: 'Improve Prompt',
-              onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
+            Expanded(
+              child: VSButton(
+                text: 'Improve Prompt',
+                icon: _isImproving
+                  ? null
+                  : const Icon(Icons.auto_awesome),
+                onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
+                isLoading: _isImproving,
+                variant: VSButtonVariant.outline,
+                size: VSButtonSize.medium,
+              ),
             ),
-            IconButton(
-              icon: _isFetchingRandomPrompt
-                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary))
-                  : Icon(Icons.casino, color: colorScheme.onSurfaceVariant),
-              tooltip: 'Surprise Me!',
-              onPressed: _isImproving ? null : _fetchRandomPrompt,
+            const SizedBox(width: VSDesignTokens.space3),
+            Expanded(
+              child: VSButton(
+                text: 'Surprise Me!',
+                icon: _isFetchingRandomPrompt
+                  ? null
+                  : const Icon(Icons.casino),
+                onPressed: _isImproving ? null : _fetchRandomPrompt,
+                isLoading: _isFetchingRandomPrompt,
+                variant: VSButtonVariant.outline,
+                size: VSButtonSize.medium,
+              ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 
@@ -638,58 +718,114 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Enhancement Settings', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-        const SizedBox(height: 16),
-        
-        // Enhancement Mode
-        Text('Mode', style: textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: _selectedMode,
-          items: _enhancementModes.map((String mode) {
-            String displayName = mode == 'enhance' ? 'Enhance' : mode == 'edit' ? 'Edit' : 'Variation';
-            return DropdownMenuItem<String>(
-              value: mode,
-              child: Text(displayName, style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface)),
-            );
-          }).toList(),
-          onChanged: (String? newValue) {
-            if (newValue != null) {
-              setState(() {
-                _selectedMode = newValue;
-              });
-            }
-          },
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space4),
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.tune,
+                color: colorScheme.primary,
+                size: VSDesignTokens.iconM,
+              ),
+              const SizedBox(width: VSDesignTokens.space2),
+              VSResponsiveText(
+                text: 'Enhancement Settings',
+                baseStyle: textTheme.titleMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: VSTypography.weightSemiBold,
+                ),
+              ),
+            ],
           ),
-          dropdownColor: colorScheme.surfaceContainerHigh,
-        ),
-        
-        const SizedBox(height: 16),
-        
-        // Enhancement Strength
-        Text('Enhancement Strength: ${(_enhancementStrength * 100).round()}%', 
-             style: textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        Slider(
-          value: _enhancementStrength,
-          min: 0.1,
-          max: 1.0,
-          divisions: 9,
-          onChanged: (double value) {
-            setState(() {
-              _enhancementStrength = value;
-            });
-          },
-          activeColor: colorScheme.primary,
-          inactiveColor: colorScheme.surfaceVariant,
-        ),
-      ],
+          const SizedBox(height: VSDesignTokens.space4),
+
+          // Enhancement Mode
+          Text(
+            'Mode',
+            style: textTheme.titleSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: VSTypography.weightMedium,
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          DropdownButtonFormField<String>(
+            value: _selectedMode,
+            items: _enhancementModes.map((String mode) {
+              String displayName = mode == 'enhance' ? 'Enhance' : mode == 'edit' ? 'Edit' : 'Variation';
+              return DropdownMenuItem<String>(
+                value: mode,
+                child: Text(
+                  displayName,
+                  style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface),
+                ),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  _selectedMode = newValue;
+                });
+              }
+            },
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: VSDesignTokens.space3,
+                vertical: VSDesignTokens.space2,
+              ),
+            ),
+            dropdownColor: colorScheme.surfaceContainerHigh,
+          ),
+
+          const SizedBox(height: VSDesignTokens.space4),
+
+          // Enhancement Strength
+          Container(
+            padding: const EdgeInsets.all(VSDesignTokens.space3),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+              border: Border.all(
+                color: colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Enhancement Strength: ${(_enhancementStrength * 100).round()}%',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightMedium,
+                  ),
+                ),
+                const SizedBox(height: VSDesignTokens.space2),
+                Slider(
+                  value: _enhancementStrength,
+                  min: 0.1,
+                  max: 1.0,
+                  divisions: 9,
+                  onChanged: (double value) {
+                    setState(() {
+                      _enhancementStrength = value;
+                    });
+                  },
+                  activeColor: colorScheme.primary,
+                  inactiveColor: colorScheme.surfaceContainerHighest,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -699,38 +835,46 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
 
     return AspectRatio(
       aspectRatio: 1.0,
-      child: Card(
-        elevation: 2,
+      child: VSCard(
+        elevation: VSDesignTokens.elevation2,
         color: colorScheme.surfaceContainerLowest,
         margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        borderRadius: VSDesignTokens.radiusXL,
         child: Stack(
           alignment: Alignment.center,
           children: [
             if (_enhancedImageUrl == null && !_isLoading)
-              Container(
-                color: colorScheme.surfaceContainerLow,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.auto_fix_high, size: 64, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
-                    const SizedBox(height: 16),
-                    Text("Your enhanced image will appear here", style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.8))),
-                  ],
-                ),
+              VSEmptyState(
+                icon: Icons.auto_fix_high,
+                title: "Your enhanced image will appear here",
+                subtitle: "Select an image and add a prompt to get started",
               ),
             if (_enhancedImageUrl != null)
-              Image.network(
-                _enhancedImageUrl!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)));
-                },
-                errorBuilder: (context, error, stackTrace) => Center(child: Icon(Icons.broken_image, size: 48, color: colorScheme.error)),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+                child: Image.network(
+                  _enhancedImageUrl!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: VSLoadingIndicator(
+                        message: 'Loading enhanced image...',
+                        size: VSDesignTokens.iconL,
+                        color: colorScheme.primary,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) => Center(
+                    child: VSEmptyState(
+                      icon: Icons.broken_image,
+                      title: 'Failed to load enhanced image',
+                      subtitle: 'Please try again',
+                    ),
+                  ),
+                ),
               ),
             Visibility(
               visible: _isLoading,
@@ -740,14 +884,16 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
               child: Container(
                 width: double.infinity,
                 height: double.infinity,
-                color: colorScheme.scrim.withOpacity(0.6),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
-                    const SizedBox(height: 16),
-                    Text("Enhancing...", style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ],
+                decoration: BoxDecoration(
+                  color: colorScheme.scrim.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+                ),
+                child: Center(
+                  child: VSLoadingIndicator(
+                    message: 'Enhancing your image...',
+                    size: VSDesignTokens.iconXL,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -763,8 +909,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
                       colors: [
-                        colorScheme.scrim.withOpacity(0.7),
-                        colorScheme.scrim.withOpacity(0.0),
+                        colorScheme.scrim.withValues(alpha: 0.7),
+                        colorScheme.scrim.withValues(alpha: 0.0),
                       ],
                       stops: const [0.0, 1.0]
                     ),
@@ -792,7 +938,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
         FloatingActionButton.small(
           onPressed: isLoading ? null : onPressed,
           heroTag: label,
-          backgroundColor: colorScheme.surface.withOpacity(0.85),
+          backgroundColor: colorScheme.surface.withValues(alpha: 0.85),
           foregroundColor: colorScheme.onSurface,
           elevation: 2,
           child: isLoading
@@ -800,7 +946,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
             : Icon(icon, size: 22),
         ),
         const SizedBox(height: 6),
-        Text(label, style: textTheme.labelSmall?.copyWith(color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500)),
+        Text(label, style: textTheme.labelSmall?.copyWith(color: VSColors.white87, fontWeight: VSTypography.weightMedium)),
       ],
     );
   }
@@ -832,7 +978,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
           SelectableText(
             _lastSuccessfulPrompt,
             style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.9),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
                   fontStyle: FontStyle.italic,
                 ),
             maxLines: 3,

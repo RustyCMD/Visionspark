@@ -1,5 +1,52 @@
 {
+  "name": "visionspark",
+  "version": "1.0.0",
+  "description": "VisionSpark Flutter App - Build and Deployment Scripts",
+  "scripts": {
+    "prebuild": "echo 🔍 Checking prerequisites... && npm run check-prerequisites",
+    "build-android": "echo 🏗️ Building Flutter app for Android (Release)... && flutter clean && flutter pub get && flutter build apk --release && echo ✅ Build completed! APK location: build\\app\\outputs\\flutter-apk\\app-release.apk",
+    "build-android-debug": "echo 🏗️ Building Flutter app for Android (Debug)... && flutter clean && flutter pub get && flutter build apk --debug && echo ✅ Debug build completed! APK location: build\\app\\outputs\\flutter-apk\\app-debug.apk",
+    "check-device": "echo 📱 Checking connected devices... && adb devices -l && echo. && echo ℹ️ If no devices are listed, ensure USB debugging is enabled and device is connected.",
+    "install-apk": "echo 📲 Installing APK on connected device... && npm run check-device && adb install -r build\\app\\outputs\\flutter-apk\\app-release.apk && echo ✅ Installation completed!",
+    "install-apk-debug": "echo 📲 Installing Debug APK on connected device... && npm run check-device && adb install -r build\\app\\outputs\\flutter-apk\\app-debug.apk && echo ✅ Debug installation completed!",
+    "launch-app": "echo 🚀 Launching VisionSpark app... && adb shell am start -n app.visionspark.app/.MainActivity && echo ✅ App launched successfully!",
+    "build-and-run": "echo 🔄 Starting complete build-to-device workflow... && npm run build-android && npm run install-apk && npm run launch-app && echo 🎉 Complete workflow finished! VisionSpark is now running on your device.",
+    "build-and-run-debug": "echo 🔄 Starting complete debug build-to-device workflow... && npm run build-android-debug && npm run install-apk-debug && npm run launch-app && echo 🎉 Debug workflow finished! VisionSpark is now running on your device.",
+    "clean": "echo 🧹 Cleaning Flutter build cache... && flutter clean && echo ✅ Clean completed!",
+    "check-prerequisites": "node scripts\\windows-setup-check.js",
+    "device-info": "echo 📋 Device Information: && adb shell getprop ro.product.model && adb shell getprop ro.build.version.release && adb shell getprop ro.product.cpu.abi",
+    "uninstall-app": "echo 🗑️ Uninstalling VisionSpark from device... && adb uninstall app.visionspark.app && echo ✅ App uninstalled successfully!",
+    "logs": "echo 📄 Showing app logs (press Ctrl+C to stop)... && adb logcat -s flutter",
+    "flutter-doctor": "echo 🩺 Running Flutter Doctor... && flutter doctor -v",
+    "fix-flutter-path": "node scripts\\fix-flutter-path.js",
+    "fix-adb-path": "node scripts\\fix-adb-path.js",
+    "setup": "node scripts\\windows-setup-check.js",
+    "test-flutter": "echo 🧪 Testing Flutter installation... && where flutter && flutter --version",
+    "test-adb": "echo 🧪 Testing ADB installation... && where adb && adb version",
+    "test-adb-setup": "test-adb-setup.bat",
+    "test-setup": "test-setup.bat",
+    "test-device": "echo 🧪 Running device connectivity test... && adb devices -l && echo. && echo Testing ADB connection... && adb shell echo Device connection successful! && echo ✅ Device test completed!",
+    "build-info": "echo 📋 Build Information: && echo Flutter version: && flutter --version && echo. && echo Connected devices: && adb devices -l && echo. && echo Project info: && findstr version pubspec.yaml",
+    "quick-install": "echo ⚡ Quick install (skips clean)... && adb install -r build\\app\\outputs\\flutter-apk\\app-release.apk && npm run launch-app",
+    "help": "echo 📖 VisionSpark Build Scripts Help: && echo. && echo 🚀 Main Commands: && echo   npm run build-and-run      - Complete workflow (build + install + launch) && echo   npm run build-and-run-debug - Debug workflow (build + install + launch) && echo   npm run build-android       - Build release APK only && echo   npm run build-android-debug - Build debug APK only && echo. && echo 🔧 Setup ^& Verification: && echo   npm run setup               - Comprehensive Windows setup check && echo   npm run check-prerequisites - Quick prerequisite check && echo   npm run flutter-doctor      - Run Flutter doctor && echo   npm run fix-flutter-path    - Fix Flutter PATH issues && echo   npm run fix-adb-path        - Fix ADB PATH issues && echo   npm run test-flutter        - Test Flutter installation && echo   npm run test-adb            - Test ADB installation && echo. && echo 📱 Device Management: && echo   npm run check-device        - Check connected devices && echo   npm run install-apk         - Install release APK && echo   npm run install-apk-debug   - Install debug APK && echo   npm run launch-app          - Launch app on device && echo   npm run uninstall-app       - Remove app from device && echo. && echo 🛠️ Maintenance: && echo   npm run clean               - Clean build cache && echo   npm run logs                - View app logs && echo   npm run device-info         - Show device information && echo. && echo 📚 Documentation: && echo   See BUILD_SCRIPTS_README.md for detailed instructions"
+  },
   "dependencies": {
     "supabase": "^2.23.4"
-  }
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RustyCMD/Visionspark.git"
+  },
+  "keywords": [
+    "flutter",
+    "android",
+    "mobile",
+    "build",
+    "deployment"
+  ],
+  "author": "RustyCMD",
+  "license": "MIT"
 }

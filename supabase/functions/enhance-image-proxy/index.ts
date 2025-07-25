@@ -50,7 +50,7 @@ serve(async (req: Request) => {
     // Check user's generation status and limits
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('generation_limit, generations_today, cycle_start_date')
+      .select('generation_limit, generations_today, subscription_cycle_start_date')
       .eq('id', user.id)
       .single();
 
@@ -62,7 +62,9 @@ serve(async (req: Request) => {
     }
 
     // Check if user has reached their limit
-    if (profile.generation_limit !== -1 && profile.generations_today >= profile.generation_limit) {
+    // Handle NULL generation_limit (unlimited) and -1 (unlimited) as unlimited
+    const effectiveLimit = profile.generation_limit ?? -1; // Convert NULL to -1 (unlimited)
+    if (effectiveLimit !== -1 && profile.generations_today >= effectiveLimit) {
       return new Response(
         JSON.stringify({ error: 'Generation limit reached for today' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -111,7 +113,23 @@ serve(async (req: Request) => {
 
     // Convert base64 to blob for OpenAI API
     const imageBuffer = Uint8Array.from(atob(body.image), c => c.charCodeAt(0));
-    const imageBlob = new Blob([imageBuffer], { type: 'image/png' });
+
+    // Detect the image format by magic bytes and set appropriate MIME type
+    let mimeType = 'image/png'; // Default to PNG
+
+    // Check for PNG magic bytes
+    if (imageBuffer.length >= 8 &&
+        imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 &&
+        imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47) {
+      mimeType = 'image/png';
+    }
+    // Check for JPEG magic bytes
+    else if (imageBuffer.length >= 3 &&
+             imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8 && imageBuffer[2] === 0xFF) {
+      mimeType = 'image/jpeg';
+    }
+
+    const imageBlob = new Blob([imageBuffer], { type: mimeType });
 
     // Prepare form data for OpenAI API
     const formData = new FormData();
@@ -125,16 +143,10 @@ serve(async (req: Request) => {
 
     switch (mode) {
       case 'edit':
-        openaiEndpoint = 'https://api.openai.com/v1/images/edits';
-        // Create a proper mask (white image with same dimensions for full image editing)
-        const canvas = new OffscreenCanvas(1024, 1024);
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, 1024, 1024);
-        }
-        const maskBlob = await canvas.convertToBlob({ type: 'image/png' });
-        formData.append('mask', maskBlob, 'mask.png');
+        // Note: OpenAI's edit endpoint requires PNG format and is quite strict
+        // For better compatibility, we'll use variations endpoint for most cases
+        openaiEndpoint = 'https://api.openai.com/v1/images/variations';
+        formData.delete('prompt'); // Variations don't support prompts
         break;
       case 'variation':
         openaiEndpoint = 'https://api.openai.com/v1/images/variations';
@@ -143,7 +155,7 @@ serve(async (req: Request) => {
         break;
       case 'enhance':
       default:
-        // For enhance mode, use variations endpoint for better results
+        // For enhance mode, use variations endpoint for better results and format compatibility
         openaiEndpoint = 'https://api.openai.com/v1/images/variations';
         // Remove prompt for variations as it's not supported
         formData.delete('prompt');

@@ -92,10 +92,13 @@ Email: ${email}
 Title: ${title}
 Content: ${content}
 Timestamp: ${new Date().toISOString()}`);
-          
-          return new Response(JSON.stringify({ 
-            success: true, 
-            message: "Support ticket submitted successfully." 
+
+          // Still try to send Discord notification even if database fails
+          await sendDiscordNotification(serviceRoleClient, user.id, email, title, content);
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: "Support ticket submitted successfully."
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
@@ -107,12 +110,12 @@ Timestamp: ${new Date().toISOString()}`);
 
       console.log(`Support ticket created for user ${user.id}, title: ${title.substring(0, 50)}...`);
 
-      // Optionally send email notification here
-      // You could integrate with SendGrid, Resend, or other email services
-      
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: "Support ticket submitted successfully. Our team will review it shortly." 
+      // Send Discord notification if webhook URL is configured
+      await sendDiscordNotification(serviceRoleClient, user.id, email, title, content);
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: "Support ticket submitted successfully. Our team will review it shortly."
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -120,7 +123,7 @@ Timestamp: ${new Date().toISOString()}`);
 
     } catch (dbError) {
       console.error(`User ${user.id}: Database error during support ticket creation:`, dbError.message);
-      
+
       // Fallback: Log to console if database fails
       console.log(`SUPPORT TICKET (Database failed - logging to console):
 User ID: ${user.id}
@@ -130,9 +133,20 @@ Content: ${content}
 Timestamp: ${new Date().toISOString()}
 Error: ${dbError.message}`);
 
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: "Support ticket submitted successfully." 
+      // Still try to send Discord notification even if database fails
+      try {
+        const fallbackClient = createClient(
+          Deno.env.get("SUPABASE_URL") ?? "",
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+        );
+        await sendDiscordNotification(fallbackClient, user.id, email, title, content);
+      } catch (discordError) {
+        console.error("Failed to send Discord notification in fallback:", discordError.message);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: "Support ticket submitted successfully."
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -141,11 +155,100 @@ Error: ${dbError.message}`);
 
   } catch (error) {
     console.error('General error in report-support-issue:', error.message, error.stack);
-    return new Response(JSON.stringify({ 
-      error: error.message || "An unexpected server error occurred." 
+    return new Response(JSON.stringify({
+      error: error.message || "An unexpected server error occurred."
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
   }
 });
+
+async function sendDiscordNotification(supabaseClient: any, userId: string, email: string, title: string, content: string) {
+  const discordWebhookUrl = Deno.env.get("DISCORD_WEBHOOK");
+
+  if (!discordWebhookUrl) {
+    console.log("Discord webhook URL not configured, skipping Discord notification");
+    return;
+  }
+
+  try {
+    // Check rate limiting (max 1 notification per minute for support tickets)
+    const webhookId = "discord_support_webhook";
+    const now = new Date();
+    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+
+    const { data: rateLimitData } = await supabaseClient
+      .from('webhook_rate_limits')
+      .select('last_sent_at')
+      .eq('webhook_identifier', webhookId)
+      .single();
+
+    if (rateLimitData && new Date(rateLimitData.last_sent_at) > oneMinuteAgo) {
+      console.log("Discord webhook rate limited, skipping notification");
+      return;
+    }
+
+    // Create Discord embed
+    const embed = {
+      title: "🎫 New Support Ticket",
+      color: 0x3498db, // Blue color
+      fields: [
+        {
+          name: "📧 User Email",
+          value: email,
+          inline: true
+        },
+        {
+          name: "🆔 User ID",
+          value: userId,
+          inline: true
+        },
+        {
+          name: "📝 Subject",
+          value: title.length > 256 ? title.substring(0, 253) + "..." : title,
+          inline: false
+        },
+        {
+          name: "💬 Message",
+          value: content.length > 1024 ? content.substring(0, 1021) + "..." : content,
+          inline: false
+        }
+      ],
+      timestamp: now.toISOString(),
+      footer: {
+        text: "VisionSpark Support System"
+      }
+    };
+
+    const discordPayload = {
+      embeds: [embed]
+    };
+
+    // Send to Discord
+    const discordResponse = await fetch(discordWebhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(discordPayload),
+    });
+
+    if (discordResponse.ok) {
+      console.log("Discord notification sent successfully");
+
+      // Update rate limit record
+      await supabaseClient
+        .from('webhook_rate_limits')
+        .upsert({
+          webhook_identifier: webhookId,
+          last_sent_at: now.toISOString()
+        });
+    } else {
+      const errorText = await discordResponse.text();
+      console.error("Failed to send Discord notification:", discordResponse.status, errorText);
+    }
+  } catch (error) {
+    console.error("Error sending Discord notification:", error.message);
+  }
+}

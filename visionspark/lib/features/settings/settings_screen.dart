@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../main.dart'; // Assuming ThemeController is in main.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/design_system/design_system.dart';
+import '../../shared/utils/snackbar_utils.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:url_launcher/url_launcher.dart'; // For launching URLs
 
@@ -47,17 +49,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not launch $urlString')),
-          );
+          VSSnackbar.showError(context, 'Could not launch $urlString');
         }
       }
     } catch (e) {
       debugPrint('Error launching URL: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error launching URL: An unexpected error occurred.')),
-        );
+        VSSnackbar.showError(context, 'Error launching URL: An unexpected error occurred.');
       }
     }
   }
@@ -90,14 +88,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed == true && mounted) {
       try {
         await DefaultCacheManager().emptyCache();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image cache cleared successfully!')),
-        );
+        if (mounted) {
+          VSSnackbar.showSuccess(context, 'Image cache cleared successfully!');
+        }
       } catch (e) {
         debugPrint("Error clearing cache: $e");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error clearing cache: An unexpected error occurred.')),
-        );
+        if (mounted) {
+          VSSnackbar.showError(context, 'Error clearing cache: An unexpected error occurred.');
+        }
       }
     }
   }
@@ -195,101 +193,337 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final TextTheme textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      // backgroundColor is inherited from theme.background automatically
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Card(
-                elevation: 2, // Standard elevation
-                color: colorScheme.surfaceContainerLow, // Use a M3 surface color
-                shadowColor: colorScheme.shadow,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        title: Text('Dark Mode', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Enable or disable dark theme', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        value: themeController.isDarkMode,
-                        onChanged: (value) => themeController.setDarkMode(value),
-                        activeColor: colorScheme.primary,
-                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: colorScheme.outline,
-                        inactiveTrackColor: colorScheme.surfaceVariant,
-                      ),
-                      SwitchListTile(
-                        title: Text('Auto-upload generated images to gallery', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Automatically share new images to the public gallery', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        value: _autoUpload,
-                        onChanged: _setAutoUpload,
-                        activeColor: colorScheme.primary,
-                        activeTrackColor: colorScheme.primary.withOpacity(0.5),
-                        inactiveThumbColor: colorScheme.outline,
-                        inactiveTrackColor: colorScheme.surfaceVariant,
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.delete_sweep_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Clear Image Cache', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        subtitle: Text('Remove cached images from gallery and network', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        onTap: _clearImageCache,
-                      ),
-                      Divider(
-                        height: 32,
-                        thickness: 1,
-                        color: colorScheme.outlineVariant, // Standard M3 divider color
-                        indent: 16,
-                        endIndent: 16,
-                      ),
-                      ListTile(
-                        title: Text('App Version', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
-                        subtitle: Text(_version.isEmpty ? 'Loading...' : _version, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      ),
-                      ListTile(
-                        title: Text('Active Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600)),
-                        subtitle: _isLoadingSubscription
-                            ? Row(
-                                children: [
-                                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary)),
-                                  const SizedBox(width: 8),
-                                  Text('Loading...', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                                ],
-                              )
-                            : Text(_activeSubscription ?? 'N/A', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      ),
-                      Divider(indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
-                      ListTile(
-                        leading: Icon(Icons.privacy_tip_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Privacy Policy', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.description_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Terms of Service', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.subscriptions_outlined, color: colorScheme.onSurfaceVariant),
-                        title: Text('Manage Subscription', style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurface)),
-                        onTap: () {
-                          // General link for Google Play. For specific SKU management, a more detailed URL might be needed if available.
-                          // https://developer.android.com/google/play/billing/subscriptions#deep-link
-                          // Example: "https://play.google.com/store/account/subscriptions?sku=your-sku&package=com.example.app"
-                          _launchURL('https://play.google.com/store/account/subscriptions');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: VSResponsive.getResponsivePadding(context),
+            child: Column(
+              children: [
+                _buildAppearanceSection(context, themeController, colorScheme, textTheme),
+                const VSResponsiveSpacing(),
+                _buildDataSection(context, colorScheme, textTheme),
+                const VSResponsiveSpacing(),
+                _buildSubscriptionSection(context, colorScheme, textTheme),
+                const VSResponsiveSpacing(),
+                _buildAboutSection(context, colorScheme, textTheme),
+                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAppearanceSection(BuildContext context, ThemeController themeController, ColorScheme colorScheme, TextTheme textTheme) {
+    return VSCard(
+      elevation: VSDesignTokens.elevation2,
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.palette_outlined,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
+                ),
+                const SizedBox(width: VSDesignTokens.space3),
+                VSResponsiveText(
+                  text: 'Appearance',
+                  baseStyle: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SwitchListTile(
+            title: Text(
+              'Dark Mode',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            subtitle: Text(
+              'Enable or disable dark theme',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            value: themeController.isDarkMode,
+            onChanged: (value) => themeController.setDarkMode(value),
+            activeColor: colorScheme.primary,
+            activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
+            inactiveThumbColor: colorScheme.outline,
+            inactiveTrackColor: colorScheme.surfaceContainerHighest,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+    return VSCard(
+      elevation: VSDesignTokens.elevation2,
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.storage_outlined,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
+                ),
+                const SizedBox(width: VSDesignTokens.space3),
+                VSResponsiveText(
+                  text: 'Data & Storage',
+                  baseStyle: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SwitchListTile(
+            title: Text(
+              'Auto-upload generated images to gallery',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            subtitle: Text(
+              'Automatically share new images to the public gallery',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            value: _autoUpload,
+            onChanged: _setAutoUpload,
+            activeColor: colorScheme.primary,
+            activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
+            inactiveThumbColor: colorScheme.outline,
+            inactiveTrackColor: colorScheme.surfaceContainerHighest,
+          ),
+          ListTile(
+            leading: Icon(
+              Icons.delete_sweep_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconM,
+            ),
+            title: Text(
+              'Clear Image Cache',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            subtitle: Text(
+              'Remove cached images from gallery and network',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            onTap: _clearImageCache,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+    return VSCard(
+      elevation: VSDesignTokens.elevation2,
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.card_membership_outlined,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
+                ),
+                const SizedBox(width: VSDesignTokens.space3),
+                VSResponsiveText(
+                  text: 'Subscription',
+                  baseStyle: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            title: Text(
+              'Active Subscription',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightSemiBold,
+              ),
+            ),
+            subtitle: _isLoadingSubscription
+                ? Row(
+                    children: [
+                      SizedBox(
+                        width: VSDesignTokens.iconS,
+                        height: VSDesignTokens.iconS,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: VSDesignTokens.space2),
+                      Text(
+                        'Loading...',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    _activeSubscription ?? 'N/A',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildAboutSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+    return VSCard(
+      elevation: VSDesignTokens.elevation2,
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: VSDesignTokens.radiusL,
+      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconM,
+                ),
+                const SizedBox(width: VSDesignTokens.space3),
+                VSResponsiveText(
+                  text: 'About & Legal',
+                  baseStyle: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            title: Text(
+              'App Version',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightSemiBold,
+              ),
+            ),
+            subtitle: Text(
+              _version.isEmpty ? 'Loading...' : _version,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const Divider(indent: VSDesignTokens.space4, endIndent: VSDesignTokens.space4),
+          ListTile(
+            leading: Icon(
+              Icons.privacy_tip_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconM,
+            ),
+            title: Text(
+              'Privacy Policy',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
+            trailing: Icon(
+              Icons.open_in_new,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconS,
+            ),
+          ),
+          ListTile(
+            leading: Icon(
+              Icons.description_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconM,
+            ),
+            title: Text(
+              'Terms of Service',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
+            trailing: Icon(
+              Icons.open_in_new,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconS,
+            ),
+          ),
+          ListTile(
+            leading: Icon(
+              Icons.subscriptions_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconM,
+            ),
+            title: Text(
+              'Manage Subscription',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+            onTap: () => _launchURL('https://play.google.com/store/account/subscriptions'),
+            trailing: Icon(
+              Icons.open_in_new,
+              color: colorScheme.onSurfaceVariant,
+              size: VSDesignTokens.iconS,
+            ),
+          ),
+        ],
       ),
     );
   }
