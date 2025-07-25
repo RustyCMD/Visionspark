@@ -52,6 +52,7 @@ visionspark/node_modules/
 # Secrets
 .env
 google-services.json
+client_secret*.json
 key.properties
 *.jks
 *.keystore

@@ -222,10 +222,10 @@ serve(async (req) => {
     }
     
     // Determine tier based on productId
-    if (productId === 'monthly_30') {
-      tier = 'monthly_30';
-    } else if (productId === 'monthly_unlimited') {
-      tier = 'monthly_unlimited';
+    if (productId === 'monthly_30_generations') {
+      tier = 'monthly_30_generations';
+    } else if (productId === 'monthly_unlimited_generations') {
+      tier = 'monthly_unlimited_generations';
     } else {
       console.warn(`Validated purchase for unknown productId in this function logic: ${productId}. Tier will be null.`);
       // Allow entitlement if Google validated it, but the tier might not be specifically handled.

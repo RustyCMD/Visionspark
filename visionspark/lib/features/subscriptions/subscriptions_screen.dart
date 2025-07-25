@@ -27,8 +27,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _iapError; // For IAP related errors
   String? _purchaseSuccessMessage;
   List<ProductDetails> _products = [];
-  static const String monthly30Id = 'monthly_30';
-  static const String monthlyUnlimitedId = 'monthly_unlimited';
+  static const String monthly30Id = 'monthly_30_generations';
+  static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
 
   // New state variables for active subscription status
   String? _activeSubscriptionType;
@@ -526,8 +526,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           else
             ...(_products.map((product) {
               final isActive = _activeSubscriptionType != null &&
-                  ((_activeSubscriptionType == 'monthly_30' && product.id == monthly30Id) ||
-                   (_activeSubscriptionType == 'monthly_unlimited' && product.id == monthlyUnlimitedId));
+                  ((_activeSubscriptionType == 'monthly_30_generations' && product.id == monthly30Id) ||
+                   (_activeSubscriptionType == 'monthly_unlimited_generations' && product.id == monthlyUnlimitedId));
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: VSDesignTokens.space4),
