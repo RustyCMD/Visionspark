@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../shared/main_scaffold.dart';
 import './auth_screen.dart';
-
+// dwa
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
