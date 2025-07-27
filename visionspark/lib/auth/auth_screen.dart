@@ -1,9 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../shared/utils/snackbar_utils.dart';
+import '../shared/utils/snackbar_utils.dart';
+import 'auth0_service.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -17,6 +16,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  final Auth0Service _auth0Service = Auth0Service();
 
   @override
   void initState() {
@@ -40,45 +40,21 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Future<void> _googleSignIn() async {
+  Future<void> _auth0SignIn() async {
     setState(() => _isLoading = true);
     try {
-      // 1. Trigger the Google Authentication flow.
-      final googleSignIn = GoogleSignIn(serverClientId: '825189008537-9lpvr3no63a79k8hppkhjfm0ha4mtflo.apps.googleusercontent.com');
-      final googleUser = await googleSignIn.signIn();
+      // Sign in with Auth0 (Google OAuth)
+      final user = await _auth0Service.signIn();
 
-      if (googleUser == null) {
-        // User cancelled the sign-in
-        if (mounted) setState(() => _isLoading = false);
-        return;
+      if (user != null) {
+        debugPrint('Auth0 Sign-In successful: ${user.name}');
+        // AuthGate will handle navigation automatically on success.
       }
-      
-      // 2. Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final accessToken = googleAuth.accessToken;
-      final idToken = googleAuth.idToken;
-
-      if (accessToken == null) {
-        throw 'No Access Token found.';
-      }
-      if (idToken == null) {
-        throw 'No ID Token found.';
-      }
-
-      // 3. Sign in to Supabase with the Google ID token.
-      await Supabase.instance.client.auth.signInWithIdToken(
-        provider: OAuthProvider.google,
-        idToken: idToken,
-        accessToken: accessToken,
-      );
-
-      // AuthGate will handle navigation automatically on success.
-    } on AuthException catch (error) {
-      debugPrint('Google Sign-In AuthException: ${error.message}');
-      if(mounted) showErrorSnackbar(context, 'Sign-In Failed: ${error.message}'); // Supabase messages are usually user-friendly
     } catch (error) {
-      debugPrint('Google Sign-In unexpected error: $error');
-      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred during sign-in. Please try again.');
+      debugPrint('Auth0 Sign-In error: $error');
+      if (mounted) {
+        showErrorSnackbar(context, 'Sign-in failed. Please try again.');
+      }
     }
 
     if (mounted) {
@@ -335,13 +311,13 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
             textAlign: TextAlign.center,
           ),
           SizedBox(height: size.height * 0.032),
-          _buildGoogleSignInButton(colorScheme, textTheme, size),
+          _buildSignInButton(colorScheme, textTheme, size),
         ],
       ),
     );
   }
 
-  Widget _buildGoogleSignInButton(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+  Widget _buildSignInButton(ColorScheme colorScheme, TextTheme textTheme, Size size) {
     return Container(
       width: double.infinity,
       height: 56,
@@ -366,7 +342,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: _isLoading ? null : _googleSignIn,
+          onTap: _isLoading ? null : _auth0SignIn,
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -405,7 +381,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    'Continue with Google',
+                    'Sign In / Sign Up',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colorScheme.onPrimary,

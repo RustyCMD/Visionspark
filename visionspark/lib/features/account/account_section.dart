@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import '../../shared/design_system/design_system.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import '../../auth/auth0_service.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -166,14 +166,31 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
   Future<void> _signOut() async {
     try {
-      await Supabase.instance.client.auth.signOut();
-      await GoogleSignIn().signOut();
+      debugPrint('[AccountSection] Starting logout process...');
+      final auth0Service = Auth0Service();
+      await auth0Service.signOut();
+      debugPrint('[AccountSection] Logout completed successfully');
+
+      // Show success message briefly before navigation
+      if (mounted) {
+        showSuccessSnackbar(context, 'Signed out successfully');
+      }
     } on AuthException catch (e) {
-      if(mounted) showErrorSnackbar(context, e.message);
+      debugPrint('[AccountSection] AuthException during logout: ${e.message}');
+      if (mounted) {
+        showErrorSnackbar(context, 'Sign out error: ${e.message}');
+      }
     } catch (e) {
-      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred during sign out.');
+      debugPrint('[AccountSection] Unexpected error during logout: $e');
+      if (mounted) {
+        // Even if there's an error, the user should still be logged out
+        // because the Auth0Service handles the critical parts (Supabase + credentials)
+        showSuccessSnackbar(context, 'Signed out (some cleanup may have failed)');
+      }
     }
   }
+
+
 
   Future<void> _deleteAccount() async {
     final user = Supabase.instance.client.auth.currentUser;

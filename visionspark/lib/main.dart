@@ -68,17 +68,16 @@ void _initDeepLinks() {
   _sub = _appLinks!.uriLinkStream.listen((Uri? uri) {
     if (uri != null) {
       debugPrint("Deep link received: $uri");
-      // Check if this is the password recovery callback
-      if (uri.queryParameters.containsKey('token') &&
-          uri.queryParameters['type'] == 'recovery') {
-        final authCode = uri.queryParameters['token']!;
-        debugPrint("Found PKCE token. Exchanging for session...");
-        
-        // Manually exchange the code for a session.
-        // This will trigger the onAuthStateChange stream with the
-        // passwordRecovery event, which AuthGate will then handle.
-        Supabase.instance.client.auth.exchangeCodeForSession(authCode);
+
+      // Check if this is an Auth0 callback
+      if (uri.scheme == 'app.visionspark.app') {
+        debugPrint("Auth0 callback received: $uri");
+        // Auth0 Flutter SDK will handle this automatically
+        // Just log for debugging purposes
+        return;
       }
+
+
     }
   }, onError: (err) {
     debugPrint("Error listening to deep links: $err");
