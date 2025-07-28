@@ -4,9 +4,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { create as createJWT } from "https://deno.land/x/djwt@v2.8/mod.ts"; // Example JWT library
 // import { corsHeaders } from '../_shared/cors.ts'; // Removed
 
-// Add Google Play Billing API client
-// @ts-ignore
-// const {GooglePlayBilling} = require('@google-cloud/billing'); // TODO: Find Deno-compatible way to use Google Play Billing
 import { corsHeaders } from '../_shared/cors.ts';
 
 // --- Google API Config (Store securely as environment variables) ---
