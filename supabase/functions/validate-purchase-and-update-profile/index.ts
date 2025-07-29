@@ -9,8 +9,19 @@ import { corsHeaders } from '../_shared/cors.ts';
 // --- Google API Config (Store securely as environment variables) ---
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')!;
 const GOOGLE_PRIVATE_KEY_PEM = Deno.env.get('GOOGLE_PRIVATE_KEY_PEM')!; // Ensure PEM format, newlines as \\n
+const GOOGLE_CLOUD_PROJECT_ID = Deno.env.get('GOOGLE_CLOUD_PROJECT_ID') || 'vision-spark'; // Fallback to known project ID
+const GOOGLE_SERVICE_ACCOUNT_CLIENT_ID = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_CLIENT_ID');
+const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID');
 const APP_PACKAGE_NAME = 'app.visionspark.app';
 const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+// Validation: Ensure critical variables are set
+if (!GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+  throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL environment variable is required');
+}
+if (!GOOGLE_PRIVATE_KEY_PEM) {
+  throw new Error('GOOGLE_PRIVATE_KEY_PEM environment variable is required');
+}
 // ---
 
 // Define a new interface for the validation result
@@ -21,6 +32,11 @@ interface GooglePlaySubscriptionValidationResult {
 }
 
 async function getGoogleAccessToken() {
+  console.log('🔐 Initializing Google Service Account authentication...');
+  console.log(`📧 Service Account Email: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+  console.log(`🏗️ Google Cloud Project ID: ${GOOGLE_CLOUD_PROJECT_ID}`);
+  console.log(`📦 App Package Name: ${APP_PACKAGE_NAME}`);
+
   const header = { alg: "RS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
   const payload = {
@@ -30,6 +46,8 @@ async function getGoogleAccessToken() {
     exp: now + 3600, // 1 hour
     iat: now,
   };
+
+  console.log('🔑 Creating JWT for Google OAuth...');
 
   // Import private key (ensure it's in the correct PKCS#8 PEM format)
   // The private key string from env var might need newlines properly escaped or handled
@@ -56,9 +74,14 @@ async function getGoogleAccessToken() {
 
   if (!response.ok) {
     const errorBody = await response.text();
+    console.error(`❌ Google OAuth Token Error: ${response.status}`);
+    console.error(`❌ Error Details: ${errorBody}`);
+    console.error(`❌ Service Account: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+    console.error(`❌ Project ID: ${GOOGLE_CLOUD_PROJECT_ID}`);
     throw new Error(`Failed to get Google access token: ${response.status} ${errorBody}`);
   }
   const data = await response.json();
+  console.log('✅ Google access token obtained successfully');
   return data.access_token;
 }
 
@@ -85,7 +108,13 @@ function pemToBinary(pem: string) {
 async function validateGooglePlayPurchase(productId: string, purchaseToken: string, accessToken: string): Promise<GooglePlaySubscriptionValidationResult> {
   // For subscriptions, productId is the subscriptionId/SKU
   const subscriptionId = productId;
-  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}?access_token=${accessToken}`; // access_token can also be a query param
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}?access_token=${accessToken}`;
+
+  console.log('🔍 Validating Google Play purchase...');
+  console.log(`📦 Package Name: ${APP_PACKAGE_NAME}`);
+  console.log(`🏷️ Subscription ID: ${subscriptionId}`);
+  console.log(`🎫 Purchase Token: ${purchaseToken.substring(0, 20)}...`);
+  console.log(`🌐 API URL: ${url.substring(0, 100)}...`);
 
   const response = await fetch(url, {
     // headers: { // Headers can also be used
@@ -95,7 +124,20 @@ async function validateGooglePlayPurchase(productId: string, purchaseToken: stri
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`Google Play API Error: ${response.status}`, errorText);
+    console.error(`❌ Google Play API Error: ${response.status}`);
+    console.error(`❌ Error Details: ${errorText}`);
+    console.error(`❌ Package Name Used: ${APP_PACKAGE_NAME}`);
+    console.error(`❌ Project ID: ${GOOGLE_CLOUD_PROJECT_ID}`);
+    console.error(`❌ Service Account: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+
+    // Check for specific error types
+    if (response.status === 403) {
+      console.error(`❌ 403 Forbidden - Possible causes:`);
+      console.error(`   • Service account doesn't have Google Play Developer API access`);
+      console.error(`   • Package name mismatch: ${APP_PACKAGE_NAME}`);
+      console.error(`   • Google Play Console not linked to project: ${GOOGLE_CLOUD_PROJECT_ID}`);
+    }
+
     return { isValid: false, error: `Google Play API Error (${response.status}): ${errorText}` };
   }
 

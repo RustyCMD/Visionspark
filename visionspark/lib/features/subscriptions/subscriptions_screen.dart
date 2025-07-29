@@ -65,7 +65,10 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   }
 
   void _onSubscriptionChanged() {
-    _fetchSubscriptionStatus(); // Refetch status if notifier indicates a change
+    // Add a small delay to ensure database changes are propagated
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _fetchSubscriptionStatusWithRetry(); // Refetch status if notifier indicates a change
+    });
   }
 
   Future<void> _fetchSubscriptionStatus() async {
@@ -94,6 +97,11 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                 _purchaseSuccessMessage = null;
               }
             });
+
+            // Update the global notifier with the new subscription status
+            if (_subscriptionStatusNotifier != null) {
+              _subscriptionStatusNotifier!.updateSubscriptionStatus(_activeSubscriptionType);
+            }
           }
         } else {
           setState(() {
@@ -116,6 +124,33 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       setState(() {
         _isLoadingStatus = false;
       });
+    }
+  }
+
+  Future<void> _fetchSubscriptionStatusWithRetry({int maxRetries = 3}) async {
+    if (!mounted) return;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      print('🔄 Fetching subscription status (attempt $attempt/$maxRetries)...');
+
+      await _fetchSubscriptionStatus();
+
+      // If we got a subscription or this is the last attempt, stop retrying
+      if (_activeSubscriptionType != null || attempt == maxRetries) {
+        if (_activeSubscriptionType != null) {
+          print('✅ Subscription status updated successfully: $_activeSubscriptionType');
+        } else {
+          print('⚠️ No active subscription found after $maxRetries attempts');
+        }
+        break;
+      }
+
+      // Wait before retrying (exponential backoff)
+      if (attempt < maxRetries) {
+        final delay = Duration(milliseconds: 1000 * attempt); // 1s, 2s, 3s
+        print('⏳ Waiting ${delay.inMilliseconds}ms before retry...');
+        await Future.delayed(delay);
+      }
     }
   }
 
@@ -196,9 +231,13 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                 _purchaseSuccessMessage = 'Subscription activated successfully!';
                 _iapError = null; // Clear IAP error on success
               });
-              // Notify other parts of the app and fetch updated status
+
+              // Notify other parts of the app
               Provider.of<SubscriptionStatusNotifier>(context, listen: false).subscriptionChanged();
-              // _fetchSubscriptionStatus(); // Already handled by the notifier listener
+
+              // Also directly refresh the status with retry logic to ensure UI updates
+              print('🔄 Purchase successful, refreshing subscription status...');
+              _fetchSubscriptionStatusWithRetry();
             }
             if (purchase.pendingCompletePurchase) {
               await _iap.completePurchase(purchase);
