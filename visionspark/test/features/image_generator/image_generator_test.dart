@@ -355,7 +355,7 @@ void main() {
         'None', 'Cartoon', 'Photorealistic', 'Fantasy Art', 'Abstract',
         'Anime', 'Comic Book', 'Impressionistic', 'Pixel Art', 'Watercolor'
       ];
-      
+
       expect(validStyles.contains('Cartoon'), true);
       expect(validStyles.contains('Invalid Style'), false);
     });

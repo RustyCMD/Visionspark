@@ -180,6 +180,7 @@ class VSButton extends StatelessWidget {
               color: foregroundColor,
             ),
           ),
+          const SizedBox(width: VSDesignTokens.space3),
         ] else if (icon != null) ...[
           SizedBox(
             width: iconSize,
@@ -192,7 +193,7 @@ class VSButton extends StatelessWidget {
               child: icon!,
             ),
           ),
-          const SizedBox(width: VSDesignTokens.space2),
+          const SizedBox(width: VSDesignTokens.space3),
         ],
         Flexible(
           child: Text(

@@ -53,7 +53,7 @@ Welcome to Visionspark, a cutting-edge cross-platform application built with Flu
     -   Optimized loading with cached images and thumbnails.
     -   Detailed image view with options to save to device, copy prompt, and share.
 -   💳 **Full Subscription System (Google Play)**:
-    -   Explore and purchase subscription tiers (`monthly_30`, `monthly_unlimited`).
+    -   Explore and purchase subscription tiers (`monthly_unlimited`).
     -   Secure server-side validation of Google Play purchases.
     *   Automatic profile updates with subscription status, tier, and expiry.
     *   Link to manage subscriptions directly in Google Play settings.

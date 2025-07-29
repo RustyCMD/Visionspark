@@ -27,7 +27,6 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _iapError; // For IAP related errors
   String? _purchaseSuccessMessage;
   List<ProductDetails> _products = [];
-  static const String monthly30Id = 'monthly_30_generations';
   static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
 
   // New state variables for active subscription status
@@ -130,7 +129,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       });
       return;
     }
-    const Set<String> ids = {monthly30Id, monthlyUnlimitedId};
+    const Set<String> ids = {monthlyUnlimitedId};
     try {
       final ProductDetailsResponse response = await _iap.queryProductDetails(ids);
       if (!mounted) return;
@@ -165,6 +164,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       });
     }
     try {
+      // buyNonConsumable is the correct method for both non-consumable products AND subscriptions
       await _iap.buyNonConsumable(purchaseParam: purchaseParam);
     } catch (e) {
       if (mounted) {
@@ -226,20 +226,35 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     if (mounted) { // Clear previous specific error before new validation attempt
         setState(() {  _iapError = null; });
     }
+
+    // Enhanced logging for debugging
+    print('🔍 Starting purchase validation...');
+    print('📦 Product ID: ${purchase.productID}');
+    print('🎫 Purchase Token: ${purchase.verificationData.serverVerificationData.substring(0, 20)}...');
+    print('📱 Source: ${purchase.verificationData.source}');
+    print('✅ Purchase Status: ${purchase.status}');
+
     try {
+      final requestBody = {
+        'productId': purchase.productID,
+        'purchaseToken': purchase.verificationData.serverVerificationData,
+        'source': purchase.verificationData.source, // Include source for debugging
+      };
+
+      print('🚀 Calling validate-purchase-and-update-profile function...');
       final response = await Supabase.instance.client.functions.invoke(
         'validate-purchase-and-update-profile',
-        body: {
-          'productId': purchase.productID,
-          'purchaseToken': purchase.verificationData.serverVerificationData,
-          // 'source': purchase.verificationData.source, // Optional: send if your backend uses it
-        },
+        body: requestBody,
       );
+
+      print('📡 Response Status: ${response.status}');
+      print('📄 Response Data: ${jsonEncode(response.data)}');
 
       if (!mounted) return false;
 
       if (response.status == 200) {
         if (response.data != null && response.data['success'] == true) {
+          print('✅ Purchase validation successful!');
           return true;
         } else {
           String errorMessage = 'Purchase validation failed on backend.';
@@ -247,11 +262,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             errorMessage = response.data['error'].toString();
           } else {
             // Add a more descriptive message if backend returns non-200 but no explicit error in data
-            errorMessage = 'Backend validation function returned non-200 status: ${response.status}.';
+            errorMessage = 'Backend validation function returned success=false. Status: ${response.status}.';
             if (response.data != null) {
                errorMessage += ' Response: ${jsonEncode(response.data)}';
             }
           }
+          print('❌ Validation failed: $errorMessage');
           setState(() => _iapError = errorMessage);
           return false;
         }
@@ -262,10 +278,11 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
         } else if (response.data != null) {
           errorMessage += ' Response: ${jsonEncode(response.data)}';
         }
+        print('❌ HTTP Error: $errorMessage');
         setState(() => _iapError = errorMessage);
         return false;
       }
-    } 
+    }
     catch (e) {
       if (!mounted) return false;
       String displayMessage = 'Error calling validation function: ${e.toString()}';
@@ -275,13 +292,13 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             if (parts.length > 1) displayMessage = 'Validation Error: ${parts.sublist(1).join(':').trim()}';
          } catch (_) {/* Use original displayMessage */}
       }
+      print('💥 Exception during validation: $displayMessage');
       setState(() => _iapError = displayMessage);
       return false;
     }
   }
   
   String _formatSubscriptionType(String? type) {
-    if (type == monthly30Id || type == 'monthly_30') return 'Monthly 30 Generations'; // Handle raw tier ID
     if (type == monthlyUnlimitedId || type == 'monthly_unlimited') return 'Monthly Unlimited Generations'; // Handle raw tier ID
     if (type != null && type.isNotEmpty) { // Fallback for any other non-empty type
       return type.replaceAll('_', ' ').split(' ').map((e) => e.isNotEmpty ? e[0].toUpperCase() + e.substring(1) : '').join(' ');
@@ -526,8 +543,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           else
             ...(_products.map((product) {
               final isActive = _activeSubscriptionType != null &&
-                  ((_activeSubscriptionType == 'monthly_30_generations' && product.id == monthly30Id) ||
-                   (_activeSubscriptionType == 'monthly_unlimited_generations' && product.id == monthlyUnlimitedId));
+                  (_activeSubscriptionType == 'monthly_unlimited_generations' && product.id == monthlyUnlimitedId);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: VSDesignTokens.space4),

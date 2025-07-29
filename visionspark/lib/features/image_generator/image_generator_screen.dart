@@ -62,6 +62,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
   bool _isSavingImage = false;
   bool _isSharingToGallery = false;
   bool _isFetchingRandomPrompt = false;
+  bool _isSharedToGallery = false; // Track if current image has been shared to gallery
 
   // Generation status
   int _generationLimit = 3;
@@ -75,6 +76,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
   // UI state
   String _lastSuccessfulPrompt = "";
   bool _showAdvancedOptions = false;
+  bool _autoUploadToGallery = false; // Track auto-upload setting
 
   // Subscription notifier
   SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
@@ -121,6 +123,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
 
     _loadCachedGenerationStatus();
     _fetchGenerationStatus();
+    _loadAutoUploadSetting();
     _resetTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateResetsAtDisplay());
 
     // Start animations
@@ -137,6 +140,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
       _subscriptionStatusNotifierInstance = notifier;
       _subscriptionStatusNotifierInstance?.addListener(_fetchGenerationStatus);
     }
+    // Refresh auto-upload setting when dependencies change (e.g., returning from settings)
+    _loadAutoUploadSetting();
   }
   
   @override
@@ -176,7 +181,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
         setState(() => _statusErrorMessage = data['error'].toString());
       } else {
         setState(() {
-          _generationLimit = data['limit'] ?? 3;
+          // Use new fields if available, fall back to legacy fields for backward compatibility
+          _generationLimit = data['generation_limit'] ?? data['limit'] ?? 3;
           _generationsToday = data['generations_today'] ?? 0;
           _resetsAtUtcIso = data['resets_at_utc_iso'];
           _statusErrorMessage = null;
@@ -269,7 +275,11 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
   Future<void> _generateImage() async {
     if (_promptController.text.isEmpty || _isLoading || _isImproving || _isFetchingRandomPrompt) return;
     FocusScope.of(context).unfocus();
-    setState(() { _isLoading = true; _generatedImageUrl = null; });
+    setState(() {
+      _isLoading = true;
+      _generatedImageUrl = null;
+      _isSharedToGallery = false; // Reset share state for new image
+    });
 
     try {
       // Prepare the base body for the API call
@@ -297,7 +307,8 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
       if (mounted) {
         final data = response.data;
         if (data['error'] != null) {
-          showErrorSnackbar(context, data['error'].toString());
+          final errorMessage = _getApiErrorMessage(data);
+          showErrorSnackbar(context, errorMessage);
         } else if (data['data'] != null && data['data'][0]['url'] != null) {
           setState(() {
             _generatedImageUrl = data['data'][0]['url'];
@@ -306,18 +317,116 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
           await _fetchGenerationStatus();
 
           // Auto-upload to gallery if enabled
-          final prefs = await SharedPreferences.getInstance();
-          final autoUpload = prefs.getBool('auto_upload_to_gallery') ?? false;
-          if (autoUpload) {
+          if (_autoUploadToGallery) {
             await _shareToGallery();
+            // Set share state to true after successful auto-share
+            if (mounted) {
+              setState(() {
+                _isSharedToGallery = true;
+              });
+            }
           }
         }
       }
     } catch (e) {
       debugPrint('Image generation error: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred during image generation. Please try again.');
+      if (mounted) {
+        final errorMessage = _getImageGenerationErrorMessage(e);
+        showErrorSnackbar(context, errorMessage);
+      }
     }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  /// Extracts user-friendly error messages from API response data
+  String _getApiErrorMessage(Map<String, dynamic> data) {
+    final error = data['error'];
+    if (error == null) return 'An unexpected error occurred during image generation. Please try again.';
+
+    final errorString = error.toString();
+
+    // Check for content policy violations in the error message
+    if (errorString.toLowerCase().contains('safety system') ||
+        errorString.toLowerCase().contains('content policy')) {
+      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+    }
+
+    // Check for details object with more specific error information
+    final details = data['details'];
+    if (details != null && details is Map<String, dynamic>) {
+      final errorType = details['type'];
+      final errorCode = details['code'];
+
+      if (errorType == 'image_generation_user_error' &&
+          errorCode == 'content_policy_violation') {
+        return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
+      }
+    }
+
+    // Return the original error message if it's user-friendly
+    if (errorString.isNotEmpty && !errorString.toLowerCase().contains('unexpected')) {
+      return errorString;
+    }
+
+    return 'An unexpected error occurred during image generation. Please try again.';
+  }
+
+  /// Extracts user-friendly error messages from image generation exceptions
+  String _getImageGenerationErrorMessage(dynamic error) {
+    // Handle FunctionException from Supabase
+    if (error is FunctionException) {
+      final details = error.details;
+
+      // Check if it's a content policy violation
+      if (details != null && details is Map<String, dynamic>) {
+        final errorDetails = details['error'];
+        if (errorDetails != null && errorDetails is Map<String, dynamic>) {
+          final errorType = errorDetails['type'];
+          final errorCode = errorDetails['code'];
+          final errorMessage = errorDetails['message'] ?? '';
+
+          // Check for content policy violations
+          if (errorType == 'image_generation_user_error' &&
+              errorCode == 'content_policy_violation') {
+            return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
+          }
+
+          // Check for safety system rejection in message
+          if (errorMessage.toLowerCase().contains('safety system') ||
+              errorMessage.toLowerCase().contains('content policy')) {
+            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+          }
+        }
+
+        // Check for error message directly in details
+        final directError = details['error'];
+        if (directError is String) {
+          if (directError.toLowerCase().contains('safety system') ||
+              directError.toLowerCase().contains('content policy')) {
+            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+          }
+          // Return the direct error message if it's user-friendly
+          if (directError.isNotEmpty && !directError.toLowerCase().contains('unexpected')) {
+            return directError;
+          }
+        }
+      }
+
+      // Handle other FunctionException cases
+      if (error.reasonPhrase != null && error.reasonPhrase!.isNotEmpty) {
+        return 'Generation failed: ${error.reasonPhrase}';
+      }
+    }
+
+    // Handle other exception types
+    final errorString = error.toString();
+    if (errorString.toLowerCase().contains('safety system') ||
+        errorString.toLowerCase().contains('content policy')) {
+      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+    }
+
+    // Default fallback message
+    return 'An unexpected error occurred during image generation. Please try again.';
   }
 
   Future<void> _saveImage() async {
@@ -378,7 +487,12 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
         'prompt': _promptController.text, 'thumbnail_url': thumbPath,
       });
 
-      if (mounted) showSuccessSnackbar(context, 'Image shared to gallery!');
+      if (mounted) {
+        setState(() {
+          _isSharedToGallery = true; // Mark image as shared
+        });
+        showSuccessSnackbar(context, 'Image shared to gallery!');
+      }
     } catch (e) {
       debugPrint('Failed to share to gallery: $e');
       if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while sharing the image. Please try again.');
@@ -392,7 +506,16 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
       final thumbnail = img.copyResize(originalImage, width: 200);
       return Uint8List.fromList(img.encodePng(thumbnail));
   }
-  
+
+  Future<void> _loadAutoUploadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _autoUploadToGallery = prefs.getBool('auto_upload_to_gallery') ?? false;
+      });
+    }
+  }
+
   // --- UI Builder Methods ---
 
   Widget _buildHeader(BuildContext context) {
@@ -468,7 +591,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
                 color: colorScheme.primary,
                 size: 20,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: VSDesignTokens.space3),
               Text(
                 'Describe Your Image',
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -849,7 +972,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
                   size: 16,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: VSDesignTokens.space3),
               Text(
                 'Last Generated',
                 style: theme.textTheme.titleSmall?.copyWith(
@@ -904,7 +1027,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               color: colorScheme.primary,
               size: 20,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: VSDesignTokens.space3),
             Text(
               'Aspect Ratio',
               style: theme.textTheme.titleMedium?.copyWith(
@@ -984,7 +1107,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               color: colorScheme.primary,
               size: 20,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: VSDesignTokens.space3),
             Text(
               'Negative Prompt (Optional)',
               style: theme.textTheme.titleMedium?.copyWith(
@@ -1051,7 +1174,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               color: colorScheme.primary,
               size: 20,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: VSDesignTokens.space3),
             Text(
               'Image Style',
               style: theme.textTheme.titleMedium?.copyWith(
@@ -1164,7 +1287,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
 
   Widget _buildGenerateButton(BuildContext context, bool canGenerate) {
     return VSButton(
-      text: _isLoading ? 'Generating...' : 'Generate Image',
+      text: 'Generate Image',
       icon: _isLoading ? null : const Icon(Icons.auto_awesome),
       onPressed: canGenerate ? _generateImage : null,
       isLoading: _isLoading,
@@ -1373,7 +1496,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               color: colorScheme.primary,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: VSDesignTokens.space6),
           Text(
             'Creating your image...',
             style: theme.textTheme.titleMedium?.copyWith(
@@ -1381,7 +1504,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: VSDesignTokens.space3),
           Text(
             'This may take a few moments',
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -1424,13 +1547,26 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
               _isSavingImage,
               _saveImage,
             ),
-            _buildModernActionButton(
-              context,
-              'Share',
-              Icons.share_rounded,
-              _isSharingToGallery,
-              _shareToGallery,
-            ),
+            // Share button logic based on auto-upload setting and share state
+            if (!_autoUploadToGallery && !_isSharedToGallery)
+              // Show share button when auto-upload is OFF and image hasn't been shared
+              _buildModernActionButton(
+                context,
+                'Share',
+                Icons.share_rounded,
+                _isSharingToGallery,
+                _shareToGallery,
+              ),
+            if (!_autoUploadToGallery && _isSharedToGallery)
+              // Show "Shared" indicator when auto-upload is OFF and image has been shared
+              _buildModernActionButton(
+                context,
+                'Shared',
+                Icons.check_circle_rounded,
+                false,
+                null, // No action - just an indicator
+              ),
+            // When auto-upload is ON, no share button is shown since it's automatically shared
           ],
         ),
       ),
@@ -1442,7 +1578,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
     String label,
     IconData icon,
     bool isLoading,
-    VoidCallback onPressed,
+    VoidCallback? onPressed,
   ) {
     final theme = Theme.of(context);
 
@@ -1483,7 +1619,7 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
                     size: 18,
                     color: theme.colorScheme.onSurface,
                   ),
-                const SizedBox(width: 8),
+                const SizedBox(width: VSDesignTokens.space3),
                 Text(
                   isLoading ? 'Loading...' : label,
                   style: theme.textTheme.labelLarge?.copyWith(

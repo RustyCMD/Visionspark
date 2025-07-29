@@ -11,7 +11,10 @@ class Auth0Service {
   static String get _clientId => dotenv.env['AUTH0_CLIENT_ID'] ?? '';
 
   late final Auth0 _auth0;
-  
+
+  // Store the current user profile locally since we're not using Auth0's credential manager
+  UserProfile? _currentUserProfile;
+
   Auth0Service() {
     _auth0 = Auth0(_domain, _clientId);
   }
@@ -23,6 +26,7 @@ class Auth0Service {
 
       // 1. Trigger native Google sign-in
       final googleSignIn = GoogleSignIn(
+        serverClientId: '825189008537-lugehuiggug9hsc2klqodiu3vul42jh0.apps.googleusercontent.com',
         scopes: ['email', 'profile'],
       );
 
@@ -77,7 +81,11 @@ class Auth0Service {
       debugPrint('[Auth0Service] User: ${userProfile.name}');
       debugPrint('[Auth0Service] Email: ${userProfile.email}');
 
-      // 4. Create a simple session for Supabase using Google tokens
+      // 4. Store the user profile locally for later retrieval
+      _currentUserProfile = userProfile;
+      debugPrint('[Auth0Service] User profile stored locally');
+
+      // 5. Create a simple session for Supabase using Google tokens
       await _createSupabaseSessionWithGoogleToken(googleAccessToken, googleIdToken, userProfile);
 
       return userProfile;
@@ -90,6 +98,10 @@ class Auth0Service {
   /// Sign out from Auth0 and Supabase
   Future<void> signOut() async {
     debugPrint('[Auth0Service] Starting sign-out process...');
+
+    // Clear local user profile
+    _currentUserProfile = null;
+    debugPrint('[Auth0Service] Local user profile cleared');
 
     // Always sign out from Supabase first - this is critical for app state
     try {
@@ -126,10 +138,194 @@ class Auth0Service {
   /// Get current user from Auth0
   Future<UserProfile?> getCurrentUser() async {
     try {
-      final credentials = await _auth0.credentialsManager.credentials();
-      return credentials.user;
+      // Return the locally stored user profile
+      debugPrint('[Auth0Service] Returning locally stored user profile: ${_currentUserProfile != null ? 'Found' : 'Null'}');
+      return _currentUserProfile;
     } catch (e) {
       debugPrint('[Auth0Service] Get current user error: $e');
+      return null;
+    }
+  }
+
+  /// Get current user's profile picture URL from multiple sources with fallbacks
+  /// This method tries to retrieve the profile picture URL from:
+  /// 1. Auth0 user profile (most reliable)
+  /// 2. Supabase user metadata
+  Future<String?> getCurrentUserProfilePictureUrl() async {
+    try {
+      debugPrint('[Auth0Service] ========== STARTING PROFILE PICTURE RETRIEVAL DEBUG ==========');
+
+      // 1. Try Auth0 user profile first (most reliable)
+      debugPrint('[Auth0Service] Step 1: Trying Auth0 user profile...');
+      try {
+        final userProfile = await getCurrentUser();
+        debugPrint('[Auth0Service] Auth0 user profile result: ${userProfile != null ? 'Found' : 'Null'}');
+
+        if (userProfile != null) {
+          debugPrint('[Auth0Service] Auth0 user profile details:');
+          debugPrint('[Auth0Service]   - Name: ${userProfile.name}');
+          debugPrint('[Auth0Service]   - Picture URL: ${userProfile.pictureUrl}');
+
+          if (userProfile.pictureUrl != null && userProfile.pictureUrl.toString().isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Profile picture URL retrieved from Auth0 profile: ${userProfile.pictureUrl}');
+            return userProfile.pictureUrl.toString();
+          } else {
+            debugPrint('[Auth0Service] ❌ Auth0 profile picture URL is null or empty');
+          }
+        } else {
+          debugPrint('[Auth0Service] ❌ Auth0 user profile is null');
+        }
+      } catch (e) {
+        debugPrint('[Auth0Service] ❌ Exception getting Auth0 profile: $e');
+        debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      }
+
+      // 2. Try Supabase user metadata as fallback
+      debugPrint('[Auth0Service] Step 2: Trying Supabase user metadata...');
+      try {
+        final supabaseUser = Supabase.instance.client.auth.currentUser;
+        debugPrint('[Auth0Service] Supabase user result: ${supabaseUser != null ? 'Found' : 'Null'}');
+
+        if (supabaseUser != null) {
+          debugPrint('[Auth0Service] Supabase user metadata: ${supabaseUser.userMetadata}');
+
+          // Check user metadata for picture
+          final metadataPicture = supabaseUser.userMetadata?['picture'] as String?;
+          debugPrint('[Auth0Service]   - Metadata picture: $metadataPicture');
+
+          if (metadataPicture != null && metadataPicture.isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Profile picture URL retrieved from Supabase user metadata: $metadataPicture');
+            return metadataPicture;
+          }
+
+          debugPrint('[Auth0Service] ❌ No profile picture found in Supabase user metadata');
+        } else {
+          debugPrint('[Auth0Service] ❌ Supabase user is null');
+        }
+      } catch (e) {
+        debugPrint('[Auth0Service] ❌ Exception getting Supabase user metadata: $e');
+        debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      }
+
+      debugPrint('[Auth0Service] ========== PROFILE PICTURE RETRIEVAL FAILED - NO URL FOUND ==========');
+      return null;
+    } catch (e) {
+      debugPrint('[Auth0Service] ❌ CRITICAL ERROR in getCurrentUserProfilePictureUrl: $e');
+      debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      return null;
+    }
+  }
+
+  /// Get current user's email from multiple sources with fallbacks
+  /// This method tries to retrieve the email from:
+  /// 1. Auth0 user profile (most reliable)
+  /// 2. Supabase user metadata
+  /// 3. Supabase profiles table
+  /// 4. Supabase auth user email (least reliable with Auth0)
+  Future<String?> getCurrentUserEmail() async {
+    try {
+      debugPrint('[Auth0Service] ========== STARTING EMAIL RETRIEVAL DEBUG ==========');
+
+      // 1. Try Auth0 user profile first (most reliable)
+      debugPrint('[Auth0Service] Step 1: Trying Auth0 user profile...');
+      try {
+        final userProfile = await getCurrentUser();
+        debugPrint('[Auth0Service] Auth0 user profile result: ${userProfile != null ? 'Found' : 'Null'}');
+
+        if (userProfile != null) {
+          debugPrint('[Auth0Service] Auth0 user profile details:');
+          debugPrint('[Auth0Service]   - Name: ${userProfile.name}');
+          debugPrint('[Auth0Service]   - Email: ${userProfile.email}');
+          debugPrint('[Auth0Service]   - Sub: ${userProfile.sub}');
+
+          if (userProfile.email != null && userProfile.email!.isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Email retrieved from Auth0 profile: ${userProfile.email}');
+            return userProfile.email;
+          } else {
+            debugPrint('[Auth0Service] ❌ Auth0 profile email is null or empty');
+          }
+        } else {
+          debugPrint('[Auth0Service] ❌ Auth0 user profile is null');
+        }
+      } catch (e) {
+        debugPrint('[Auth0Service] ❌ Exception getting Auth0 profile: $e');
+        debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      }
+
+      // 2. Try Supabase user metadata and direct email
+      debugPrint('[Auth0Service] Step 2: Trying Supabase user data...');
+      try {
+        final supabaseUser = Supabase.instance.client.auth.currentUser;
+        debugPrint('[Auth0Service] Supabase user result: ${supabaseUser != null ? 'Found' : 'Null'}');
+
+        if (supabaseUser != null) {
+          debugPrint('[Auth0Service] Supabase user details:');
+          debugPrint('[Auth0Service]   - ID: ${supabaseUser.id}');
+          debugPrint('[Auth0Service]   - Email: ${supabaseUser.email}');
+          debugPrint('[Auth0Service]   - User metadata: ${supabaseUser.userMetadata}');
+          debugPrint('[Auth0Service]   - App metadata: ${supabaseUser.appMetadata}');
+
+          // Check user metadata first
+          final metadataEmail = supabaseUser.userMetadata?['email'] as String?;
+          debugPrint('[Auth0Service]   - Metadata email: $metadataEmail');
+
+          if (metadataEmail != null && metadataEmail.isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Email retrieved from Supabase user metadata: $metadataEmail');
+            return metadataEmail;
+          }
+
+          // Check direct email field
+          if (supabaseUser.email != null && supabaseUser.email!.isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Email retrieved from Supabase user email: ${supabaseUser.email}');
+            return supabaseUser.email;
+          }
+
+          debugPrint('[Auth0Service] ❌ No email found in Supabase user data');
+        } else {
+          debugPrint('[Auth0Service] ❌ Supabase user is null');
+        }
+      } catch (e) {
+        debugPrint('[Auth0Service] ❌ Exception getting Supabase user: $e');
+        debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      }
+
+      // 3. Try profiles table as last resort
+      debugPrint('[Auth0Service] Step 3: Trying profiles table...');
+      try {
+        final supabaseUser = Supabase.instance.client.auth.currentUser;
+        if (supabaseUser != null) {
+          debugPrint('[Auth0Service] Querying profiles table for user ID: ${supabaseUser.id}');
+
+          final response = await Supabase.instance.client
+              .from('profiles')
+              .select('email')
+              .eq('id', supabaseUser.id)
+              .single();
+
+          debugPrint('[Auth0Service] Profiles table response: $response');
+
+          final email = response['email'] as String?;
+          debugPrint('[Auth0Service] Profiles table email: $email');
+
+          if (email != null && email.isNotEmpty) {
+            debugPrint('[Auth0Service] ✅ SUCCESS: Email retrieved from profiles table: $email');
+            return email;
+          } else {
+            debugPrint('[Auth0Service] ❌ Profiles table email is null or empty');
+          }
+        } else {
+          debugPrint('[Auth0Service] ❌ Cannot query profiles table - Supabase user is null');
+        }
+      } catch (e) {
+        debugPrint('[Auth0Service] ❌ Exception querying profiles table: $e');
+        debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
+      }
+
+      debugPrint('[Auth0Service] ========== EMAIL RETRIEVAL FAILED - NO EMAIL FOUND ==========');
+      return null;
+    } catch (e) {
+      debugPrint('[Auth0Service] ❌ CRITICAL ERROR in getCurrentUserEmail: $e');
+      debugPrint('[Auth0Service] Stack trace: ${StackTrace.current}');
       return null;
     }
   }
@@ -137,11 +333,12 @@ class Auth0Service {
   /// Check if user is authenticated
   Future<bool> isAuthenticated() async {
     try {
-      final hasValidCredentials = await _auth0.credentialsManager.hasValidCredentials();
+      final hasLocalProfile = _currentUserProfile != null;
       final hasSupabaseSession = Supabase.instance.client.auth.currentSession != null;
 
-      // Both Auth0 and Supabase should be authenticated
-      return hasValidCredentials && hasSupabaseSession;
+      // Both local profile and Supabase session should exist
+      debugPrint('[Auth0Service] Authentication check - Local profile: $hasLocalProfile, Supabase session: $hasSupabaseSession');
+      return hasLocalProfile && hasSupabaseSession;
     } catch (e) {
       debugPrint('[Auth0Service] Is authenticated error: $e');
       return false;
@@ -151,6 +348,10 @@ class Auth0Service {
   /// Force clear all authentication state (useful for troubleshooting)
   Future<void> forceSignOut() async {
     debugPrint('[Auth0Service] Force sign-out - clearing all authentication state...');
+
+    // Clear local user profile
+    _currentUserProfile = null;
+    debugPrint('[Auth0Service] Local user profile cleared');
 
     // Clear Supabase session
     try {

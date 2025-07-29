@@ -18,9 +18,9 @@ import '../../shared/design_system/design_system.dart';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 
-const String _kCachedLimit = 'cached_generation_limit';
-const String _kCachedGenerationsToday = 'cached_generations_today';
-const String _kCachedResetsAt = 'cached_resets_at_utc_iso';
+const String _kCachedLimit = 'cached_enhancement_limit';
+const String _kCachedEnhancementsToday = 'cached_enhancements_today';
+const String _kCachedResetsAt = 'cached_enhancement_resets_at_utc_iso';
 
 class ImageEnhancementScreen extends StatefulWidget {
   const ImageEnhancementScreen({super.key});
@@ -38,8 +38,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   bool _isLoading = false;
   bool _isImproving = false;
   bool _isUploadingImage = false;
-  int _generationLimit = 3;
-  int _generationsToday = 0;
+  int _enhancementLimit = 4;
+  int _enhancementsToday = 0;
   String? _resetsAtUtcIso;
   String _timeUntilReset = "Calculating...";
   bool _isLoadingStatus = true;
@@ -48,6 +48,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   bool _isSavingImage = false;
   bool _isSharingToGallery = false;
   bool _isFetchingRandomPrompt = false;
+  bool _isSharedToGallery = false; // Track if current image has been shared to gallery
+  bool _autoUploadToGallery = false; // Track auto-upload setting
   SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
   String _lastSuccessfulPrompt = "";
 
@@ -63,6 +65,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     super.initState();
     _loadCachedGenerationStatus();
     _fetchGenerationStatus();
+    _loadAutoUploadSetting();
     _resetTimer = Timer.periodic(const Duration(seconds: 30), (_) => _updateResetsAtDisplay());
   }
 
@@ -75,6 +78,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
       _subscriptionStatusNotifierInstance = notifier;
       _subscriptionStatusNotifierInstance?.addListener(_fetchGenerationStatus);
     }
+    // Refresh auto-upload setting when dependencies change (e.g., returning from settings)
+    _loadAutoUploadSetting();
   }
   
   @override
@@ -89,8 +94,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _generationLimit = prefs.getInt(_kCachedLimit) ?? 3;
-        _generationsToday = prefs.getInt(_kCachedGenerationsToday) ?? 0;
+        _enhancementLimit = prefs.getInt(_kCachedLimit) ?? 4;
+        _enhancementsToday = prefs.getInt(_kCachedEnhancementsToday) ?? 0;
         _resetsAtUtcIso = prefs.getString(_kCachedResetsAt);
         if (_resetsAtUtcIso != null) _updateResetsAtDisplay();
       });
@@ -109,8 +114,9 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
         setState(() => _statusErrorMessage = data['error'].toString());
       } else {
         setState(() {
-          _generationLimit = data['limit'] ?? 3;
-          _generationsToday = data['generations_today'] ?? 0;
+          // Use new enhancement fields if available, fall back to generation fields for backward compatibility
+          _enhancementLimit = data['enhancement_limit'] ?? data['limit'] ?? 4;
+          _enhancementsToday = data['enhancements_today'] ?? data['generations_today'] ?? 0;
           _resetsAtUtcIso = data['resets_at_utc_iso'];
           _statusErrorMessage = null;
           _updateResetsAtDisplay();
@@ -125,8 +131,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
 
   Future<void> _saveGenerationStatusToCache() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_kCachedLimit, _generationLimit);
-    await prefs.setInt(_kCachedGenerationsToday, _generationsToday);
+    await prefs.setInt(_kCachedLimit, _enhancementLimit);
+    await prefs.setInt(_kCachedEnhancementsToday, _enhancementsToday);
     if (_resetsAtUtcIso != null) {
       await prefs.setString(_kCachedResetsAt, _resetsAtUtcIso!);
     }
@@ -248,7 +254,11 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Future<void> _enhanceImage() async {
     if (_selectedImage == null || _promptController.text.isEmpty || _isLoading) return;
     FocusScope.of(context).unfocus();
-    setState(() { _isLoading = true; _enhancedImageUrl = null; });
+    setState(() {
+      _isLoading = true;
+      _enhancedImageUrl = null;
+      _isSharedToGallery = false; // Reset share state for new image
+    });
 
     try {
       // Read and validate image size
@@ -278,7 +288,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
       if (mounted) {
         final data = response.data;
         if (data['error'] != null) {
-          showErrorSnackbar(context, data['error'].toString());
+          final errorMessage = _getApiErrorMessage(data);
+          showErrorSnackbar(context, errorMessage);
         } else if (data['data'] != null && data['data'][0]['url'] != null) {
           setState(() {
             _enhancedImageUrl = data['data'][0]['url'];
@@ -287,18 +298,116 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
           await _fetchGenerationStatus();
 
           // Auto-upload to gallery if enabled
-          final prefs = await SharedPreferences.getInstance();
-          final autoUpload = prefs.getBool('auto_upload_to_gallery') ?? false;
-          if (autoUpload) {
+          if (_autoUploadToGallery) {
             await _shareToGallery();
+            // Set share state to true after successful auto-share
+            if (mounted) {
+              setState(() {
+                _isSharedToGallery = true;
+              });
+            }
           }
         }
       }
     } catch (e) {
       debugPrint('Image enhancement error: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred during image enhancement. Please try again.');
+      if (mounted) {
+        final errorMessage = _getImageEnhancementErrorMessage(e);
+        showErrorSnackbar(context, errorMessage);
+      }
     }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  /// Extracts user-friendly error messages from API response data
+  String _getApiErrorMessage(Map<String, dynamic> data) {
+    final error = data['error'];
+    if (error == null) return 'An unexpected error occurred during image enhancement. Please try again.';
+
+    final errorString = error.toString();
+
+    // Check for content policy violations in the error message
+    if (errorString.toLowerCase().contains('safety system') ||
+        errorString.toLowerCase().contains('content policy')) {
+      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+    }
+
+    // Check for details object with more specific error information
+    final details = data['details'];
+    if (details != null && details is Map<String, dynamic>) {
+      final errorType = details['type'];
+      final errorCode = details['code'];
+
+      if (errorType == 'image_generation_user_error' &&
+          errorCode == 'content_policy_violation') {
+        return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
+      }
+    }
+
+    // Return the original error message if it's user-friendly
+    if (errorString.isNotEmpty && !errorString.toLowerCase().contains('unexpected')) {
+      return errorString;
+    }
+
+    return 'An unexpected error occurred during image enhancement. Please try again.';
+  }
+
+  /// Extracts user-friendly error messages from image enhancement exceptions
+  String _getImageEnhancementErrorMessage(dynamic error) {
+    // Handle FunctionException from Supabase
+    if (error is FunctionException) {
+      final details = error.details;
+
+      // Check if it's a content policy violation
+      if (details != null && details is Map<String, dynamic>) {
+        final errorDetails = details['error'];
+        if (errorDetails != null && errorDetails is Map<String, dynamic>) {
+          final errorType = errorDetails['type'];
+          final errorCode = errorDetails['code'];
+          final errorMessage = errorDetails['message'] ?? '';
+
+          // Check for content policy violations
+          if (errorType == 'image_generation_user_error' &&
+              errorCode == 'content_policy_violation') {
+            return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
+          }
+
+          // Check for safety system rejection in message
+          if (errorMessage.toLowerCase().contains('safety system') ||
+              errorMessage.toLowerCase().contains('content policy')) {
+            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+          }
+        }
+
+        // Check for error message directly in details
+        final directError = details['error'];
+        if (directError is String) {
+          if (directError.toLowerCase().contains('safety system') ||
+              directError.toLowerCase().contains('content policy')) {
+            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+          }
+          // Return the direct error message if it's user-friendly
+          if (directError.isNotEmpty && !directError.toLowerCase().contains('unexpected')) {
+            return directError;
+          }
+        }
+      }
+
+      // Handle other FunctionException cases
+      if (error.reasonPhrase != null && error.reasonPhrase!.isNotEmpty) {
+        return 'Enhancement failed: ${error.reasonPhrase}';
+      }
+    }
+
+    // Handle other exception types
+    final errorString = error.toString();
+    if (errorString.toLowerCase().contains('safety system') ||
+        errorString.toLowerCase().contains('content policy')) {
+      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
+    }
+
+    // Default fallback message
+    return 'An unexpected error occurred during image enhancement. Please try again.';
   }
 
   Future<void> _saveImage() async {
@@ -374,7 +483,12 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
         'prompt': _promptController.text, 'thumbnail_url': thumbPath,
       });
 
-      if (mounted) showSuccessSnackbar(context, 'Enhanced image shared to gallery!');
+      if (mounted) {
+        setState(() {
+          _isSharedToGallery = true; // Mark image as shared
+        });
+        showSuccessSnackbar(context, 'Enhanced image shared to gallery!');
+      }
     } catch (e) {
       debugPrint('Failed to share to gallery: $e');
       if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while sharing the image. Please try again.');
@@ -384,6 +498,15 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
 
   Future<Uint8List> _createThumbnail(Uint8List imageBytes) async {
     return await compute(_createThumbnailInIsolate, imageBytes);
+  }
+
+  Future<void> _loadAutoUploadSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _autoUploadToGallery = prefs.getBool('auto_upload_to_gallery') ?? false;
+      });
+    }
   }
 
   // Static methods for isolate processing
@@ -417,15 +540,15 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   // Computed getter for enhance button state
   bool get _canEnhanceImage {
     if (_selectedImage == null || _promptController.text.isEmpty) return false;
-    final remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
-    if (_generationLimit != -1 && remaining <= 0) return false;
+    final remaining = _enhancementLimit == -1 ? 999 : _enhancementLimit - _enhancementsToday;
+    if (_enhancementLimit != -1 && remaining <= 0) return false;
     if (_isLoading || _isFetchingRandomPrompt || _isImproving) return false;
     return true;
   }
 
   @override
   Widget build(BuildContext context) {
-    int remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
+    int remaining = _enhancementLimit == -1 ? 999 : _enhancementLimit - _enhancementsToday;
 
     return Scaffold(
       body: VSResponsiveLayout(
@@ -435,7 +558,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildGenerationStatus(context, remaining, _generationLimit),
+                _buildEnhancementStatus(context, remaining, _enhancementLimit),
                 const VSResponsiveSpacing(),
                 _buildImageUploadSection(context),
                 const VSResponsiveSpacing(),
@@ -464,7 +587,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     );
   }
 
-  Widget _buildGenerationStatus(BuildContext context, int remaining, int limit) {
+  Widget _buildEnhancementStatus(BuildContext context, int remaining, int limit) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -919,7 +1042,14 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       _buildActionButton(context, 'Save', Icons.save_alt, _isSavingImage, _saveImage, colorScheme),
-                      _buildActionButton(context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery, colorScheme),
+                      // Share button logic based on auto-upload setting and share state
+                      if (!_autoUploadToGallery && !_isSharedToGallery)
+                        // Show share button when auto-upload is OFF and image hasn't been shared
+                        _buildActionButton(context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery, colorScheme),
+                      if (!_autoUploadToGallery && _isSharedToGallery)
+                        // Show "Shared" indicator when auto-upload is OFF and image has been shared
+                        _buildActionButton(context, 'Shared', Icons.check_circle_rounded, false, null, colorScheme),
+                      // When auto-upload is ON, no share button is shown since it's automatically shared
                     ],
                   ),
                 ),
@@ -930,7 +1060,7 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
     );
   }
 
-  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback onPressed, ColorScheme colorScheme) {
+  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback? onPressed, ColorScheme colorScheme) {
     final TextTheme textTheme = Theme.of(context).textTheme;
     return Column(
       mainAxisSize: MainAxisSize.min,

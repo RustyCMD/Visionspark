@@ -2,6 +2,28 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
+const DEFAULT_FREE_ENHANCEMENT_LIMIT = 4;
+const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+function getUserTimezone(user: any, profile: any): string {
+  return profile?.timezone || user?.user_metadata?.timezone || 'UTC';
+}
+
+function getDateStringInTimezone(date: Date, timezone: string): string {
+  try {
+    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+  } catch {
+    return date.toLocaleDateString('en-CA', { timeZone: 'UTC' });
+  }
+}
+
+function getNextUTCMidnightISO(): string {
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  tomorrow.setUTCHours(0, 0, 0, 0);
+  return tomorrow.toISOString();
+}
+
 interface EnhanceImageRequest {
   image: string;  // base64 encoded image
   prompt: string;
@@ -47,26 +69,88 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check user's generation status and limits
+    // Check user's enhancement status and limits
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('generation_limit, generations_today, subscription_cycle_start_date')
+      .select('enhancement_limit, enhancements_today, last_enhancement_at, timezone, current_subscription_tier, subscription_active, subscription_expires_at')
       .eq('id', user.id)
       .single();
 
     if (profileError) {
+      console.error(`User ${user.id}: Profile fetch error:`, profileError.message);
       return new Response(
         JSON.stringify({ error: 'Failed to fetch user profile' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Check if user has reached their limit
-    // Handle NULL generation_limit (unlimited) and -1 (unlimited) as unlimited
-    const effectiveLimit = profile.generation_limit ?? -1; // Convert NULL to -1 (unlimited)
-    if (effectiveLimit !== -1 && profile.generations_today >= effectiveLimit) {
+    let lt_enhancements_today = typeof profile.enhancements_today === 'number' ? profile.enhancements_today : 0;
+    const userTimezone = getUserTimezone(user, profile);
+    const now = new Date();
+    const profileUpdates: Record<string, any> = {};
+    let needsDBUpdateBeforeEnhancement = false;
+    let derivedEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
+    let nextResetForClientIso = getNextUTCMidnightISO();
+
+    // Check subscription status
+    const isSubscriptionEffectivelyActive =
+        profile.subscription_active &&
+        profile.subscription_expires_at &&
+        (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
+
+    if (isSubscriptionEffectivelyActive) {
+      if (profile.current_subscription_tier === 'monthly_unlimited') {
+        derivedEnhancementLimit = -1; // Unlimited
+        lt_enhancements_today = 0;
+        nextResetForClientIso = new Date(profile.subscription_expires_at).toISOString();
+      }
+    } else {
+      // Daily reset logic for free users
+      derivedEnhancementLimit = profile.enhancement_limit || DEFAULT_FREE_ENHANCEMENT_LIMIT;
+      let performDailyReset = false;
+      if (profile.last_enhancement_at) {
+        const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
+        const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+        const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
+        if (nowDayStrUserTz > lastEnhancementDayStrUserTz) {
+          performDailyReset = true;
+        }
+      } else {
+        performDailyReset = true;
+      }
+
+      if (performDailyReset) {
+        lt_enhancements_today = 0;
+        profileUpdates.enhancements_today = 0;
+        needsDBUpdateBeforeEnhancement = true;
+      }
+      nextResetForClientIso = getNextUTCMidnightISO();
+    }
+
+    if (needsDBUpdateBeforeEnhancement && Object.keys(profileUpdates).length > 0) {
+      console.log(`User ${user.id}: Performing pre-enhancement profile update for daily reset:`, profileUpdates);
+      const { error: resetUpdateError } = await supabase
+        .from("profiles")
+        .update(profileUpdates)
+        .eq("id", user.id);
+      if (resetUpdateError) {
+        console.error(`User ${user.id}: Failed to update profile on daily reset:`, resetUpdateError.message);
+      }
+    }
+
+    // Check if user has reached their enhancement limit
+    if (derivedEnhancementLimit !== -1 && lt_enhancements_today >= derivedEnhancementLimit) {
+      console.log(`Enhancement limit (${derivedEnhancementLimit}) reached for user ${user.id}. Enhancements today: ${lt_enhancements_today}. Resets at: ${nextResetForClientIso}`);
       return new Response(
-        JSON.stringify({ error: 'Generation limit reached for today' }),
+        JSON.stringify({
+          error: `Enhancement limit of ${derivedEnhancementLimit} reached for today.`,
+          resets_at_utc_iso: nextResetForClientIso,
+          limit_details: {
+            current_limit: derivedEnhancementLimit,
+            enhancements_used_today: lt_enhancements_today,
+            active_subscription: profile.current_subscription_tier
+          }
+        }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -197,15 +281,26 @@ serve(async (req: Request) => {
 
     const openaiData: OpenAIImageEditResponse = await openaiResponse.json();
 
-    // Update user's generation count
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ generations_today: profile.generations_today + 1 })
-      .eq('id', user.id);
+    // Update user's enhancement count
+    const enhancementsCountForDBDebit = lt_enhancements_today + 1;
+    const timestampForThisAttempt = new Date().toISOString();
 
-    if (updateError) {
-      console.error('Failed to update generation count:', updateError);
-      // Don't fail the request if count update fails
+    console.log(`User ${user.id}: OpenAI success. Debiting enhancement. Current (before this): ${lt_enhancements_today}, New DB count: ${enhancementsCountForDBDebit}`);
+    const { data: debitedProfile, error: debitError } = await supabase
+      .from("profiles")
+      .update({
+        enhancements_today: enhancementsCountForDBDebit,
+        last_enhancement_at: timestampForThisAttempt,
+      })
+      .eq("id", user.id)
+      .select('enhancements_today, last_enhancement_at')
+      .single();
+
+    if (debitError || !debitedProfile) {
+      console.error(`User ${user.id}: CRITICAL - OpenAI call SUCCEEDED but FAILED to debit enhancement count:`, debitError?.message);
+      // Don't fail the request if count update fails, but log the error
+    } else {
+      console.log(`User ${user.id}: Successfully debited enhancement count. New count: ${debitedProfile.enhancements_today}`);
     }
 
     // Return the enhanced image URL

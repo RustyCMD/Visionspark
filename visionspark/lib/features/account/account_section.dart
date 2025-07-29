@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import '../../shared/design_system/design_system.dart';
 import '../../auth/auth0_service.dart';
@@ -18,13 +19,18 @@ class AccountSection extends StatefulWidget {
 class _AccountSectionState extends State<AccountSection> with TickerProviderStateMixin {
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
-  String? _profileImageUrl;
+  String? _profileImageUrl; // Custom uploaded profile picture
+  String? _googleProfilePictureUrl; // Google account profile picture
   DateTime? _joinDate;
   String? _username;
+  String? _userEmail; // Add email state variable
   final TextEditingController _usernameController = TextEditingController();
   bool _isSavingUsername = false;
   bool _isDeleting = false;
-  
+
+  // Auth0 service instance
+  final _auth0Service = Auth0Service();
+
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -55,6 +61,8 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
   Future<void> _loadProfileData() async {
     await _fetchProfile();
+    await _fetchUserEmail();
+    await _loadGoogleProfilePicture();
     await _loadProfileImage();
   }
 
@@ -79,6 +87,42 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     } catch (e) {
       if(mounted) showErrorSnackbar(context, 'Could not fetch profile.');
       debugPrint('Error fetching profile: $e');
+    }
+  }
+
+  Future<void> _fetchUserEmail() async {
+    try {
+      debugPrint('[AccountSection] Fetching user email using Auth0Service...');
+      final email = await _auth0Service.getCurrentUserEmail();
+      debugPrint('[AccountSection] Email retrieved: ${email ?? 'NULL'}');
+
+      if (mounted) {
+        setState(() {
+          _userEmail = email;
+        });
+      }
+    } catch (e) {
+      debugPrint('[AccountSection] Error fetching user email: $e');
+      if (mounted) {
+        showErrorSnackbar(context, 'Could not fetch user email.');
+      }
+    }
+  }
+
+  Future<void> _loadGoogleProfilePicture() async {
+    try {
+      debugPrint('[AccountSection] Fetching Google profile picture using Auth0Service...');
+      final profilePictureUrl = await _auth0Service.getCurrentUserProfilePictureUrl();
+      debugPrint('[AccountSection] Google profile picture URL retrieved: ${profilePictureUrl ?? 'NULL'}');
+
+      if (mounted) {
+        setState(() {
+          _googleProfilePictureUrl = profilePictureUrl;
+        });
+      }
+    } catch (e) {
+      debugPrint('[AccountSection] Error fetching Google profile picture: $e');
+      // Don't show error to user for profile picture - it's not critical
     }
   }
 
@@ -285,7 +329,7 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
       return '';
     }
 
-    final initials = getInitials(_username, user.email);
+    final initials = getInitials(_username, _userEmail);
 
     return SliverToBoxAdapter(
       child: VSResponsiveBuilder(
@@ -431,17 +475,51 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
                   )
                 : _profileImageUrl != null
                   ? ClipOval(
-                      child: Image.network(
-                        _profileImageUrl!,
+                      child: CachedNetworkImage(
+                        imageUrl: _profileImageUrl!,
                         fit: BoxFit.cover,
                         width: double.infinity,
                         height: double.infinity,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildInitialsAvatar(colorScheme, textTheme, initials);
+                        placeholder: (context, url) => VSLoadingIndicator(
+                          size: VSDesignTokens.iconM,
+                        ),
+                        errorWidget: (context, url, error) {
+                          // If custom profile picture fails, try Google profile picture
+                          return _googleProfilePictureUrl != null
+                            ? ClipOval(
+                                child: CachedNetworkImage(
+                                  imageUrl: _googleProfilePictureUrl!,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  placeholder: (context, url) => VSLoadingIndicator(
+                                    size: VSDesignTokens.iconM,
+                                  ),
+                                  errorWidget: (context, url, error) {
+                                    return _buildInitialsAvatar(colorScheme, textTheme, initials);
+                                  },
+                                ),
+                              )
+                            : _buildInitialsAvatar(colorScheme, textTheme, initials);
                         },
                       ),
                     )
-                  : _buildInitialsAvatar(colorScheme, textTheme, initials),
+                  : _googleProfilePictureUrl != null
+                    ? ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: _googleProfilePictureUrl!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          placeholder: (context, url) => VSLoadingIndicator(
+                            size: VSDesignTokens.iconM,
+                          ),
+                          errorWidget: (context, url, error) {
+                            return _buildInitialsAvatar(colorScheme, textTheme, initials);
+                          },
+                        ),
+                      )
+                    : _buildInitialsAvatar(colorScheme, textTheme, initials),
             ),
           ),
 
@@ -522,23 +600,32 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           VSResponsiveText(
-            text: _username ?? user.email ?? 'VisionSpark User',
+            text: _username ?? _userEmail ?? 'VisionSpark User',
             baseStyle: textTheme.headlineSmall?.copyWith(
               fontWeight: VSTypography.weightBold,
               color: colorScheme.onSurface,
             ),
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          if (_username != null && user.email != null) ...[
+          if (_username != null && _userEmail != null) ...[
             const SizedBox(height: VSDesignTokens.space1),
-            Text(
-              user.email!,
-              style: textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: VSDesignTokens.space2),
+                child: Text(
+                  _userEmail!,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 13, // Smaller font size to fit better
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
               ),
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
             ),
           ],
           if (_joinDate != null) ...[

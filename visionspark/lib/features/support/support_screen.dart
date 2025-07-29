@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import '../../shared/design_system/design_system.dart';
+import '../../auth/auth0_service.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -15,6 +16,7 @@ class _SupportScreenState extends State<SupportScreen> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   bool _isLoading = false;
+  final _auth0Service = Auth0Service();
 
   Future<void> _submitSupport() async {
     // Validate form before proceeding
@@ -27,14 +29,26 @@ class _SupportScreenState extends State<SupportScreen> {
     try {
       final title = _titleController.text.trim();
       final content = _contentController.text.trim();
-      final userEmail = Supabase.instance.client.auth.currentUser?.email;
 
-      if (userEmail == null) {
+      debugPrint('[SupportScreen] ========== SUPPORT TICKET SUBMISSION STARTED ==========');
+      debugPrint('[SupportScreen] Title: $title');
+      debugPrint('[SupportScreen] Content length: ${content.length}');
+
+      // Use the new email retrieval service with multiple fallbacks
+      debugPrint('[SupportScreen] Attempting to retrieve user email...');
+      final userEmail = await _auth0Service.getCurrentUserEmail();
+      debugPrint('[SupportScreen] Email retrieval result: ${userEmail ?? 'NULL/EMPTY'}');
+
+      if (userEmail == null || userEmail.isEmpty) {
+        debugPrint('[SupportScreen] ❌ Email retrieval failed - showing error to user');
         if (mounted) {
-          showErrorSnackbar(context, 'Could not submit report: User email not found. Please ensure you are logged in.');
+          showErrorSnackbar(context, 'Could not submit report: User email not found. Please ensure you are logged in and try again.');
         }
+        setState(() => _isLoading = false);
         return;
       }
+
+      debugPrint('[SupportScreen] ✅ Email retrieved successfully: $userEmail');
       
       await Supabase.instance.client.functions.invoke(
         'report-support-issue',

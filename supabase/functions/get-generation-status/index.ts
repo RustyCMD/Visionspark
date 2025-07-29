@@ -2,7 +2,8 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const DEFAULT_FREE_LIMIT = 3;
+const DEFAULT_FREE_GENERATION_LIMIT = 3;
+const DEFAULT_FREE_ENHANCEMENT_LIMIT = 4;
 const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // Helper functions (copied from generate-image-proxy.ts for daily reset logic consistency)
@@ -60,8 +61,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      // Select timezone, last_generation_at. Remove resets_at_utc_iso.
-      .select('generations_today, last_generation_at, timezone, generation_limit, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
+      .select('generations_today, last_generation_at, enhancements_today, last_enhancement_at, timezone, generation_limit, enhancement_limit, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
       .eq('id', user.id)
       .single();
 
@@ -71,11 +71,17 @@ serve(async (req) => {
       const tomorrow = getNextUTCMidnightISO(); // Use helper for consistency
 
       return new Response(JSON.stringify({
-        limit: DEFAULT_FREE_LIMIT,
+        generation_limit: DEFAULT_FREE_GENERATION_LIMIT,
         generations_today: 0,
-        remaining: DEFAULT_FREE_LIMIT,
+        generations_remaining: DEFAULT_FREE_GENERATION_LIMIT,
+        enhancement_limit: DEFAULT_FREE_ENHANCEMENT_LIMIT,
+        enhancements_today: 0,
+        enhancements_remaining: DEFAULT_FREE_ENHANCEMENT_LIMIT,
         resets_at_utc_iso: tomorrow, // This is for client display of daily reset
         active_subscription_type: null,
+        // Legacy fields for backward compatibility
+        limit: DEFAULT_FREE_GENERATION_LIMIT,
+        remaining: DEFAULT_FREE_GENERATION_LIMIT,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -83,9 +89,11 @@ serve(async (req) => {
     }
 
     // Subscription Check
-    // Use nullish coalescing for currentLimit to respect 0
-    let currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT;
-    let usageInCurrentPeriod = profile.generations_today ?? 0; // Default to 0 if null
+    // Use nullish coalescing for limits to respect 0
+    let currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT;
+    let currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
+    let generationUsageInCurrentPeriod = profile.generations_today ?? 0; // Default to 0 if null
+    let enhancementUsageInCurrentPeriod = profile.enhancements_today ?? 0; // Default to 0 if null
     let nextResetDateIso: string; // Will be determined by logic below
     let activeSubscriptionTier = profile.current_subscription_tier;
     let needsProfileUpdate = false; // For monthly cycle start/reset updates by this function
@@ -100,114 +108,119 @@ serve(async (req) => {
 
     if (isSubscriptionEffectivelyActive) {
       // Active subscription
-      if (profile.current_subscription_tier === 'monthly_unlimited') {
-        currentLimit = -1; // -1 for unlimited
-        usageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
+      if (profile.current_subscription_tier === 'monthly_unlimited' || profile.current_subscription_tier === 'monthly_unlimited_generations') {
+        currentGenerationLimit = -1; // -1 for unlimited
+        currentEnhancementLimit = -1; // -1 for unlimited
+        generationUsageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
+        enhancementUsageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
         nextResetDateIso = new Date(profile.subscription_expires_at).toISOString();
-      } else if (profile.current_subscription_tier === 'monthly_30') {
-        currentLimit = 30;
-        let cycleStartDate = profile.subscription_cycle_start_date ? new Date(profile.subscription_cycle_start_date) : null;
-        
-        if (!cycleStartDate) { // First time seeing this user with the new field, or it was null
-          cycleStartDate = new Date(now); // Start their cycle now
-          usageInCurrentPeriod = 0;
-          profileUpdates.subscription_cycle_start_date = cycleStartDate.toISOString();
-          profileUpdates.generations_today = 0; // Reset usage for the new cycle
-          needsProfileUpdate = true;
-        }
-
-        const nextMonthlyReset = new Date(cycleStartDate);
-        nextMonthlyReset.setMonth(nextMonthlyReset.getMonth() + 1);
-        nextMonthlyReset.setUTCDate(cycleStartDate.getUTCDate()); // Preserve the day of the month
-        nextMonthlyReset.setUTCHours(0,0,0,0); // Prefer start of day for cycle resets
-
-        if (now >= nextMonthlyReset) { // Time for monthly reset
-          usageInCurrentPeriod = 0;
-          profileUpdates.generations_today = 0;
-          profileUpdates.subscription_cycle_start_date = now.toISOString(); // Start new cycle from now
-          needsProfileUpdate = true;
-          // Calculate the next reset after this one
-          const newCycleStartDateForNext = new Date(now);
-          const nextNextMonthlyReset = new Date(newCycleStartDateForNext);
-          nextNextMonthlyReset.setMonth(nextNextMonthlyReset.getMonth() + 1);
-          nextNextMonthlyReset.setUTCDate(newCycleStartDateForNext.getUTCDate());
-          nextNextMonthlyReset.setUTCHours(0,0,0,0);
-          nextResetDateIso = nextNextMonthlyReset.toISOString();
-        } else {
-          // Still within the current monthly cycle
-          nextResetDateIso = nextMonthlyReset.toISOString();
-        }
       } else {
         activeSubscriptionTier = null; // Treat as free if tier is unknown but active
-        currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT; // Respect user's specific limit or default
+        currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT; // Respect user's specific limit or default
+        currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
         activeSubscriptionTier = null; // Not a recognized paid tier or subscription expired
 
-        // Daily Reset Logic (reflects generate-image-proxy logic, doesn't write daily reset here)
+        // Daily Reset Logic for both generations and enhancements
         const userTimezone = getUserTimezone(user, profile);
-        let performDailyResetCheck = false;
+
+        // Check generation reset
+        let performGenerationDailyResetCheck = false;
         if (profile.last_generation_at) {
           const lastGenDateUtc = new Date(profile.last_generation_at);
           const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
           const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
           if (nowDayStrUserTz > lastGenDayStrUserTz) {
-            performDailyResetCheck = true;
+            performGenerationDailyResetCheck = true;
           }
         } else {
-          performDailyResetCheck = true; // No last generation, so it's effectively a new day for generation
+          performGenerationDailyResetCheck = true;
         }
 
-        if (performDailyResetCheck) {
-          usageInCurrentPeriod = 0;
-          // This function does not update profile.generations_today or profile.last_generation_at for daily resets.
-          // That is handled by generate-image-proxy before actual generation.
-          // We only reflect what the count *would be*.
+        if (performGenerationDailyResetCheck) {
+          generationUsageInCurrentPeriod = 0;
         }
+
+        // Check enhancement reset
+        let performEnhancementDailyResetCheck = false;
+        if (profile.last_enhancement_at) {
+          const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
+          const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+          const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
+          if (nowDayStrUserTz > lastEnhancementDayStrUserTz) {
+            performEnhancementDailyResetCheck = true;
+          }
+        } else {
+          performEnhancementDailyResetCheck = true;
+        }
+
+        if (performEnhancementDailyResetCheck) {
+          enhancementUsageInCurrentPeriod = 0;
+        }
+
         nextResetDateIso = getNextUTCMidnightISO(); // Daily resets are at UTC midnight on the next day
       }
     } else {
       // Subscription not effectively active, apply daily free tier logic
-      currentLimit = profile.generation_limit ?? DEFAULT_FREE_LIMIT;
+      currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT;
+      currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
       activeSubscriptionTier = null;
 
       const userTimezone = getUserTimezone(user, profile);
-      let performDailyResetCheck = false;
+
+      // Check generation reset
+      let performGenerationDailyResetCheck = false;
       if (profile.last_generation_at) {
         const lastGenDateUtc = new Date(profile.last_generation_at);
         const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
         const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
         if (nowDayStrUserTz > lastGenDayStrUserTz) {
-          performDailyResetCheck = true;
+          performGenerationDailyResetCheck = true;
         }
       } else {
-        performDailyResetCheck = true;
+        performGenerationDailyResetCheck = true;
       }
 
-      if (performDailyResetCheck) {
-        usageInCurrentPeriod = 0;
+      if (performGenerationDailyResetCheck) {
+        generationUsageInCurrentPeriod = 0;
       }
+
+      // Check enhancement reset
+      let performEnhancementDailyResetCheck = false;
+      if (profile.last_enhancement_at) {
+        const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
+        const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+        const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
+        if (nowDayStrUserTz > lastEnhancementDayStrUserTz) {
+          performEnhancementDailyResetCheck = true;
+        }
+      } else {
+        performEnhancementDailyResetCheck = true;
+      }
+
+      if (performEnhancementDailyResetCheck) {
+        enhancementUsageInCurrentPeriod = 0;
+      }
+
       nextResetDateIso = getNextUTCMidnightISO();
     }
 
-    // This function only updates the profile for monthly subscription cycle changes
-    if (needsProfileUpdate && activeSubscriptionTier === 'monthly_30' && Object.keys(profileUpdates).length > 0) {
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update(profileUpdates)
-        .eq('id', user.id);
-      if (updateError) {
-        console.error("Failed to update profile for cycle/daily reset:", updateError.message);
-        // Non-fatal, proceed with calculated values but log error
-      }
-    }
-    
-    const remaining = currentLimit === -1 ? -1 : Math.max(0, currentLimit - usageInCurrentPeriod);
+    // This function no longer needs to update profiles for monthly cycles since we removed monthly_30
+
+    const generationsRemaining = currentGenerationLimit === -1 ? -1 : Math.max(0, currentGenerationLimit - generationUsageInCurrentPeriod);
+    const enhancementsRemaining = currentEnhancementLimit === -1 ? -1 : Math.max(0, currentEnhancementLimit - enhancementUsageInCurrentPeriod);
 
     return new Response(JSON.stringify({
-      limit: currentLimit,
-      generations_today: usageInCurrentPeriod,
-      remaining: remaining,
+      generation_limit: currentGenerationLimit,
+      generations_today: generationUsageInCurrentPeriod,
+      generations_remaining: generationsRemaining,
+      enhancement_limit: currentEnhancementLimit,
+      enhancements_today: enhancementUsageInCurrentPeriod,
+      enhancements_remaining: enhancementsRemaining,
       resets_at_utc_iso: nextResetDateIso,
       active_subscription_type: activeSubscriptionTier,
+      // Legacy fields for backward compatibility
+      limit: currentGenerationLimit,
+      remaining: generationsRemaining,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,

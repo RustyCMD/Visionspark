@@ -144,42 +144,60 @@ serve(async (req) => {
   }
 
   try {
+    console.log('🔍 Purchase validation request received');
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     );
 
-    const { productId, purchaseToken } = await req.json();
+    const requestBody = await req.json();
+    const { productId, purchaseToken, source } = requestBody;
+
+    console.log(`📦 Product ID: ${productId}`);
+    console.log(`🎫 Purchase Token: ${purchaseToken ? purchaseToken.substring(0, 20) + '...' : 'null'}`);
+    console.log(`📱 Source: ${source}`);
+
     if (!productId) {
+      console.error('❌ Missing Product ID');
       throw new Error('Product ID is required.');
     }
     if (!purchaseToken) {
+      console.error('❌ Missing Purchase Token');
       throw new Error('Purchase token is required.');
     }
 
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
+      console.error('❌ User not authenticated');
       return new Response(JSON.stringify({ error: 'User not authenticated.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 401,
       });
     }
 
+    console.log(`👤 User authenticated: ${user.id}`);
+
     // --- Perform Google Play Validation ---
+    console.log('🔑 Getting Google Access Token...');
     let googleAccessToken;
     try {
         googleAccessToken = await getGoogleAccessToken();
+        console.log('✅ Google Access Token obtained successfully');
     } catch (tokenError) {
-        console.error("Error getting Google Access Token:", tokenError);
+        console.error("❌ Error getting Google Access Token:", tokenError);
         throw new Error("Failed to authenticate with Google Play services.");
     }
 
+    console.log('🔍 Validating purchase with Google Play...');
     const validationResult = await validateGooglePlayPurchase(productId, purchaseToken, googleAccessToken);
-    
+
     if (!validationResult.isValid) {
+      console.error('❌ Google Play validation failed:', validationResult.error);
       throw new Error(validationResult.error || 'Invalid purchase or failed to validate with Google Play.');
     }
+    console.log('✅ Google Play validation successful');
     // --- End Google Play Validation ---
 
     // --- Acknowledge if necessary ---
@@ -222,9 +240,7 @@ serve(async (req) => {
     }
     
     // Determine tier based on productId
-    if (productId === 'monthly_30_generations') {
-      tier = 'monthly_30_generations';
-    } else if (productId === 'monthly_unlimited_generations') {
+    if (productId === 'monthly_unlimited_generations') {
       tier = 'monthly_unlimited_generations';
     } else {
       console.warn(`Validated purchase for unknown productId in this function logic: ${productId}. Tier will be null.`);
@@ -254,15 +270,19 @@ serve(async (req) => {
         updatePayload.subscription_cycle_start_date = cycleStartDate;
     }
 
+    console.log('💾 Updating user profile with subscription data:', JSON.stringify(updatePayload, null, 2));
+
     const { error: updateError } = await supabaseClient
       .from('profiles')
       .update(updatePayload)
       .eq('id', user.id);
 
     if (updateError) {
-      console.error('Error updating profile with subscription:', updateError);
+      console.error('❌ Error updating profile with subscription:', updateError);
       throw new Error(`Failed to update profile: ${updateError.message}`);
     }
+
+    console.log('✅ Profile updated successfully');
 
     return new Response(JSON.stringify({ success: true, message: 'Subscription activated and profile updated.' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

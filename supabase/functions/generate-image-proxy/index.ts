@@ -94,38 +94,9 @@ serve(async (req) => {
     if (isSubscriptionEffectivelyActive) {
       if (profile.current_subscription_tier === 'monthly_unlimited') {
         derivedGenerationLimit = -1; // Unlimited
-        lt_generations_today = 0; 
+        lt_generations_today = 0;
         nextResetForClientIso = new Date(profile.subscription_expires_at).toISOString();
-        isMonthlyTier = true; 
-      } else if (profile.current_subscription_tier === 'monthly_30') {
         isMonthlyTier = true;
-        derivedGenerationLimit = 30;
-        let currentCycleStartDate = profile.subscription_cycle_start_date ? new Date(profile.subscription_cycle_start_date) : null;
-
-        if (!currentCycleStartDate) {
-          currentCycleStartDate = new Date(now); 
-          lt_generations_today = 0;
-          profileUpdates.subscription_cycle_start_date = currentCycleStartDate.toISOString();
-          profileUpdates.generations_today = 0;
-          needsDBUpdateBeforeGenerationAttempt = true;
-        }
-
-        const nextMonthlyResetDate = new Date(currentCycleStartDate);
-        nextMonthlyResetDate.setUTCMonth(currentCycleStartDate.getUTCMonth() + 1);
-        nextMonthlyResetDate.setUTCHours(0,0,0,0);
-
-        if (now >= nextMonthlyResetDate) { 
-          lt_generations_today = 0;
-          currentCycleStartDate = new Date(now); 
-          profileUpdates.generations_today = 0;
-          profileUpdates.subscription_cycle_start_date = currentCycleStartDate.toISOString();
-          needsDBUpdateBeforeGenerationAttempt = true;
-        }
-        const finalCycleStartDateForNextReset = new Date(profileUpdates.subscription_cycle_start_date || currentCycleStartDate.toISOString());
-        const actualNextMonthlyReset = new Date(finalCycleStartDateForNextReset);
-        actualNextMonthlyReset.setUTCMonth(finalCycleStartDateForNextReset.getUTCMonth() + 1);
-        actualNextMonthlyReset.setUTCHours(0,0,0,0);
-        nextResetForClientIso = actualNextMonthlyReset.toISOString();
       }
     }
     

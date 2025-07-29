@@ -123,10 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             final limit = data['limit'];
             String subText = 'No Active Subscription';
 
-            if (subType == 'monthly_30_generations' || subType == 'monthly_30') {
-              subText = 'Standard Monthly';
-              if (limit != null) subText += ' (Limit: $limit)';
-            } else if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
+            if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
               subText = 'Unlimited Monthly';
               if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
             } else if (subType != null) {
