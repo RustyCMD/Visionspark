@@ -64,7 +64,7 @@ serve(async (req) => {
           messages: [
             {
               role: "system",
-              content: "You are an expert at improving image generation prompts for DALL-E 3. Take the user's prompt and enhance it to be more descriptive, artistic, and likely to produce a high-quality image. Keep the core idea but add artistic details, style descriptions, lighting, composition, and other elements that make for better AI-generated images. Be concise but descriptive. Return only the improved prompt without any explanations or quotes."
+              content: "You are an expert at improving image generation prompts for DALL-E 3. Take the user's prompt and enhance it to be more descriptive, artistic, and likely to produce a high-quality image. Keep the core idea but add artistic details, style descriptions, lighting, composition, and other elements that make for better AI-generated images. It is crucial that you preserve any specific names, brands, or explicit details mentioned by the user in the original prompt. Be concise but descriptive. Return only the improved prompt without any explanations or quotes."
             },
             {
               role: "user",
