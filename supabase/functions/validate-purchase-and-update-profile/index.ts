@@ -31,6 +31,359 @@ interface GooglePlaySubscriptionValidationResult {
   error?: string;
 }
 
+// Comprehensive error classification system
+enum ErrorCode {
+  // Validation Errors (non-retryable)
+  MISSING_PRODUCT_ID = 'MISSING_PRODUCT_ID',
+  MISSING_PURCHASE_TOKEN = 'MISSING_PURCHASE_TOKEN',
+  USER_NOT_AUTHENTICATED = 'USER_NOT_AUTHENTICATED',
+  INVALID_PURCHASE = 'INVALID_PURCHASE',
+  EXPIRED_PURCHASE = 'EXPIRED_PURCHASE',
+
+  // Network/API Errors (retryable)
+  GOOGLE_AUTH_FAILED = 'GOOGLE_AUTH_FAILED',
+  GOOGLE_API_TIMEOUT = 'GOOGLE_API_TIMEOUT',
+  GOOGLE_API_RATE_LIMIT = 'GOOGLE_API_RATE_LIMIT',
+  GOOGLE_API_SERVER_ERROR = 'GOOGLE_API_SERVER_ERROR',
+
+  // Database Errors (retryable)
+  DATABASE_CONNECTION_ERROR = 'DATABASE_CONNECTION_ERROR',
+  DATABASE_TIMEOUT = 'DATABASE_TIMEOUT',
+  DATABASE_CONSTRAINT_ERROR = 'DATABASE_CONSTRAINT_ERROR',
+  PROFILE_UPDATE_FAILED = 'PROFILE_UPDATE_FAILED',
+
+  // System Errors (retryable)
+  ENVIRONMENT_CONFIG_ERROR = 'ENVIRONMENT_CONFIG_ERROR',
+  UNEXPECTED_ERROR = 'UNEXPECTED_ERROR'
+}
+
+interface ClassifiedError {
+  code: ErrorCode;
+  message: string;
+  isRetryable: boolean;
+  retryAfterMs?: number;
+  context?: Record<string, any>;
+}
+
+class SubscriptionError extends Error {
+  public readonly code: ErrorCode;
+  public readonly isRetryable: boolean;
+  public readonly retryAfterMs?: number;
+  public readonly context?: Record<string, any>;
+
+  constructor(classifiedError: ClassifiedError) {
+    super(classifiedError.message);
+    this.name = 'SubscriptionError';
+    this.code = classifiedError.code;
+    this.isRetryable = classifiedError.isRetryable;
+    this.retryAfterMs = classifiedError.retryAfterMs;
+    this.context = classifiedError.context;
+  }
+}
+
+// Error classification helper functions
+function classifyDatabaseError(error: any): ClassifiedError {
+  const errorMessage = error?.message || error?.toString() || 'Unknown database error';
+
+  // Check for specific database error patterns
+  if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) {
+    return {
+      code: ErrorCode.DATABASE_TIMEOUT,
+      message: 'Database operation timed out. Please try again.',
+      isRetryable: true,
+      retryAfterMs: 2000,
+      context: { originalError: errorMessage }
+    };
+  }
+
+  if (errorMessage.includes('connection') || errorMessage.includes('CONNECTION')) {
+    return {
+      code: ErrorCode.DATABASE_CONNECTION_ERROR,
+      message: 'Database connection failed. Please try again.',
+      isRetryable: true,
+      retryAfterMs: 1000,
+      context: { originalError: errorMessage }
+    };
+  }
+
+  if (errorMessage.includes('constraint') || errorMessage.includes('CONSTRAINT')) {
+    return {
+      code: ErrorCode.DATABASE_CONSTRAINT_ERROR,
+      message: 'Database constraint violation. Please contact support.',
+      isRetryable: false,
+      context: { originalError: errorMessage }
+    };
+  }
+
+  // Default database error
+  return {
+    code: ErrorCode.PROFILE_UPDATE_FAILED,
+    message: 'Failed to update subscription profile. Please try again.',
+    isRetryable: true,
+    retryAfterMs: 1500,
+    context: { originalError: errorMessage }
+  };
+}
+
+function classifyGoogleApiError(statusCode: number, errorBody: string): ClassifiedError {
+  switch (statusCode) {
+    case 401:
+    case 403:
+      return {
+        code: ErrorCode.GOOGLE_AUTH_FAILED,
+        message: 'Google Play authentication failed. Please try again.',
+        isRetryable: true,
+        retryAfterMs: 5000,
+        context: { statusCode, errorBody }
+      };
+
+    case 408:
+    case 504:
+      return {
+        code: ErrorCode.GOOGLE_API_TIMEOUT,
+        message: 'Google Play API timeout. Please try again.',
+        isRetryable: true,
+        retryAfterMs: 3000,
+        context: { statusCode, errorBody }
+      };
+
+    case 429:
+      return {
+        code: ErrorCode.GOOGLE_API_RATE_LIMIT,
+        message: 'Google Play API rate limit exceeded. Please wait and try again.',
+        isRetryable: true,
+        retryAfterMs: 10000,
+        context: { statusCode, errorBody }
+      };
+
+    case 500:
+    case 502:
+    case 503:
+      return {
+        code: ErrorCode.GOOGLE_API_SERVER_ERROR,
+        message: 'Google Play API server error. Please try again.',
+        isRetryable: true,
+        retryAfterMs: 5000,
+        context: { statusCode, errorBody }
+      };
+
+    default:
+      return {
+        code: ErrorCode.INVALID_PURCHASE,
+        message: `Purchase validation failed: ${errorBody}`,
+        isRetryable: false,
+        context: { statusCode, errorBody }
+      };
+  }
+}
+
+// Retry mechanism with exponential backoff for database operations
+async function retryOperation<T>(
+  operation: () => Promise<T>,
+  operationName: string,
+  maxRetries: number = 3,
+  baseDelayMs: number = 1000
+): Promise<T> {
+  let lastError: SubscriptionError | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Attempting ${operationName} (attempt ${attempt}/${maxRetries})`);
+      const result = await operation();
+
+      if (attempt > 1) {
+        console.log(`✅ ${operationName} succeeded on attempt ${attempt}`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`❌ ${operationName} failed on attempt ${attempt}:`, error);
+
+      // Classify the error
+      let classifiedError: ClassifiedError;
+      if (error instanceof SubscriptionError) {
+        classifiedError = {
+          code: error.code,
+          message: error.message,
+          isRetryable: error.isRetryable,
+          retryAfterMs: error.retryAfterMs,
+          context: error.context
+        };
+      } else {
+        // Assume it's a database error if not already classified
+        classifiedError = classifyDatabaseError(error);
+      }
+
+      lastError = new SubscriptionError(classifiedError);
+
+      // If error is not retryable or this is the last attempt, throw immediately
+      if (!classifiedError.isRetryable || attempt === maxRetries) {
+        console.error(`🚫 ${operationName} failed permanently after ${attempt} attempts`);
+        throw lastError;
+      }
+
+      // Calculate delay with exponential backoff
+      const delay = Math.min(
+        classifiedError.retryAfterMs || (baseDelayMs * Math.pow(2, attempt - 1)),
+        30000 // Cap at 30 seconds
+      );
+
+      console.log(`⏳ Waiting ${delay}ms before retry ${attempt + 1} for ${operationName}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // This should never be reached, but just in case
+  throw lastError || new SubscriptionError({
+    code: ErrorCode.UNEXPECTED_ERROR,
+    message: `${operationName} failed after ${maxRetries} attempts`,
+    isRetryable: false
+  });
+}
+
+// Fallback procedures for persistent failures
+async function createFailureRecord(
+  supabaseClient: any,
+  userId: string,
+  purchaseContext: { productId: string; purchaseToken: string },
+  updatePayload: any,
+  error: SubscriptionError
+): Promise<void> {
+  try {
+    console.log('📝 Creating failure record for manual processing...');
+
+    // Create a record in a failed_subscription_updates table for manual processing
+    const failureRecord = {
+      user_id: userId,
+      product_id: purchaseContext.productId,
+      purchase_token: purchaseContext.purchaseToken,
+      intended_update_payload: updatePayload,
+      error_code: error.code,
+      error_message: error.message,
+      error_context: error.context,
+      created_at: new Date().toISOString(),
+      status: 'pending_manual_review',
+      retry_count: 0
+    };
+
+    const { error: insertError } = await supabaseClient
+      .from('failed_subscription_updates')
+      .insert(failureRecord);
+
+    if (insertError) {
+      console.error('❌ Failed to create failure record:', insertError);
+      // Don't throw here - this is a fallback, not critical
+    } else {
+      console.log('✅ Failure record created successfully for manual processing');
+    }
+  } catch (fallbackError) {
+    console.error('❌ Fallback procedure failed:', fallbackError);
+    // Log but don't throw - we don't want to fail the entire operation
+  }
+}
+
+async function notifyAdministrators(
+  userId: string,
+  purchaseContext: { productId: string; purchaseToken: string },
+  error: SubscriptionError
+): Promise<void> {
+  try {
+    console.log('📧 Notifying administrators of critical subscription failure...');
+
+    // In a real implementation, this would send an email, Slack notification, etc.
+    // For now, we'll log a structured message that can be picked up by monitoring systems
+    console.error('🚨 CRITICAL SUBSCRIPTION FAILURE - ADMIN ATTENTION REQUIRED', {
+      severity: 'CRITICAL',
+      event: 'subscription_profile_update_failed',
+      userId,
+      productId: purchaseContext.productId,
+      purchaseToken: purchaseContext.purchaseToken.substring(0, 20) + '...',
+      errorCode: error.code,
+      errorMessage: error.message,
+      timestamp: new Date().toISOString(),
+      actionRequired: 'Manual profile update needed - user has valid purchase but no subscription benefits'
+    });
+
+    // TODO: Integrate with actual notification system (email, Slack, PagerDuty, etc.)
+    // Example integrations:
+    // - await sendSlackAlert(alertData);
+    // - await sendEmailToAdmins(alertData);
+    // - await createPagerDutyIncident(alertData);
+
+  } catch (notificationError) {
+    console.error('❌ Failed to notify administrators:', notificationError);
+    // Don't throw - this is a fallback notification
+  }
+}
+
+// Enhanced profile update function with retry logic and fallback procedures
+async function updateProfileWithRetry(
+  supabaseClient: any,
+  userId: string,
+  updatePayload: any,
+  purchaseContext: { productId: string; purchaseToken: string }
+): Promise<void> {
+  const operation = async () => {
+    console.log('💾 Updating user profile with subscription data:', JSON.stringify(updatePayload, null, 2));
+
+    const { error: updateError } = await supabaseClient
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('❌ Profile update error details:', updateError);
+
+      // Classify and throw the error for retry handling
+      const classifiedError = classifyDatabaseError(updateError);
+      throw new SubscriptionError({
+        ...classifiedError,
+        context: {
+          ...classifiedError.context,
+          userId,
+          updatePayload,
+          purchaseContext
+        }
+      });
+    }
+
+    console.log('✅ Profile updated successfully');
+  };
+
+  try {
+    await retryOperation(
+      operation,
+      'Profile Update',
+      5, // More retries for critical profile updates
+      1000 // 1 second base delay
+    );
+  } catch (error) {
+    if (error instanceof SubscriptionError) {
+      console.error('🚨 Profile update failed permanently after all retries');
+
+      // Execute fallback procedures
+      await Promise.all([
+        createFailureRecord(supabaseClient, userId, purchaseContext, updatePayload, error),
+        notifyAdministrators(userId, purchaseContext, error)
+      ]);
+
+      // Re-throw the error with additional context about fallback procedures
+      throw new SubscriptionError({
+        code: error.code,
+        message: `${error.message} Fallback procedures have been initiated for manual resolution.`,
+        isRetryable: false,
+        context: {
+          ...error.context,
+          fallbackProceduresExecuted: true,
+          manualReviewRequired: true
+        }
+      });
+    }
+
+    throw error;
+  }
+}
+
 async function getGoogleAccessToken() {
   console.log('🔐 Initializing Google Service Account authentication...');
   console.log(`📧 Service Account Email: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
@@ -422,27 +775,81 @@ serve(async (req) => {
         updatePayload.subscription_cycle_start_date = cycleStartDate;
     }
 
-    console.log('💾 Updating user profile with subscription data:', JSON.stringify(updatePayload, null, 2));
+    // Use enhanced profile update with retry logic and transaction-like behavior
+    try {
+      await updateProfileWithRetry(
+        supabaseClient,
+        user.id,
+        updatePayload,
+        { productId, purchaseToken }
+      );
 
-    const { error: updateError } = await supabaseClient
-      .from('profiles')
-      .update(updatePayload)
-      .eq('id', user.id);
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Subscription activated and profile updated.',
+        subscriptionDetails: {
+          tier: tier,
+          active: isActive,
+          expiresAt: expiresAt
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    } catch (profileUpdateError) {
+      // Profile update failed after all retries and fallback procedures
+      console.error('🚨 CRITICAL: Profile update failed after successful purchase validation and acknowledgment');
 
-    if (updateError) {
-      console.error('❌ Error updating profile with subscription:', updateError);
-      throw new Error(`Failed to update profile: ${updateError.message}`);
+      if (profileUpdateError instanceof SubscriptionError) {
+        // Return a specific error response that indicates the purchase was successful
+        // but profile update failed - this helps the client handle the situation appropriately
+        return new Response(JSON.stringify({
+          success: false,
+          error: profileUpdateError.message,
+          errorCode: profileUpdateError.code,
+          purchaseStatus: 'acknowledged_but_profile_update_failed',
+          context: {
+            purchaseValidated: true,
+            purchaseAcknowledged: true,
+            profileUpdateFailed: true,
+            manualReviewRequired: profileUpdateError.context?.manualReviewRequired || false
+          },
+          userMessage: 'Your purchase was successful and has been acknowledged with Google Play, but there was an issue updating your account. Our support team has been notified and will resolve this shortly. Your subscription benefits will be activated soon.',
+          supportInstructions: 'If your subscription is not activated within 24 hours, please contact support with your purchase details.'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 202, // Accepted - indicates partial success
+        });
+      }
+
+      // Unexpected error type
+      throw profileUpdateError;
     }
-
-    console.log('✅ Profile updated successfully');
-
-    return new Response(JSON.stringify({ success: true, message: 'Subscription activated and profile updated.' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
   } catch (error) {
     console.error('Error in validate-purchase function:', error);
-    return new Response(JSON.stringify({ error: error.message || 'An unexpected error occurred.' }), {
+
+    // Enhanced error response with classification
+    if (error instanceof SubscriptionError) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: error.message,
+        errorCode: error.code,
+        isRetryable: error.isRetryable,
+        retryAfterMs: error.retryAfterMs,
+        context: error.context
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: error.isRetryable ? 503 : 400, // Service Unavailable for retryable, Bad Request for non-retryable
+      });
+    }
+
+    // Fallback for unclassified errors
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message || 'An unexpected error occurred.',
+      errorCode: ErrorCode.UNEXPECTED_ERROR,
+      isRetryable: false
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });

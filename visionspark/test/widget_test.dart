@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:visionspark/main.dart';
+import 'package:visionspark/shared/notifiers/subscription_status_notifier.dart';
 
 void main() {
   testWidgets('VisionSpark app smoke test', (WidgetTester tester) async {

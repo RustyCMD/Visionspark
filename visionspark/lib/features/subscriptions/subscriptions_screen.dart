@@ -9,6 +9,10 @@ import 'dart:convert';
 import 'package:provider/provider.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 import '../../shared/design_system/design_system.dart';
+import '../../shared/widgets/subscription_processing_widget.dart';
+import '../../shared/services/subscription_processing_service.dart';
+import '../../shared/services/retry_service.dart';
+import '../../shared/widgets/standardized_loading_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:functions_client/functions_client.dart' as fn_client; // Not directly used anymore
 
@@ -19,7 +23,7 @@ class SubscriptionsScreen extends StatefulWidget {
   State<SubscriptionsScreen> createState() => _SubscriptionsScreenState();
 }
 
-class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
+class _SubscriptionsScreenState extends State<SubscriptionsScreen> with StandardizedRetryMixin {
   final InAppPurchase _iap = InAppPurchase.instance;
   late final StreamSubscription<List<PurchaseDetails>> _purchaseStreamSubscription; // Renamed for clarity
   bool _iapLoading = true; // For IAP product loading
@@ -43,9 +47,13 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   int _maxRetryAttempts = 0;
   String? _retryStatusMessage;
 
+  // Subscription processing service
+  late SubscriptionProcessingService _processingService;
+
   @override
   void initState() {
     super.initState();
+    _processingService = SubscriptionProcessingService();
     _initializeIap();
     _fetchSubscriptionStatus(); // Fetch current status on init
     _purchaseStreamSubscription = _iap.purchaseStream.listen(_onPurchaseUpdate, onDone: () {
@@ -181,7 +189,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     }
   }
 
-  /// Enhanced retry mechanism with exponential backoff and race condition handling
+  /// Enhanced retry mechanism using standardized retry service
   Future<void> _fetchSubscriptionStatusWithRetry({
     int maxRetries = 8,
     String? expectedProductId,
@@ -201,90 +209,74 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       });
     }
 
-    final startTime = DateTime.now();
-    print('🔄 Starting enhanced subscription status retry (max $maxRetries attempts, max ${maxTotalWait.inSeconds}s total)');
-    if (expectedProductId != null) {
-      print('🎯 Looking for specific subscription: $expectedProductId');
-    }
+    // Use standardized retry service
+    final config = RetryConfig(
+      maxRetries: maxRetries,
+      maxTotalWait: maxTotalWait,
+      baseDelay: const Duration(seconds: 1),
+      backoffMultiplier: 2.0,
+      maxDelay: const Duration(seconds: 30),
+      useJitter: true,
+    );
 
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      // Check if we've exceeded the maximum total wait time
-      if (DateTime.now().difference(startTime) > maxTotalWait) {
-        print('⏰ Maximum total wait time exceeded (${maxTotalWait.inSeconds}s), stopping retry attempts');
-        break;
-      }
+    final result = await executeWithRetry<bool>(
+      operation: () async {
+        await _fetchSubscriptionStatus();
 
-      // Update UI with current attempt
-      if (mounted) {
-        setState(() {
-          _currentRetryAttempt = attempt;
-          _retryStatusMessage = expectedProductId != null
-            ? 'Verifying subscription... (attempt $attempt/$maxRetries)'
-            : 'Checking subscription status... (attempt $attempt/$maxRetries)';
-        });
-      }
-
-      print('🔄 Fetching subscription status (attempt $attempt/$maxRetries)...');
-
-      await _fetchSubscriptionStatus();
-
-      // Enhanced success detection
-      bool isSuccessful = false;
-      if (_activeSubscriptionType != null) {
-        if (expectedProductId != null) {
-          // If we're looking for a specific product, verify it matches
-          final expectedTier = expectedProductId == monthlyUnlimitedId ? 'monthly_unlimited_generations' :
-                              expectedProductId == legacyMonthlyUnlimitedId ? 'monthly_unlimited' : null;
-
-          if (expectedTier != null && _activeSubscriptionType == expectedTier) {
-            print('✅ Found expected subscription: $_activeSubscriptionType (product: $expectedProductId)');
-            isSuccessful = true;
-          } else {
-            print('🔍 Found subscription $_activeSubscriptionType but expected $expectedTier (product: $expectedProductId)');
-          }
-        } else {
-          // General case - any subscription is good
-          print('✅ Subscription status updated successfully: $_activeSubscriptionType');
-          isSuccessful = true;
-        }
-      }
-
-      // Stop retrying if successful or this is the last attempt
-      if (isSuccessful || attempt == maxRetries) {
-        if (!isSuccessful) {
+        // Enhanced success detection
+        if (_activeSubscriptionType != null) {
           if (expectedProductId != null) {
-            print('⚠️ Expected subscription $expectedProductId not found after $maxRetries attempts');
+            // If we're looking for a specific product, verify it matches
+            final expectedTier = expectedProductId == monthlyUnlimitedId ? 'monthly_unlimited_generations' :
+                                expectedProductId == legacyMonthlyUnlimitedId ? 'monthly_unlimited' : null;
+
+            if (expectedTier != null && _activeSubscriptionType == expectedTier) {
+              return true; // Success - found expected subscription
+            } else {
+              throw Exception('Expected subscription $expectedTier but found $_activeSubscriptionType');
+            }
           } else {
-            print('⚠️ No active subscription found after $maxRetries attempts');
+            return true; // Success - any subscription is good
           }
         }
-        break;
-      }
 
-      // True exponential backoff with jitter to prevent thundering herd
-      if (attempt < maxRetries) {
-        final baseDelay = Duration(milliseconds: 1000 * (1 << (attempt - 1))); // 1s, 2s, 4s, 8s, 16s...
-        final jitter = Duration(milliseconds: (baseDelay.inMilliseconds * 0.1 * (DateTime.now().millisecondsSinceEpoch % 100) / 100).round());
-        final delay = baseDelay + jitter;
+        throw Exception('No active subscription found');
+      },
+      operationType: RetryOperationType.subscriptionStatus,
+      config: config,
+      operationName: expectedProductId != null
+        ? 'Subscription Verification for $expectedProductId'
+        : 'Subscription Status Check',
+    );
 
-        // Cap the delay at 30 seconds
-        final cappedDelay = delay.inMilliseconds > 30000 ? const Duration(seconds: 30) : delay;
-
-        print('⏳ Waiting ${cappedDelay.inMilliseconds}ms before retry ${attempt + 1} (exponential backoff with jitter)...');
-        await Future.delayed(cappedDelay);
-      }
-    }
-
-    final totalTime = DateTime.now().difference(startTime);
-    print('🏁 Subscription status retry completed in ${totalTime.inMilliseconds}ms');
-
-    // Clean up UI state
+    // Handle result
     if (mounted) {
       setState(() {
         _isRetryingSubscriptionStatus = false;
         _currentRetryAttempt = 0;
         _maxRetryAttempts = 0;
         _retryStatusMessage = null;
+      });
+    }
+
+    if (!result.success) {
+      if (expectedProductId != null) {
+        print('⚠️ Expected subscription $expectedProductId not found after ${result.attempts} attempts');
+      } else {
+        print('⚠️ No active subscription found after ${result.attempts} attempts');
+      }
+    }
+  }
+
+  @override
+  void onRetryProgress(RetryOperationType operationType, int attempt, int maxAttempts, Duration elapsed) {
+    if (operationType == RetryOperationType.subscriptionStatus && mounted) {
+      setState(() {
+        _currentRetryAttempt = attempt;
+        _maxRetryAttempts = maxAttempts;
+        _retryStatusMessage = _currentRetryAttempt > 1
+          ? 'Checking subscription status... (attempt $attempt/$maxAttempts)'
+          : 'Checking subscription status...';
       });
     }
   }
@@ -359,6 +351,16 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             });
           }
         } else if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
+          // Start processing service
+          _processingService.startProcessing(
+            productId: purchase.productID,
+            purchaseToken: purchase.verificationData.serverVerificationData,
+            additionalDetails: {
+              'Purchase Status': purchase.status.toString(),
+              'Source': purchase.verificationData.source,
+            },
+          );
+
           final valid = await _validateWithBackend(purchase);
           if (valid) {
             if (mounted) {
@@ -366,6 +368,15 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                 _purchaseSuccessMessage = 'Subscription activated successfully!';
                 _iapError = null; // Clear IAP error on success
               });
+
+              // Complete processing service
+              _processingService.completeProcessing(
+                subscriptionDetails: {
+                  'Product': purchase.productID,
+                  'Status': 'Active',
+                },
+                successMessage: 'Your subscription is now active and ready to use!',
+              );
 
               // Notify other parts of the app
               Provider.of<SubscriptionStatusNotifier>(context, listen: false).subscriptionChanged();
@@ -378,6 +389,13 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               await _iap.completePurchase(purchase);
             }
           } else {
+            // Handle processing error
+            _processingService.handleError(
+              errorMessage: _iapError ?? 'Purchase validation failed. Please contact support.',
+              errorCode: 'VALIDATION_FAILED',
+              isRetryable: true,
+            );
+
             // _iapError would have been set by _validateWithBackend if validation failed there
             if (mounted && _iapError == null) { // Ensure an error message is shown
                  setState(() {
@@ -415,10 +433,22 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
         'source': purchase.verificationData.source, // Include source for debugging
       };
 
+      // Update processing phase to acknowledging
+      _processingService.updatePhase(
+        SubscriptionProcessingPhase.acknowledging,
+        message: 'Validating and acknowledging your purchase...',
+      );
+
       print('🚀 Calling validate-purchase-and-update-profile function...');
       final response = await Supabase.instance.client.functions.invoke(
         'validate-purchase-and-update-profile',
         body: requestBody,
+      );
+
+      // Update processing phase to updating profile
+      _processingService.updatePhase(
+        SubscriptionProcessingPhase.updatingProfile,
+        message: 'Activating your subscription benefits...',
       );
 
       print('📡 Response Status: ${response.status}');
@@ -480,6 +510,106 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     return 'N/A'; // Default if type is null or empty
   }
 
+  /// Show support dialog with pre-filled transaction details
+  void _showSupportDialog(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: colorScheme.surface,
+        title: Text(
+          'Contact Support',
+          style: textTheme.titleLarge?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: VSTypography.weightBold,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We\'re here to help! Please contact our support team with the following information:',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: VSDesignTokens.space3),
+            if (_processingService.transactionDetails != null) ...[
+              Container(
+                padding: const EdgeInsets.all(VSDesignTokens.space3),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Transaction Details:',
+                      style: textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: VSTypography.weightBold,
+                      ),
+                    ),
+                    const SizedBox(height: VSDesignTokens.space2),
+                    ..._processingService.transactionDetails!.entries.map((entry) =>
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          '${entry.key}: ${entry.value}',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ).toList(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: VSDesignTokens.space3),
+            ],
+            Text(
+              'Email: support@visionspark.app',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: VSTypography.weightMedium,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'Close',
+              style: TextStyle(color: colorScheme.primary),
+            ),
+          ),
+          VSButton(
+            text: 'Copy Details',
+            onPressed: () {
+              // TODO: Implement clipboard copy functionality
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Transaction details copied to clipboard'),
+                  backgroundColor: colorScheme.primary,
+                ),
+              );
+            },
+            variant: VSButtonVariant.primary,
+            size: VSButtonSize.small,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -536,128 +666,198 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   }
 
   Widget _buildStatusSection(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
-    // Show enhanced retry progress if retrying
-    if (_isRetryingSubscriptionStatus) {
-      return VSCard(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        elevation: VSDesignTokens.elevation1,
-        padding: const EdgeInsets.all(VSDesignTokens.space4),
-        child: Column(
-          children: [
-            VSLoadingIndicator(
-              message: _retryStatusMessage ?? 'Verifying subscription...',
-              size: VSDesignTokens.iconL,
-            ),
-            if (_maxRetryAttempts > 0) ...[
-              const SizedBox(height: VSDesignTokens.space3),
-              LinearProgressIndicator(
-                value: _currentRetryAttempt / _maxRetryAttempts,
-                backgroundColor: colorScheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+    // Show subscription processing widget if processing
+    return ListenableBuilder(
+      listenable: _processingService,
+      builder: (context, child) {
+        if (_processingService.isProcessing || _processingService.hasError) {
+          if (_processingService.hasError) {
+            return VSCard(
+              color: colorScheme.errorContainer.withValues(alpha: 0.3),
+              elevation: VSDesignTokens.elevation2,
+              padding: const EdgeInsets.all(VSDesignTokens.space4),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: colorScheme.error,
+                  ),
+                  const SizedBox(height: VSDesignTokens.space3),
+                  Text(
+                    'Processing Error',
+                    style: textTheme.titleLarge?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                      fontWeight: VSTypography.weightBold,
+                    ),
+                  ),
+                  const SizedBox(height: VSDesignTokens.space2),
+                  Text(
+                    _processingService.errorMessage ?? 'An error occurred during processing',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: VSDesignTokens.space3),
+                  VSButton(
+                    text: 'Contact Support',
+                    onPressed: () => _showSupportDialog(context),
+                    variant: VSButtonVariant.outline,
+                    size: VSButtonSize.medium,
+                    icon: const Icon(Icons.support_agent),
+                  ),
+                ],
               ),
-              const SizedBox(height: VSDesignTokens.space2),
-              Text(
-                'Attempt $_currentRetryAttempt of $_maxRetryAttempts',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+            );
+          }
+
+          if (_processingService.currentPhase == SubscriptionProcessingPhase.completed) {
+            return SubscriptionCompletionWidget(
+              title: 'Subscription Activated!',
+              message: _processingService.additionalMessage ?? 'Your subscription is now active and ready to use!',
+              subscriptionDetails: _processingService.transactionDetails,
+              onContinue: () {
+                _processingService.reset();
+                _fetchSubscriptionStatus();
+              },
+            );
+          }
+
+          return SubscriptionProcessingWidget(
+            currentPhase: _processingService.currentPhase,
+            estimatedTimeRemaining: _processingService.estimatedTimeRemaining,
+            additionalMessage: _processingService.additionalMessage,
+            showContactSupport: _processingService.currentPhase == SubscriptionProcessingPhase.validating,
+            transactionDetails: _processingService.transactionDetails,
+            onContactSupport: () => _showSupportDialog(context),
+          );
+        }
+
+        // Show enhanced retry progress if retrying
+        if (_isRetryingSubscriptionStatus) {
+          return VSCard(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            elevation: VSDesignTokens.elevation1,
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Column(
+              children: [
+                VSLoadingIndicator(
+                  message: _retryStatusMessage ?? 'Verifying subscription...',
+                  size: VSDesignTokens.iconL,
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
-      );
-    } else if (_isLoadingStatus) {
-      return Center(
-        child: VSLoadingIndicator(
-          message: 'Loading subscription status...',
-          size: VSDesignTokens.iconL,
-        ),
-      );
-    } else if (_statusErrorMessage != null) {
-      return VSCard(
-        color: colorScheme.errorContainer.withValues(alpha: 0.5),
-        padding: const EdgeInsets.all(VSDesignTokens.space4),
-        child: Text(
-          _statusErrorMessage!,
-          style: textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onErrorContainer,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      );
-    } else if (_activeSubscriptionType != null) {
-      return VSCard(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-        elevation: VSDesignTokens.elevation2,
-        padding: const EdgeInsets.all(VSDesignTokens.space4),
-        child: Column(
-          children: [
-            Icon(
-              Icons.check_circle,
-              color: colorScheme.primary,
+                if (_maxRetryAttempts > 0) ...[
+                  const SizedBox(height: VSDesignTokens.space3),
+                  LinearProgressIndicator(
+                    value: _currentRetryAttempt / _maxRetryAttempts,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                  ),
+                  const SizedBox(height: VSDesignTokens.space2),
+                  Text(
+                    'Attempt $_currentRetryAttempt of $_maxRetryAttempts',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
+            ),
+          );
+        } else if (_isLoadingStatus) {
+          return Center(
+            child: VSLoadingIndicator(
+              message: 'Loading subscription status...',
               size: VSDesignTokens.iconL,
             ),
-            const SizedBox(height: VSDesignTokens.space3),
-            Text(
-              'Your Active Subscription',
-              style: textTheme.titleLarge?.copyWith(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: VSTypography.weightSemiBold,
-              ),
-            ),
-            const SizedBox(height: VSDesignTokens.space2),
-            Text(
-              _formatSubscriptionType(_activeSubscriptionType),
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: VSTypography.weightBold,
-              ),
-            ),
-            if (_currentGenerationLimit != null) ...[
-              const SizedBox(height: VSDesignTokens.space1),
-              Text(
-                'Generation Limit: ${_currentGenerationLimit == -1 ? "Unlimited" : _currentGenerationLimit}',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-    } else {
-      return VSCard(
-        color: colorScheme.secondaryContainer.withValues(alpha: 0.3),
-        padding: const EdgeInsets.all(VSDesignTokens.space4),
-        child: Column(
-          children: [
-            Icon(
-              Icons.info_outline,
-              color: colorScheme.onSecondaryContainer,
-              size: VSDesignTokens.iconL,
-            ),
-            const SizedBox(height: VSDesignTokens.space3),
-            Text(
-              'No active subscription found',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-                fontWeight: VSTypography.weightMedium,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: VSDesignTokens.space2),
-            Text(
-              'Choose a plan below to unlock premium features',
+          );
+        } else if (_statusErrorMessage != null) {
+          return VSCard(
+            color: colorScheme.errorContainer.withValues(alpha: 0.5),
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Text(
+              _statusErrorMessage!,
               style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSecondaryContainer,
+                color: colorScheme.onErrorContainer,
               ),
               textAlign: TextAlign.center,
             ),
-          ],
-        ),
-      );
-    }
+          );
+        } else if (_activeSubscriptionType != null) {
+          return VSCard(
+            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+            elevation: VSDesignTokens.elevation2,
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  color: colorScheme.primary,
+                  size: VSDesignTokens.iconL,
+                ),
+                const SizedBox(height: VSDesignTokens.space3),
+                Text(
+                  'Your Active Subscription',
+                  style: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+                const SizedBox(height: VSDesignTokens.space2),
+                Text(
+                  _formatSubscriptionType(_activeSubscriptionType),
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: VSTypography.weightBold,
+                  ),
+                ),
+                if (_currentGenerationLimit != null) ...[
+                  const SizedBox(height: VSDesignTokens.space1),
+                  Text(
+                    'Generation Limit: ${_currentGenerationLimit == -1 ? "Unlimited" : _currentGenerationLimit}',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        } else {
+          return VSCard(
+            color: colorScheme.secondaryContainer.withValues(alpha: 0.3),
+            padding: const EdgeInsets.all(VSDesignTokens.space4),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: colorScheme.onSecondaryContainer,
+                  size: VSDesignTokens.iconL,
+                ),
+                const SizedBox(height: VSDesignTokens.space3),
+                Text(
+                  'No active subscription found',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                    fontWeight: VSTypography.weightMedium,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: VSDesignTokens.space2),
+                Text(
+                  'Choose a plan below to unlock premium features',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+      },
+    );
   }
 
   Widget _buildSubscriptionPlans(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {

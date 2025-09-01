@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visionspark/shared/notifiers/subscription_status_notifier.dart';
 
@@ -14,7 +15,9 @@ void main() {
     });
 
     test('initial state is correct', () {
-      expect(notifier.hasListeners, false);
+      expect(notifier.activeSubscriptionType, isNull);
+      expect(notifier.isLoading, false);
+      expect(notifier.hasActiveSubscription, false);
     });
 
     test('notifies listeners when changed', () {
@@ -29,13 +32,19 @@ void main() {
     });
 
     test('can add and remove listeners', () {
-      void listener() {}
+      bool notified = false;
+      void listener() {
+        notified = true;
+      }
 
       notifier.addListener(listener);
-      expect(notifier.hasListeners, true);
+      notifier.subscriptionChanged();
+      expect(notified, true);
 
+      notified = false;
       notifier.removeListener(listener);
-      expect(notifier.hasListeners, false);
+      notifier.subscriptionChanged();
+      expect(notified, false);
     });
 
     test('handles multiple listeners correctly', () {
@@ -61,19 +70,24 @@ void main() {
     });
 
     test('dispose removes all listeners', () {
-      void listener1() {}
-      void listener2() {}
+      bool notified1 = false;
+      bool notified2 = false;
+
+      void listener1() { notified1 = true; }
+      void listener2() { notified2 = true; }
 
       notifier.addListener(listener1);
       notifier.addListener(listener2);
-      
-      expect(notifier.hasListeners, true);
+
+      // Verify listeners are working before dispose
+      notifier.subscriptionChanged();
+      expect(notified1, true);
+      expect(notified2, true);
 
       notifier.dispose();
-      
-      // After dispose, the notifier should not have listeners
-      // Note: hasListeners might not be accurate after dispose in some implementations
-      expect(() => notifier.notifyListeners(), returnsNormally);
+
+      // After dispose, calling notifyListeners should not crash
+      expect(() => notifier.subscriptionChanged(), returnsNormally);
     });
 
     test('calling notifyListeners after dispose does not crash', () {

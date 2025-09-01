@@ -6,7 +6,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:visionspark/main.dart';
 
+import 'main_test.mocks.dart';
+
 @GenerateMocks([SharedPreferences])
+
+// Helper function to test theme building
+ThemeData buildTheme(ColorScheme colorScheme) {
+  return ThemeData.from(colorScheme: colorScheme, useMaterial3: true).copyWith(
+    cardTheme: CardThemeData(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12.0),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+      ),
+    ),
+  );
+}
+
 void main() {
   group('ThemeController Tests', () {
     late MockSharedPreferences mockPrefs;
@@ -146,8 +166,7 @@ void main() {
         onSecondary: Colors.black,
         surface: Color(0xFFF5F5F5),
         onSurface: Color(0xFF212121),
-        background: Colors.white,
-        onBackground: Color(0xFF212121),
+        surfaceContainerLowest: Colors.white,
         error: Color(0xFFD32F2F),
         onError: Colors.white,
       );
@@ -165,8 +184,7 @@ void main() {
         onSecondary: Colors.black,
         surface: Color(0xFF212121),
         onSurface: Colors.white,
-        background: Color(0xFF121212),
-        onBackground: Colors.white,
+        surfaceContainerLowest: Color(0xFF121212),
         error: Color(0xFFEF9A9A),
         onError: Colors.black,
       );

@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 import '../../shared/design_system/design_system.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/services/retry_service.dart';
+import '../../shared/widgets/standardized_loading_widget.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,7 +19,7 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with StandardizedRetryMixin {
   String _version = '';
   bool _autoUpload = false;
   String? _activeSubscription;
@@ -109,49 +111,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isLoadingSubscription = true;
     });
-    try {
-      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
-      if (mounted) {
-        if (response.data != null) {
-          final data = response.data;
-          if (data['error'] != null) {
-            setState(() {
-              _activeSubscription = 'Error: ${data['error']}';
-            });
-          } else {
-            final subType = data['active_subscription_type'];
-            final limit = data['generation_limit'] ?? data['limit'];
-            String subText = 'No Active Subscription';
 
-            if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
-              subText = 'Unlimited Monthly';
-              if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
-            } else if (subType != null) {
-              subText = subType.toString().replaceAll('_', ' ').split(' ').map((e) => e[0].toUpperCase() + e.substring(1)).join(' ');
-              if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
-            }
-
-            setState(() {
-              _activeSubscription = subText;
-            });
-          }
-        } else {
-          setState(() {
-            _activeSubscription = 'Failed to load status: No data';
-          });
+    final result = await executeWithRetry<Map<String, dynamic>>(
+      operation: () async {
+        final response = await Supabase.instance.client.functions.invoke('get-generation-status');
+        if (response.data == null) {
+          throw Exception('No data received from subscription status API');
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _activeSubscription = 'Error: ${e.toString()}';
-        });
-      }
-    }
+
+        final data = response.data as Map<String, dynamic>;
+        if (data['error'] != null) {
+          throw Exception(data['error'].toString());
+        }
+
+        return data;
+      },
+      operationType: RetryOperationType.subscriptionStatus,
+      operationName: 'Settings Subscription Status Check',
+    );
+
     if (mounted) {
       setState(() {
         _isLoadingSubscription = false;
       });
+
+      if (result.success && result.data != null) {
+        final subType = result.data!['active_subscription_type'];
+        final limit = result.data!['generation_limit'] ?? result.data!['limit'];
+        String subText = 'No Active Subscription';
+
+        if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
+          subText = 'Unlimited Monthly';
+          if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
+        } else if (subType != null) {
+          subText = subType.toString().replaceAll('_', ' ').split(' ').map((e) => e[0].toUpperCase() + e.substring(1)).join(' ');
+          if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
+        }
+
+        setState(() {
+          _activeSubscription = subText;
+        });
+      } else {
+        setState(() {
+          _activeSubscription = 'Error: ${result.error ?? 'Failed to fetch subscription status'}';
+        });
+      }
     }
   }
 

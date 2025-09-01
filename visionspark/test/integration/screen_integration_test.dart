@@ -221,9 +221,9 @@ void main() {
                   variant: VSButtonVariant.outline,
                 ),
                 VSButton(
-                  text: 'Text',
+                  text: 'Ghost',
                   onPressed: () {},
-                  variant: VSButtonVariant.text,
+                  variant: VSButtonVariant.ghost,
                 ),
               ],
             ),
@@ -234,7 +234,7 @@ void main() {
       expect(find.text('Primary'), findsOneWidget);
       expect(find.text('Secondary'), findsOneWidget);
       expect(find.text('Outline'), findsOneWidget);
-      expect(find.text('Text'), findsOneWidget);
+      expect(find.text('Ghost'), findsOneWidget);
     });
 
     testWidgets('VSButton sizes render correctly', (WidgetTester tester) async {
