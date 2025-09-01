@@ -278,9 +278,11 @@ serve(async (req) => {
       throw new Error("Failed to determine subscription expiry from Google Play.");
     }
     
-    // Determine tier based on productId
+    // Determine tier based on productId (support both legacy and current IDs)
     if (productId === 'monthly_unlimited_generations') {
       tier = 'monthly_unlimited_generations';
+    } else if (productId === 'monthly_unlimited') {
+      tier = 'monthly_unlimited';
     } else {
       console.warn(`Validated purchase for unknown productId in this function logic: ${productId}. Tier will be null.`);
       // Allow entitlement if Google validated it, but the tier might not be specifically handled.

@@ -92,14 +92,14 @@ serve(async (req) => {
         (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
 
     if (isSubscriptionEffectivelyActive) {
-      if (profile.current_subscription_tier === 'monthly_unlimited') {
+      if (profile.current_subscription_tier === 'monthly_unlimited' || profile.current_subscription_tier === 'monthly_unlimited_generations') {
         derivedGenerationLimit = -1; // Unlimited
         lt_generations_today = 0;
         nextResetForClientIso = new Date(profile.subscription_expires_at).toISOString();
         isMonthlyTier = true;
       }
     }
-    
+
     if (!isMonthlyTier) {
       derivedGenerationLimit = profile.generation_limit || DEFAULT_FREE_LIMIT;
       let performDailyReset = false;

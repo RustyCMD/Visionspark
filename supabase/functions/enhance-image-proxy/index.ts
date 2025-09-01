@@ -99,14 +99,14 @@ serve(async (req: Request) => {
         (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
 
     if (isSubscriptionEffectivelyActive) {
-      if (profile.current_subscription_tier === 'monthly_unlimited') {
+      if (profile.current_subscription_tier === 'monthly_unlimited' || profile.current_subscription_tier === 'monthly_unlimited_generations') {
         derivedEnhancementLimit = -1; // Unlimited
         lt_enhancements_today = 0;
         nextResetForClientIso = new Date(profile.subscription_expires_at).toISOString();
       }
     } else {
       // Daily reset logic for free users
-      derivedEnhancementLimit = profile.enhancement_limit || DEFAULT_FREE_ENHANCEMENT_LIMIT;
+      derivedEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
       let performDailyReset = false;
       if (profile.last_enhancement_at) {
         const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);

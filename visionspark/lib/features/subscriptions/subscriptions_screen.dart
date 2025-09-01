@@ -28,6 +28,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _purchaseSuccessMessage;
   List<ProductDetails> _products = [];
   static const String monthlyUnlimitedId = 'monthly_unlimited_generations';
+  static const String legacyMonthlyUnlimitedId = 'monthly_unlimited';
 
   // New state variables for active subscription status
   String? _activeSubscriptionType;
@@ -91,8 +92,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           } else {
             setState(() {
               _activeSubscriptionType = data['active_subscription_type'];
-              _currentGenerationLimit = data['limit'];
-               // If there's an active subscription, we might want to clear _purchaseSuccessMessage
+              _currentGenerationLimit = data['generation_limit'] ?? data['limit'];
+              // If there's an active subscription, we might want to clear _purchaseSuccessMessage
               if (_activeSubscriptionType != null) {
                 _purchaseSuccessMessage = null;
               }
@@ -164,7 +165,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       });
       return;
     }
-    const Set<String> ids = {monthlyUnlimitedId};
+    const Set<String> ids = {monthlyUnlimitedId, legacyMonthlyUnlimitedId};
     try {
       final ProductDetailsResponse response = await _iap.queryProductDetails(ids);
       if (!mounted) return;
@@ -581,8 +582,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             )
           else
             ...(_products.map((product) {
-              final isActive = _activeSubscriptionType != null &&
-                  (_activeSubscriptionType == 'monthly_unlimited_generations' && product.id == monthlyUnlimitedId);
+              final isActive =
+                  (_activeSubscriptionType == 'monthly_unlimited_generations' && product.id == monthlyUnlimitedId) ||
+                  (_activeSubscriptionType == 'monthly_unlimited' && product.id == legacyMonthlyUnlimitedId);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: VSDesignTokens.space4),

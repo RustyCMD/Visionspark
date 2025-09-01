@@ -120,7 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             });
           } else {
             final subType = data['active_subscription_type'];
-            final limit = data['limit'];
+            final limit = data['generation_limit'] ?? data['limit'];
             String subText = 'No Active Subscription';
 
             if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
