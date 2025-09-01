@@ -96,6 +96,10 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
 
     print('🔄 Starting intelligent polling for subscription after purchase: $productId');
 
+    // Add initial delay to allow database propagation after purchase validation
+    print('⏳ Waiting for database propagation before verification...');
+    await Future.delayed(const Duration(seconds: 2));
+
     // First, try the enhanced retry mechanism
     await _fetchSubscriptionStatusWithRetry(
       maxRetries: 12, // More aggressive for purchases
@@ -231,16 +235,22 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
                                 expectedProductId == legacyMonthlyUnlimitedId ? 'monthly_unlimited' : null;
 
             if (expectedTier != null && _activeSubscriptionType == expectedTier) {
+              print('✅ Found expected subscription: $_activeSubscriptionType');
               return true; // Success - found expected subscription
             } else {
               throw Exception('Expected subscription $expectedTier but found $_activeSubscriptionType');
             }
           } else {
+            print('✅ Found active subscription: $_activeSubscriptionType');
             return true; // Success - any subscription is good
           }
         }
 
-        throw Exception('No active subscription found');
+        // Provide more detailed error information for debugging
+        final errorDetails = _statusErrorMessage != null
+          ? 'API Error: $_statusErrorMessage'
+          : 'No active subscription found in database (may be database propagation delay)';
+        throw Exception(errorDetails);
       },
       operationType: RetryOperationType.subscriptionStatus,
       config: config,

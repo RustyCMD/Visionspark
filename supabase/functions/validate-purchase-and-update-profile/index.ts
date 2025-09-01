@@ -784,6 +784,25 @@ serve(async (req) => {
         { productId, purchaseToken }
       );
 
+      // Verify the update was successful by reading back the data
+      console.log('🔍 Verifying profile update was successful...');
+      const { data: verificationData, error: verificationError } = await supabaseClient
+        .from('profiles')
+        .select('current_subscription_tier, subscription_active, subscription_expires_at')
+        .eq('id', user.id)
+        .single();
+
+      if (verificationError || !verificationData) {
+        console.error('❌ Profile verification failed:', verificationError);
+        throw new Error('Profile update verification failed');
+      }
+
+      console.log('✅ Profile verification successful:', {
+        tier: verificationData.current_subscription_tier,
+        active: verificationData.subscription_active,
+        expires: verificationData.subscription_expires_at
+      });
+
       return new Response(JSON.stringify({
         success: true,
         message: 'Subscription activated and profile updated.',
