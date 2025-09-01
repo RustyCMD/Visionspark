@@ -37,6 +37,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   String? _statusErrorMessage;
   SubscriptionStatusNotifier? _subscriptionStatusNotifier;
 
+  // Enhanced UI feedback state variables
+  bool _isRetryingSubscriptionStatus = false;
+  int _currentRetryAttempt = 0;
+  int _maxRetryAttempts = 0;
+  String? _retryStatusMessage;
+
   @override
   void initState() {
     super.initState();
@@ -68,8 +74,55 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   void _onSubscriptionChanged() {
     // Add a small delay to ensure database changes are propagated
     Future.delayed(const Duration(milliseconds: 500), () {
-      _fetchSubscriptionStatusWithRetry(); // Refetch status if notifier indicates a change
+      _fetchSubscriptionStatusWithRetry(
+        maxRetries: 5, // Moderate retry for general subscription changes
+        maxTotalWait: const Duration(minutes: 1),
+      );
     });
+  }
+
+  /// Intelligent polling mechanism for post-purchase subscription verification
+  /// This method provides more aggressive polling specifically for purchase scenarios
+  Future<void> _pollForSubscriptionAfterPurchase(String productId) async {
+    if (!mounted) return;
+
+    print('🔄 Starting intelligent polling for subscription after purchase: $productId');
+
+    // First, try the enhanced retry mechanism
+    await _fetchSubscriptionStatusWithRetry(
+      maxRetries: 12, // More aggressive for purchases
+      expectedProductId: productId,
+      maxTotalWait: const Duration(minutes: 4), // Allow more time for purchase processing
+    );
+
+    // If still no subscription, start continuous polling with longer intervals
+    if (_activeSubscriptionType == null && mounted) {
+      print('🔄 Starting extended polling phase...');
+
+      for (int i = 0; i < 6; i++) { // 6 more attempts over 3 minutes
+        if (!mounted) break;
+
+        await Future.delayed(const Duration(seconds: 30)); // 30-second intervals
+
+        print('🔄 Extended polling attempt ${i + 1}/6...');
+        await _fetchSubscriptionStatus();
+
+        // Check if we found the expected subscription
+        final expectedTier = productId == monthlyUnlimitedId ? 'monthly_unlimited_generations' :
+                            productId == legacyMonthlyUnlimitedId ? 'monthly_unlimited' : null;
+
+        if (_activeSubscriptionType != null &&
+            (expectedTier == null || _activeSubscriptionType == expectedTier)) {
+          print('✅ Extended polling successful: Found $_activeSubscriptionType');
+          break;
+        }
+      }
+
+      if (_activeSubscriptionType == null && mounted) {
+        print('⚠️ Extended polling completed without finding subscription. This may indicate a backend issue.');
+        // Could show a user-friendly message here about contacting support
+      }
+    }
   }
 
   Future<void> _fetchSubscriptionStatus() async {
@@ -128,30 +181,111 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     }
   }
 
-  Future<void> _fetchSubscriptionStatusWithRetry({int maxRetries = 3}) async {
+  /// Enhanced retry mechanism with exponential backoff and race condition handling
+  Future<void> _fetchSubscriptionStatusWithRetry({
+    int maxRetries = 8,
+    String? expectedProductId,
+    Duration maxTotalWait = const Duration(minutes: 2),
+  }) async {
     if (!mounted) return;
 
+    // Update UI state to show retry progress
+    if (mounted) {
+      setState(() {
+        _isRetryingSubscriptionStatus = true;
+        _maxRetryAttempts = maxRetries;
+        _currentRetryAttempt = 0;
+        _retryStatusMessage = expectedProductId != null
+          ? 'Verifying your subscription...'
+          : 'Checking subscription status...';
+      });
+    }
+
+    final startTime = DateTime.now();
+    print('🔄 Starting enhanced subscription status retry (max $maxRetries attempts, max ${maxTotalWait.inSeconds}s total)');
+    if (expectedProductId != null) {
+      print('🎯 Looking for specific subscription: $expectedProductId');
+    }
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      // Check if we've exceeded the maximum total wait time
+      if (DateTime.now().difference(startTime) > maxTotalWait) {
+        print('⏰ Maximum total wait time exceeded (${maxTotalWait.inSeconds}s), stopping retry attempts');
+        break;
+      }
+
+      // Update UI with current attempt
+      if (mounted) {
+        setState(() {
+          _currentRetryAttempt = attempt;
+          _retryStatusMessage = expectedProductId != null
+            ? 'Verifying subscription... (attempt $attempt/$maxRetries)'
+            : 'Checking subscription status... (attempt $attempt/$maxRetries)';
+        });
+      }
+
       print('🔄 Fetching subscription status (attempt $attempt/$maxRetries)...');
 
       await _fetchSubscriptionStatus();
 
-      // If we got a subscription or this is the last attempt, stop retrying
-      if (_activeSubscriptionType != null || attempt == maxRetries) {
-        if (_activeSubscriptionType != null) {
-          print('✅ Subscription status updated successfully: $_activeSubscriptionType');
+      // Enhanced success detection
+      bool isSuccessful = false;
+      if (_activeSubscriptionType != null) {
+        if (expectedProductId != null) {
+          // If we're looking for a specific product, verify it matches
+          final expectedTier = expectedProductId == monthlyUnlimitedId ? 'monthly_unlimited_generations' :
+                              expectedProductId == legacyMonthlyUnlimitedId ? 'monthly_unlimited' : null;
+
+          if (expectedTier != null && _activeSubscriptionType == expectedTier) {
+            print('✅ Found expected subscription: $_activeSubscriptionType (product: $expectedProductId)');
+            isSuccessful = true;
+          } else {
+            print('🔍 Found subscription $_activeSubscriptionType but expected $expectedTier (product: $expectedProductId)');
+          }
         } else {
-          print('⚠️ No active subscription found after $maxRetries attempts');
+          // General case - any subscription is good
+          print('✅ Subscription status updated successfully: $_activeSubscriptionType');
+          isSuccessful = true;
+        }
+      }
+
+      // Stop retrying if successful or this is the last attempt
+      if (isSuccessful || attempt == maxRetries) {
+        if (!isSuccessful) {
+          if (expectedProductId != null) {
+            print('⚠️ Expected subscription $expectedProductId not found after $maxRetries attempts');
+          } else {
+            print('⚠️ No active subscription found after $maxRetries attempts');
+          }
         }
         break;
       }
 
-      // Wait before retrying (exponential backoff)
+      // True exponential backoff with jitter to prevent thundering herd
       if (attempt < maxRetries) {
-        final delay = Duration(milliseconds: 1000 * attempt); // 1s, 2s, 3s
-        print('⏳ Waiting ${delay.inMilliseconds}ms before retry...');
-        await Future.delayed(delay);
+        final baseDelay = Duration(milliseconds: 1000 * (1 << (attempt - 1))); // 1s, 2s, 4s, 8s, 16s...
+        final jitter = Duration(milliseconds: (baseDelay.inMilliseconds * 0.1 * (DateTime.now().millisecondsSinceEpoch % 100) / 100).round());
+        final delay = baseDelay + jitter;
+
+        // Cap the delay at 30 seconds
+        final cappedDelay = delay.inMilliseconds > 30000 ? const Duration(seconds: 30) : delay;
+
+        print('⏳ Waiting ${cappedDelay.inMilliseconds}ms before retry ${attempt + 1} (exponential backoff with jitter)...');
+        await Future.delayed(cappedDelay);
       }
+    }
+
+    final totalTime = DateTime.now().difference(startTime);
+    print('🏁 Subscription status retry completed in ${totalTime.inMilliseconds}ms');
+
+    // Clean up UI state
+    if (mounted) {
+      setState(() {
+        _isRetryingSubscriptionStatus = false;
+        _currentRetryAttempt = 0;
+        _maxRetryAttempts = 0;
+        _retryStatusMessage = null;
+      });
     }
   }
 
@@ -236,9 +370,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               // Notify other parts of the app
               Provider.of<SubscriptionStatusNotifier>(context, listen: false).subscriptionChanged();
 
-              // Also directly refresh the status with retry logic to ensure UI updates
-              print('🔄 Purchase successful, refreshing subscription status...');
-              _fetchSubscriptionStatusWithRetry();
+              // Use intelligent polling for post-purchase subscription verification
+              print('🔄 Purchase successful, starting intelligent polling for subscription verification...');
+              _pollForSubscriptionAfterPurchase(purchase.productID);
             }
             if (purchase.pendingCompletePurchase) {
               await _iap.completePurchase(purchase);
@@ -402,7 +536,38 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   }
 
   Widget _buildStatusSection(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
-    if (_isLoadingStatus) {
+    // Show enhanced retry progress if retrying
+    if (_isRetryingSubscriptionStatus) {
+      return VSCard(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        elevation: VSDesignTokens.elevation1,
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        child: Column(
+          children: [
+            VSLoadingIndicator(
+              message: _retryStatusMessage ?? 'Verifying subscription...',
+              size: VSDesignTokens.iconL,
+            ),
+            if (_maxRetryAttempts > 0) ...[
+              const SizedBox(height: VSDesignTokens.space3),
+              LinearProgressIndicator(
+                value: _currentRetryAttempt / _maxRetryAttempts,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+              ),
+              const SizedBox(height: VSDesignTokens.space2),
+              Text(
+                'Attempt $_currentRetryAttempt of $_maxRetryAttempts',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      );
+    } else if (_isLoadingStatus) {
       return Center(
         child: VSLoadingIndicator(
           message: 'Loading subscription status...',

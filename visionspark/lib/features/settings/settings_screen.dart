@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
-import '../../main.dart'; // Assuming ThemeController is in main.dart
+import '../../main.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
 import '../../shared/design_system/design_system.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:url_launcher/url_launcher.dart'; // For launching URLs
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});

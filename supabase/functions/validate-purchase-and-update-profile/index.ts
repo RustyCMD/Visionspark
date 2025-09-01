@@ -153,27 +153,123 @@ async function validateGooglePlayPurchase(productId: string, purchaseToken: stri
   return { isValid: false, purchaseData: purchaseData, error: 'Subscription is not valid or has expired.' };
 }
 
-// Function to acknowledge a subscription
-async function acknowledgeGooglePlaySubscription(subscriptionId: string, purchaseToken: string, accessToken: string): Promise<boolean> {
+// Function to verify acknowledgment status by re-querying the subscription
+async function verifyAcknowledgmentStatus(subscriptionId: string, purchaseToken: string, accessToken: string): Promise<{ acknowledged: boolean; acknowledgementState?: number; error?: string }> {
+  try {
+    const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}?access_token=${accessToken}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { acknowledged: false, error: `HTTP ${response.status}: ${errorText}` };
+    }
+
+    const purchaseData = await response.json();
+    const acknowledgementState = purchaseData.acknowledgementState;
+
+    return {
+      acknowledged: acknowledgementState === 1,
+      acknowledgementState: acknowledgementState
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return { acknowledged: false, error: errorMessage };
+  }
+}
+
+// Enhanced function to acknowledge a subscription with retry logic and comprehensive error handling
+async function acknowledgeGooglePlaySubscription(subscriptionId: string, purchaseToken: string, accessToken: string, maxRetries: number = 3): Promise<{ success: boolean; error?: string; attempts: number; verified?: boolean }> {
   const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_PACKAGE_NAME}/purchases/subscriptions/${subscriptionId}/tokens/${purchaseToken}:acknowledge`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({}) // Body can be empty for acknowledge
-  });
+  console.log(`🔄 Starting acknowledgment for subscription ${subscriptionId} (max ${maxRetries} attempts)`);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Failed to acknowledge subscription ${subscriptionId}: ${response.status}`, errorText);
-    // Depending on policy, you might want to throw an error or just log and return false
-    return false; 
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`📡 Acknowledgment attempt ${attempt}/${maxRetries} for subscription ${subscriptionId}`);
+
+      // Create AbortController for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({}), // Body can be empty for acknowledge
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        console.log(`✅ Subscription ${subscriptionId} acknowledged successfully on attempt ${attempt}`);
+
+        // Verify the acknowledgment by re-querying the subscription
+        console.log(`🔍 Verifying acknowledgment status for ${subscriptionId}...`);
+        const verification = await verifyAcknowledgmentStatus(subscriptionId, purchaseToken, accessToken);
+
+        if (verification.acknowledged) {
+          console.log(`✅ Acknowledgment verified: ${subscriptionId} is now acknowledged (state: ${verification.acknowledgementState})`);
+          return { success: true, attempts: attempt, verified: true };
+        } else {
+          console.warn(`⚠️ Acknowledgment API returned success but verification failed for ${subscriptionId}. State: ${verification.acknowledgementState}, Error: ${verification.error}`);
+          // Still consider it successful since Google API returned 200, but log the discrepancy
+          return { success: true, attempts: attempt, verified: false };
+        }
+      } else {
+        const errorText = await response.text();
+        const errorMessage = `HTTP ${response.status}: ${errorText}`;
+        console.error(`❌ Acknowledgment attempt ${attempt} failed for ${subscriptionId}: ${errorMessage}`);
+
+        // Check if this is a retryable error
+        const isRetryable = response.status >= 500 || response.status === 429 || response.status === 408;
+
+        if (!isRetryable || attempt === maxRetries) {
+          console.error(`🚫 Non-retryable error or max attempts reached for ${subscriptionId}: ${errorMessage}`);
+          return { success: false, error: errorMessage, attempts: attempt };
+        }
+
+        // Wait before retrying with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Cap at 10 seconds
+        console.log(`⏳ Waiting ${delay}ms before retry ${attempt + 1} for ${subscriptionId}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`💥 Exception during acknowledgment attempt ${attempt} for ${subscriptionId}: ${errorMessage}`);
+
+      // Check if this is a timeout or network error (retryable)
+      const isRetryable = errorMessage.includes('AbortError') || errorMessage.includes('fetch') || errorMessage.includes('network');
+
+      if (!isRetryable || attempt === maxRetries) {
+        console.error(`🚫 Non-retryable exception or max attempts reached for ${subscriptionId}: ${errorMessage}`);
+        return { success: false, error: errorMessage, attempts: attempt };
+      }
+
+      // Wait before retrying with exponential backoff
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Cap at 10 seconds
+      console.log(`⏳ Waiting ${delay}ms before retry ${attempt + 1} for ${subscriptionId} after exception`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
-  console.log("Subscription acknowledged successfully:", subscriptionId);
-  return true;
+
+  // This should never be reached, but just in case
+  return { success: false, error: 'Unexpected error: max retries exceeded', attempts: maxRetries, verified: false };
 }
 
 
@@ -239,17 +335,32 @@ serve(async (req) => {
     console.log('✅ Google Play validation successful');
     // --- End Google Play Validation ---
 
-    // --- Acknowledge if necessary ---
+    // --- Enhanced Acknowledgement Logic ---
     if (validationResult.purchaseData && validationResult.purchaseData.acknowledgementState === 0) {
-      console.log(`Subscription ${productId} needs acknowledgement. Attempting to acknowledge...`);
-      const ackSuccess = await acknowledgeGooglePlaySubscription(productId, purchaseToken, googleAccessToken);
-      if (!ackSuccess) {
-        // Log the error but proceed with entitlement update as validation was successful
-        console.warn(`Failed to acknowledge subscription ${productId}, but entitlement will still be granted as validation passed.`);
-        // You might want to implement a retry mechanism for acknowledgement later
+      console.log(`🔔 Subscription ${productId} needs acknowledgement (acknowledgementState: 0). Initiating robust acknowledgment process...`);
+
+      const ackResult = await acknowledgeGooglePlaySubscription(productId, purchaseToken, googleAccessToken, 3);
+
+      if (ackResult.success) {
+        const verificationStatus = ackResult.verified ? 'and verified' : 'but verification inconclusive';
+        console.log(`✅ Successfully acknowledged subscription ${productId} after ${ackResult.attempts} attempt(s) ${verificationStatus}`);
+      } else {
+        // This is a critical failure that could lead to refunds
+        const errorMsg = `❌ CRITICAL: Failed to acknowledge subscription ${productId} after ${ackResult.attempts} attempts. Error: ${ackResult.error}. This purchase may be automatically refunded by Google Play.`;
+        console.error(errorMsg);
+
+        // Still proceed with entitlement update since validation passed, but log the critical issue
+        console.warn(`⚠️ Proceeding with entitlement update despite acknowledgment failure. User will receive subscription benefits, but Google Play may issue automatic refund.`);
+
+        // TODO: Consider implementing a background job to retry acknowledgment later
+        // TODO: Consider alerting administrators about acknowledgment failures
       }
+    } else if (validationResult.purchaseData && validationResult.purchaseData.acknowledgementState === 1) {
+      console.log(`✅ Subscription ${productId} is already acknowledged (acknowledgementState: 1)`);
+    } else {
+      console.log(`ℹ️ Subscription ${productId} acknowledgement state: ${validationResult.purchaseData?.acknowledgementState || 'unknown'}`);
     }
-    // --- End Acknowledgement ---
+    // --- End Enhanced Acknowledgement ---
 
     let tier: string | null = null;
     let isActive = false;

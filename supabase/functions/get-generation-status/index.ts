@@ -38,6 +38,55 @@ function getNextUTCMidnightISO(): string {
   return nextUTCMidnight.toISOString();
 }
 
+// Helper function to check if daily reset is needed for generations
+function shouldResetGenerations(profile: any, now: Date, userTimezone: string): boolean {
+  if (!profile.last_generation_at) {
+    return true; // First time, reset needed
+  }
+
+  const lastGenDateUtc = new Date(profile.last_generation_at);
+  const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+  const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
+
+  return nowDayStrUserTz > lastGenDayStrUserTz;
+}
+
+// Helper function to check if daily reset is needed for enhancements
+function shouldResetEnhancements(profile: any, now: Date, userTimezone: string): boolean {
+  if (!profile.last_enhancement_at) {
+    return true; // First time, reset needed
+  }
+
+  const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
+  const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
+  const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
+
+  return nowDayStrUserTz > lastEnhancementDayStrUserTz;
+}
+
+// Helper function to perform daily reset logic for both generations and enhancements
+function performDailyResetChecks(
+  profile: any,
+  now: Date,
+  userTimezone: string,
+  currentGenerationUsage: number,
+  currentEnhancementUsage: number
+): { generationUsage: number; enhancementUsage: number } {
+  let generationUsage = currentGenerationUsage;
+  let enhancementUsage = currentEnhancementUsage;
+
+  // Check and reset generations if needed
+  if (shouldResetGenerations(profile, now, userTimezone)) {
+    generationUsage = 0;
+  }
+
+  // Check and reset enhancements if needed
+  if (shouldResetEnhancements(profile, now, userTimezone)) {
+    enhancementUsage = 0;
+  }
+
+  return { generationUsage, enhancementUsage };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -120,42 +169,17 @@ serve(async (req) => {
         currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
         activeSubscriptionTier = null; // Not a recognized paid tier or subscription expired
 
-        // Daily Reset Logic for both generations and enhancements
+        // Daily Reset Logic for both generations and enhancements (using helper function)
         const userTimezone = getUserTimezone(user, profile);
-
-        // Check generation reset
-        let performGenerationDailyResetCheck = false;
-        if (profile.last_generation_at) {
-          const lastGenDateUtc = new Date(profile.last_generation_at);
-          const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
-          const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
-          if (nowDayStrUserTz > lastGenDayStrUserTz) {
-            performGenerationDailyResetCheck = true;
-          }
-        } else {
-          performGenerationDailyResetCheck = true;
-        }
-
-        if (performGenerationDailyResetCheck) {
-          generationUsageInCurrentPeriod = 0;
-        }
-
-        // Check enhancement reset
-        let performEnhancementDailyResetCheck = false;
-        if (profile.last_enhancement_at) {
-          const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
-          const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
-          const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
-          if (nowDayStrUserTz > lastEnhancementDayStrUserTz) {
-            performEnhancementDailyResetCheck = true;
-          }
-        } else {
-          performEnhancementDailyResetCheck = true;
-        }
-
-        if (performEnhancementDailyResetCheck) {
-          enhancementUsageInCurrentPeriod = 0;
-        }
+        const resetResult = performDailyResetChecks(
+          profile,
+          now,
+          userTimezone,
+          generationUsageInCurrentPeriod,
+          enhancementUsageInCurrentPeriod
+        );
+        generationUsageInCurrentPeriod = resetResult.generationUsage;
+        enhancementUsageInCurrentPeriod = resetResult.enhancementUsage;
 
         nextResetDateIso = getNextUTCMidnightISO(); // Daily resets are at UTC midnight on the next day
       }
@@ -165,41 +189,17 @@ serve(async (req) => {
       currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
       activeSubscriptionTier = null;
 
+      // Daily Reset Logic for both generations and enhancements (using helper function)
       const userTimezone = getUserTimezone(user, profile);
-
-      // Check generation reset
-      let performGenerationDailyResetCheck = false;
-      if (profile.last_generation_at) {
-        const lastGenDateUtc = new Date(profile.last_generation_at);
-        const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
-        const lastGenDayStrUserTz = getDateStringInTimezone(lastGenDateUtc, userTimezone);
-        if (nowDayStrUserTz > lastGenDayStrUserTz) {
-          performGenerationDailyResetCheck = true;
-        }
-      } else {
-        performGenerationDailyResetCheck = true;
-      }
-
-      if (performGenerationDailyResetCheck) {
-        generationUsageInCurrentPeriod = 0;
-      }
-
-      // Check enhancement reset
-      let performEnhancementDailyResetCheck = false;
-      if (profile.last_enhancement_at) {
-        const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
-        const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
-        const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
-        if (nowDayStrUserTz > lastEnhancementDayStrUserTz) {
-          performEnhancementDailyResetCheck = true;
-        }
-      } else {
-        performEnhancementDailyResetCheck = true;
-      }
-
-      if (performEnhancementDailyResetCheck) {
-        enhancementUsageInCurrentPeriod = 0;
-      }
+      const resetResult = performDailyResetChecks(
+        profile,
+        now,
+        userTimezone,
+        generationUsageInCurrentPeriod,
+        enhancementUsageInCurrentPeriod
+      );
+      generationUsageInCurrentPeriod = resetResult.generationUsage;
+      enhancementUsageInCurrentPeriod = resetResult.enhancementUsage;
 
       nextResetDateIso = getNextUTCMidnightISO();
     }
