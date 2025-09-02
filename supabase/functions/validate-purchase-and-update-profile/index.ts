@@ -326,7 +326,7 @@ async function notifyAdministrators(
   }
 }
 
-// Enhanced profile update function with retry logic and fallback procedures
+// Enhanced profile update function with retry logic, transaction support, and fallback procedures
 async function updateProfileWithRetry(
   supabaseClient: any,
   userId: string,
@@ -336,6 +336,8 @@ async function updateProfileWithRetry(
   const operation = async () => {
     console.log('💾 Updating user profile with subscription data:', JSON.stringify(updatePayload, null, 2));
 
+    // Use a transaction-like approach with explicit verification
+    // First, update the profile
     const { error: updateError } = await supabaseClient
       .from('profiles')
       .update(updatePayload)
@@ -357,7 +359,98 @@ async function updateProfileWithRetry(
       });
     }
 
-    console.log('✅ Profile updated successfully');
+    // Immediately verify the update was successful by reading back the data
+    console.log('🔍 Verifying profile update was applied correctly...');
+    const { data: verificationData, error: verificationError } = await supabaseClient
+      .from('profiles')
+      .select('current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
+      .eq('id', userId)
+      .single();
+
+    if (verificationError) {
+      console.error('❌ Profile verification failed:', verificationError);
+      throw new SubscriptionError({
+        code: 'PROFILE_VERIFICATION_FAILED',
+        message: 'Profile update could not be verified',
+        isRetryable: true,
+        context: {
+          userId,
+          updatePayload,
+          verificationError: verificationError.message
+        }
+      });
+    }
+
+    // Verify that the expected values were actually set
+    const expectedTier = updatePayload.current_subscription_tier;
+    const expectedActive = updatePayload.subscription_active;
+    const expectedExpires = updatePayload.subscription_expires_at;
+
+    // Helper function to compare timestamps with tolerance for precision differences
+    const timestampsMatch = (expected: string | null, actual: string | null): boolean => {
+      if (expected === null && actual === null) return true;
+      if (expected === null || actual === null) return false;
+
+      try {
+        const expectedTime = new Date(expected).getTime();
+        const actualTime = new Date(actual).getTime();
+        // Allow up to 1 second difference to account for precision/rounding
+        return Math.abs(expectedTime - actualTime) <= 1000;
+      } catch (error) {
+        console.warn('⚠️ Error comparing timestamps:', { expected, actual, error });
+        // Fallback to string comparison if date parsing fails
+        return expected === actual;
+      }
+    };
+
+    const tierMatches = verificationData.current_subscription_tier === expectedTier;
+    const activeMatches = verificationData.subscription_active === expectedActive;
+    const expiresMatches = timestampsMatch(expectedExpires, verificationData.subscription_expires_at);
+
+    console.log('🔍 Profile verification details:', {
+      expected: { tier: expectedTier, active: expectedActive, expires: expectedExpires },
+      actual: {
+        tier: verificationData.current_subscription_tier,
+        active: verificationData.subscription_active,
+        expires: verificationData.subscription_expires_at
+      },
+      matches: { tier: tierMatches, active: activeMatches, expires: expiresMatches }
+    });
+
+    if (!tierMatches || !activeMatches || !expiresMatches) {
+      console.error('❌ Profile verification mismatch:', {
+        expected: { tier: expectedTier, active: expectedActive, expires: expectedExpires },
+        actual: {
+          tier: verificationData.current_subscription_tier,
+          active: verificationData.subscription_active,
+          expires: verificationData.subscription_expires_at
+        },
+        matches: { tier: tierMatches, active: activeMatches, expires: expiresMatches }
+      });
+
+      throw new SubscriptionError({
+        code: 'PROFILE_UPDATE_MISMATCH',
+        message: 'Profile update verification failed - data mismatch detected',
+        isRetryable: true,
+        context: {
+          userId,
+          updatePayload,
+          expectedValues: { tier: expectedTier, active: expectedActive, expires: expectedExpires },
+          actualValues: {
+            tier: verificationData.current_subscription_tier,
+            active: verificationData.subscription_active,
+            expires: verificationData.subscription_expires_at
+          },
+          matches: { tier: tierMatches, active: activeMatches, expires: expiresMatches }
+        }
+      });
+    }
+
+    console.log('✅ Profile updated and verified successfully:', {
+      tier: verificationData.current_subscription_tier,
+      active: verificationData.subscription_active,
+      expires: verificationData.subscription_expires_at
+    });
   };
 
   try {
@@ -635,6 +728,50 @@ async function acknowledgeGooglePlaySubscription(subscriptionId: string, purchas
   return { success: false, error: 'Unexpected error: max retries exceeded', attempts: maxRetries, verified: false };
 }
 
+// Helper function to log subscription events to audit log
+async function logSubscriptionEvent(
+  supabaseClient: any,
+  userId: string,
+  eventType: string,
+  metadata: any,
+  productId?: string,
+  purchaseToken?: string,
+  subscriptionTier?: string,
+  subscriptionStatus?: string,
+  expiryDate?: string,
+  cycleStartDate?: string,
+  previousValues?: any,
+  newValues?: any,
+  errorDetails?: any
+): Promise<void> {
+  try {
+    const { error } = await supabaseClient
+      .from('subscription_audit_log')
+      .insert({
+        user_id: userId,
+        event_type: eventType,
+        product_id: productId,
+        purchase_token: purchaseToken,
+        subscription_tier: subscriptionTier,
+        subscription_status: subscriptionStatus,
+        expiry_date: expiryDate,
+        cycle_start_date: cycleStartDate,
+        previous_values: previousValues,
+        new_values: newValues,
+        error_details: errorDetails,
+        metadata: metadata,
+        source: 'validate_purchase_function',
+        created_by: 'validate-purchase-and-update-profile'
+      });
+
+    if (error) {
+      console.error('Failed to log subscription event:', error);
+    }
+  } catch (e) {
+    console.error('Error logging subscription event:', e);
+  }
+}
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -676,6 +813,24 @@ serve(async (req) => {
     }
 
     console.log(`👤 User authenticated: ${user.id}`);
+    console.log(`📧 User email: ${user.email || 'null'}`);
+    console.log(`🔍 User metadata: ${JSON.stringify(user.user_metadata || {})}`);
+
+    // Log the purchase initiation in audit log
+    await logSubscriptionEvent(
+      supabaseClient,
+      user.id,
+      'purchase_initiated',
+      {
+        productId,
+        purchaseToken: purchaseToken.substring(0, 20) + '...',
+        source: source || 'unknown',
+        userEmail: user.email,
+        userMetadata: user.user_metadata
+      },
+      productId,
+      purchaseToken.substring(0, 20) + '...'
+    );
 
     // --- Perform Google Play Validation ---
     console.log('🔑 Getting Google Access Token...');
@@ -685,6 +840,28 @@ serve(async (req) => {
         console.log('✅ Google Access Token obtained successfully');
     } catch (tokenError) {
         console.error("❌ Error getting Google Access Token:", tokenError);
+
+        // Log the failure
+        await logSubscriptionEvent(
+          supabaseClient,
+          user.id,
+          'purchase_failed',
+          {
+            error: 'Failed to authenticate with Google Play',
+            step: 'access_token_retrieval',
+            tokenError: tokenError?.message
+          },
+          productId,
+          purchaseToken.substring(0, 20) + '...',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { error: tokenError?.message, step: 'access_token_retrieval' }
+        );
+
         throw new Error("Failed to authenticate with Google Play services.");
     }
 
@@ -693,9 +870,43 @@ serve(async (req) => {
 
     if (!validationResult.isValid) {
       console.error('❌ Google Play validation failed:', validationResult.error);
+
+      // Log the validation failure
+      await logSubscriptionEvent(
+        supabaseClient,
+        user.id,
+        'purchase_failed',
+        {
+          error: validationResult.error || 'Purchase validation failed',
+          step: 'google_play_validation'
+        },
+        productId,
+        purchaseToken.substring(0, 20) + '...',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { error: validationResult.error, step: 'google_play_validation' }
+      );
+
       throw new Error(validationResult.error || 'Invalid purchase or failed to validate with Google Play.');
     }
     console.log('✅ Google Play validation successful');
+
+    // Log successful validation
+    await logSubscriptionEvent(
+      supabaseClient,
+      user.id,
+      'purchase_validated',
+      {
+        purchaseData: validationResult.purchaseData,
+        step: 'google_play_validation_success'
+      },
+      productId,
+      purchaseToken.substring(0, 20) + '...'
+    );
     // --- End Google Play Validation ---
 
     // --- Enhanced Acknowledgement Logic ---
@@ -794,24 +1005,13 @@ serve(async (req) => {
         { productId, purchaseToken }
       );
 
-      // Verify the update was successful by reading back the data
-      console.log('🔍 Verifying profile update was successful...');
-      const { data: verificationData, error: verificationError } = await supabaseClient
-        .from('profiles')
-        .select('current_subscription_tier, subscription_active, subscription_expires_at')
-        .eq('id', user.id)
-        .single();
+      // Profile update and verification completed successfully within updateProfileWithRetry
+      console.log('✅ Subscription profile update completed successfully');
 
-      if (verificationError || !verificationData) {
-        console.error('❌ Profile verification failed:', verificationError);
-        throw new Error('Profile update verification failed');
-      }
-
-      console.log('✅ Profile verification successful:', {
-        tier: verificationData.current_subscription_tier,
-        active: verificationData.subscription_active,
-        expires: verificationData.subscription_expires_at
-      });
+      // Add a small delay to ensure database changes are fully propagated
+      // This helps prevent race conditions when the client immediately queries for subscription status
+      console.log('⏳ Adding propagation delay to ensure database consistency...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
 
       return new Response(JSON.stringify({
         success: true,

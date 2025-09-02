@@ -5,6 +5,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 const DEFAULT_FREE_GENERATION_LIMIT = 3;
 const DEFAULT_FREE_ENHANCEMENT_LIMIT = 4;
 const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const GRACE_PERIOD_FREE_TIER_LIMIT = 5; // During grace period, limit to 5 generations (more than free but not unlimited)
 
 // Helper functions (copied from generate-image-proxy.ts for daily reset logic consistency)
 function getUserTimezone(user: any, profile: any): string { // user param might not be needed if only profile.timezone is primary
@@ -52,16 +53,11 @@ function shouldResetGenerations(profile: any, now: Date, userTimezone: string): 
 }
 
 // Helper function to check if daily reset is needed for enhancements
+// Note: Enhancement tracking columns don't exist yet, so always reset for now
 function shouldResetEnhancements(profile: any, now: Date, userTimezone: string): boolean {
-  if (!profile.last_enhancement_at) {
-    return true; // First time, reset needed
-  }
-
-  const lastEnhancementDateUtc = new Date(profile.last_enhancement_at);
-  const nowDayStrUserTz = getDateStringInTimezone(now, userTimezone);
-  const lastEnhancementDayStrUserTz = getDateStringInTimezone(lastEnhancementDateUtc, userTimezone);
-
-  return nowDayStrUserTz > lastEnhancementDayStrUserTz;
+  // Since last_enhancement_at column doesn't exist yet, always return true for reset
+  // This will be updated when enhancement tracking is fully implemented
+  return true;
 }
 
 // Helper function to perform daily reset logic for both generations and enhancements
@@ -110,7 +106,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('generations_today, last_generation_at, enhancements_today, last_enhancement_at, timezone, generation_limit, enhancement_limit, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
+      .select('generations_today, last_generation_at, timezone, generation_limit, current_subscription_tier, subscription_active, subscription_expires_at, subscription_cycle_start_date')
       .eq('id', user.id)
       .single();
 
@@ -145,9 +141,9 @@ serve(async (req) => {
     // Subscription Check
     // Use nullish coalescing for limits to respect 0
     let currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT;
-    let currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
+    let currentEnhancementLimit = DEFAULT_FREE_ENHANCEMENT_LIMIT; // Use default since column doesn't exist yet
     let generationUsageInCurrentPeriod = profile.generations_today ?? 0; // Default to 0 if null
-    let enhancementUsageInCurrentPeriod = profile.enhancements_today ?? 0; // Default to 0 if null
+    let enhancementUsageInCurrentPeriod = 0; // Default to 0 since column doesn't exist yet
     let nextResetDateIso: string; // Will be determined by logic below
     let activeSubscriptionTier = profile.current_subscription_tier;
     let needsProfileUpdate = false; // For monthly cycle start/reset updates by this function
@@ -160,6 +156,13 @@ serve(async (req) => {
         profile.subscription_expires_at &&
         (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
 
+    // Check if we're in the grace period (expired but within grace window)
+    const isInGracePeriod =
+        profile.subscription_active &&
+        profile.subscription_expires_at &&
+        new Date(profile.subscription_expires_at).getTime() < now.getTime() && // Expired
+        (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime(); // But within grace
+
     // Debug logging for subscription status determination
     console.log('🔍 Subscription status check:');
     console.log('  - subscription_active:', profile.subscription_active);
@@ -169,10 +172,32 @@ serve(async (req) => {
     console.log('  - expires_at_time:', profile.subscription_expires_at ? new Date(profile.subscription_expires_at).getTime() : 'null');
     console.log('  - grace_period_ms:', GRACE_PERIOD_MILLISECONDS);
     console.log('  - isSubscriptionEffectivelyActive:', isSubscriptionEffectivelyActive);
+    console.log('  - isInGracePeriod:', isInGracePeriod);
 
     if (isSubscriptionEffectivelyActive) {
-      // Active subscription
-      if (profile.current_subscription_tier === 'monthly_unlimited' || profile.current_subscription_tier === 'monthly_unlimited_generations') {
+      // Check if we're in grace period (expired but within grace window)
+      if (isInGracePeriod) {
+        // During grace period: Limited generations to prevent abuse
+        console.log('⚠️ Subscription in grace period - applying limited access');
+        currentGenerationLimit = GRACE_PERIOD_FREE_TIER_LIMIT; // Limited during grace period
+        currentEnhancementLimit = GRACE_PERIOD_FREE_TIER_LIMIT;
+        activeSubscriptionTier = `${profile.current_subscription_tier} (Grace Period)`;
+
+        // Apply daily reset logic during grace period
+        const userTimezone = getUserTimezone(user, profile);
+        const resetResult = performDailyResetChecks(
+          profile,
+          now,
+          userTimezone,
+          generationUsageInCurrentPeriod,
+          enhancementUsageInCurrentPeriod
+        );
+        generationUsageInCurrentPeriod = resetResult.generationUsage;
+        enhancementUsageInCurrentPeriod = resetResult.enhancementUsage;
+
+        nextResetDateIso = getNextUTCMidnightISO();
+      } else if (profile.current_subscription_tier === 'monthly_unlimited' || profile.current_subscription_tier === 'monthly_unlimited_generations') {
+        // Fully active subscription - unlimited access
         currentGenerationLimit = -1; // -1 for unlimited
         currentEnhancementLimit = -1; // -1 for unlimited
         generationUsageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
@@ -182,7 +207,7 @@ serve(async (req) => {
         // Keep the original tier even if it's not recognized, but treat limits as free
         console.log(`⚠️ Active subscription with unrecognized tier: ${profile.current_subscription_tier}`);
         currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT; // Respect user's specific limit or default
-        currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
+        currentEnhancementLimit = DEFAULT_FREE_ENHANCEMENT_LIMIT; // Use default since column doesn't exist yet
 
         // Daily Reset Logic for both generations and enhancements (using helper function)
         const userTimezone = getUserTimezone(user, profile);
@@ -201,7 +226,7 @@ serve(async (req) => {
     } else {
       // Subscription not effectively active, apply daily free tier logic
       currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT;
-      currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
+      currentEnhancementLimit = DEFAULT_FREE_ENHANCEMENT_LIMIT; // Use default since column doesn't exist yet
       activeSubscriptionTier = null;
 
       // Daily Reset Logic for both generations and enhancements (using helper function)

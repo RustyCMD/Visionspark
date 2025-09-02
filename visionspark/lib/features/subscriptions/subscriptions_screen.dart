@@ -98,7 +98,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
 
     // Add initial delay to allow database propagation after purchase validation
     print('⏳ Waiting for database propagation before verification...');
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 5)); // Increased delay for better synchronization
 
     // First, try the enhanced retry mechanism
     await _fetchSubscriptionStatusWithRetry(

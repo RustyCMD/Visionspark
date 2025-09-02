@@ -438,14 +438,132 @@ class Auth0Service {
     final payload = parts[1];
     final normalized = base64Url.normalize(payload);
     final decoded = utf8.decode(base64Url.decode(normalized));
-    
+
     return json.decode(decoded) as Map<String, dynamic>;
+  }
+
+  /// Find existing user by Google ID to prevent duplicate account creation
+  Future<Map<String, dynamic>?> _findExistingUserByGoogleId(String googleId, [String? email]) async {
+    try {
+      debugPrint('[Auth0Service] Searching for existing user with Google ID: $googleId, email: $email');
+
+      // Use the server-side function to search for existing users
+      final response = await Supabase.instance.client.functions.invoke(
+        'find-existing-user-by-google-id',
+        body: {
+          'googleId': googleId,
+          'email': email,
+        },
+      );
+
+      if (response.data != null && response.data['found'] == true) {
+        final userData = response.data['user'] as Map<String, dynamic>;
+        debugPrint('[Auth0Service] Found existing user: ${userData['id']}');
+        return userData;
+      }
+
+      debugPrint('[Auth0Service] No existing user found');
+      return null;
+
+    } catch (e) {
+      debugPrint('[Auth0Service] Error finding existing user by Google ID: $e');
+      // Fallback to local search if server function fails
+      return await _findExistingUserByGoogleIdInProfiles(googleId);
+    }
+  }
+
+  /// Alternative method to find user by Google ID in profiles table
+  Future<Map<String, dynamic>?> _findExistingUserByGoogleIdInProfiles(String googleId) async {
+    try {
+      debugPrint('[Auth0Service] Searching profiles table for Google ID: $googleId');
+
+      // Since we can't directly access auth.users from client side,
+      // we'll use a different approach: check if current user exists and matches
+      final currentUser = Supabase.instance.client.auth.currentUser;
+
+      if (currentUser != null) {
+        final currentGoogleId = currentUser.userMetadata?['google_id'] as String?;
+        if (currentGoogleId == googleId) {
+          debugPrint('[Auth0Service] Current user matches Google ID: ${currentUser.id}');
+          return {
+            'id': currentUser.id,
+            'email': currentUser.email,
+          };
+        }
+      }
+
+      // For a more comprehensive solution, we would need a server-side function
+      // to search through all users. For now, we'll return null to create a new user
+      // if no current user matches
+      debugPrint('[Auth0Service] No matching Google ID found, will create new user');
+      return null;
+
+    } catch (e) {
+      debugPrint('[Auth0Service] Error searching for existing user: $e');
+      return null;
+    }
   }
 
   /// Create Supabase session with Google token and user profile
   Future<void> _createSupabaseSessionWithGoogleToken(String googleAccessToken, String? googleIdToken, UserProfile userProfile) async {
     try {
       debugPrint('[Auth0Service] Creating Supabase session with Google token...');
+
+      // First, check if a user with this Google ID or email already exists
+      final existingUser = await _findExistingUserByGoogleId(userProfile.sub, userProfile.email);
+
+      if (existingUser != null) {
+        debugPrint('[Auth0Service] Found existing user with Google ID: ${userProfile.sub}');
+        debugPrint('[Auth0Service] Existing user ID: ${existingUser['id']}');
+        debugPrint('[Auth0Service] Existing user email: ${existingUser['email']}');
+
+        // For existing users, we need to be careful not to create a new account
+        // Instead, we'll try to sign them in with their existing credentials
+        try {
+          // Attempt to sign in with the Google tokens - this should recognize the existing user
+          if (googleIdToken != null) {
+            final response = await Supabase.instance.client.auth.signInWithIdToken(
+              provider: OAuthProvider.google,
+              idToken: googleIdToken,
+              accessToken: googleAccessToken,
+            );
+
+            if (response.user != null) {
+              debugPrint('[Auth0Service] Successfully signed in existing user');
+              debugPrint('[Auth0Service] User ID: ${response.user!.id}');
+              debugPrint('[Auth0Service] User email: ${response.user!.email}');
+
+              // Verify this is the same user we found
+              if (response.user!.id == existingUser['id']) {
+                debugPrint('[Auth0Service] Confirmed: Same user account restored');
+              } else {
+                debugPrint('[Auth0Service] Warning: Different user ID returned. Expected: ${existingUser['id']}, Got: ${response.user!.id}');
+              }
+
+              // Update user metadata with latest info
+              await Supabase.instance.client.auth.updateUser(
+                UserAttributes(
+                  data: {
+                    'name': userProfile.name,
+                    'picture': userProfile.pictureUrl?.toString(),
+                    'provider': 'google',
+                    'google_id': userProfile.sub,
+                  },
+                ),
+              );
+
+              debugPrint('[Auth0Service] Existing user session restored and metadata updated');
+              return;
+            }
+          }
+        } catch (e) {
+          debugPrint('[Auth0Service] Error signing in existing user: $e');
+          // Continue to create new account if sign-in fails
+        }
+      }
+
+      // If no existing user found, create a new one
+      debugPrint('[Auth0Service] No existing user found, creating new account...');
 
       // Use Supabase's signInWithIdToken for Google OAuth if we have an ID token
       // This will create a proper authenticated user with email
@@ -474,7 +592,7 @@ class Auth0Service {
             ),
           );
 
-          debugPrint('[Auth0Service] Supabase session created and user metadata updated');
+          debugPrint('[Auth0Service] New user session created and user metadata updated');
           return; // Success, exit early
         }
       }
