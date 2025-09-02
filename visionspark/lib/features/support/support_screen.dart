@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import '../../shared/design_system/design_system.dart';
-import '../../auth/auth0_service.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -16,7 +16,7 @@ class _SupportScreenState extends State<SupportScreen> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   bool _isLoading = false;
-  final _auth0Service = Auth0Service();
+
 
   Future<void> _submitSupport() async {
     // Validate form before proceeding
@@ -34,9 +34,10 @@ class _SupportScreenState extends State<SupportScreen> {
       debugPrint('[SupportScreen] Title: $title');
       debugPrint('[SupportScreen] Content length: ${content.length}');
 
-      // Use the new email retrieval service with multiple fallbacks
+      // Get current user email from Firebase Auth
       debugPrint('[SupportScreen] Attempting to retrieve user email...');
-      final userEmail = await _auth0Service.getCurrentUserEmail();
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final userEmail = currentUser?.email;
       debugPrint('[SupportScreen] Email retrieval result: ${userEmail ?? 'NULL/EMPTY'}');
 
       if (userEmail == null || userEmail.isEmpty) {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/main_scaffold.dart';
 import './auth_screen.dart';
 
@@ -8,38 +8,25 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         // Log every auth event to the debug console
-        if (snapshot.hasData) {
-          final event = snapshot.data?.event;
-          final hasSession = snapshot.data?.session != null;
-          debugPrint("[AuthGate] Event: $event, Session: $hasSession");
-
-          // Log additional details for sign out events
-          if (event == AuthChangeEvent.signedOut) {
-            debugPrint("[AuthGate] User signed out - redirecting to login screen");
-          } else if (event == AuthChangeEvent.signedIn) {
-            debugPrint("[AuthGate] User signed in - redirecting to main app");
-          }
-        }
-
-        if (!snapshot.hasData) {
-          debugPrint("[AuthGate] No auth data available - showing loading");
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          debugPrint("[AuthGate] Waiting for auth state - showing loading");
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final authState = snapshot.data;
+        final user = snapshot.data;
 
-        if (authState?.session != null) {
-          debugPrint("[AuthGate] Valid session found - showing main app");
+        if (user != null) {
+          debugPrint("[AuthGate] User authenticated: ${user.email} - showing main app");
           return const MainScaffold(selectedIndex: 0);
         }
 
-        debugPrint("[AuthGate] No valid session - showing login screen");
+        debugPrint("[AuthGate] No authenticated user - showing login screen");
         return const AuthScreen();
       },
     );

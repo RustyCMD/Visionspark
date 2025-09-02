@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:app_links/app_links.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:async';
 import 'shared/offline_screen.dart';
 import 'shared/connectivity_service.dart';
@@ -52,14 +52,14 @@ void main() async {
   // This is required for Android billing client 5.0+
   // Note: This might be handled automatically in newer versions of in_app_purchase plugin
 
+  // Initialize Firebase
+  await Firebase.initializeApp();
+
   await dotenv.load(fileName: ".env");
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
-
-  // Initialize deep link handling
-  _initDeepLinks();
 
   runApp(
     MultiProvider(
@@ -72,30 +72,7 @@ void main() async {
   );
 }
 
-StreamSubscription? _sub;
-AppLinks? _appLinks;
 
-/// Initializes the deep link listener to manually handle the auth callback.
-void _initDeepLinks() {
-  _appLinks = AppLinks();
-  _sub = _appLinks!.uriLinkStream.listen((Uri? uri) {
-    if (uri != null) {
-      debugPrint("Deep link received: $uri");
-
-      // Check if this is an Auth0 callback
-      if (uri.scheme == 'app.visionspark.app') {
-        debugPrint("Auth0 callback received: $uri");
-        // Auth0 Flutter SDK will handle this automatically
-        // Just log for debugging purposes
-        return;
-      }
-
-
-    }
-  }, onError: (err) {
-    debugPrint("Error listening to deep links: $err");
-  });
-}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

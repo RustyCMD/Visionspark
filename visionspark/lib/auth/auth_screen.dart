@@ -1,8 +1,10 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_auth_service.dart';
+import 'form_validators.dart';
+import 'registration_screen.dart';
+import 'password_reset_screen.dart';
 import '../shared/utils/snackbar_utils.dart';
-import 'auth0_service.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -12,11 +14,16 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final FirebaseAuthService _authService = FirebaseAuthService();
+
   bool _isLoading = false;
+  bool _obscurePassword = true;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-  final Auth0Service _auth0Service = Auth0Service();
 
   @override
   void initState() {
@@ -37,21 +44,32 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _animationController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _auth0SignIn() async {
+  Future<void> _signIn() async {
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
+
     try {
-      // Sign in with Auth0 (Google OAuth)
-      final user = await _auth0Service.signIn();
+      final user = await _authService.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
 
       if (user != null) {
-        debugPrint('Auth0 Sign-In successful: ${user.name}');
+        debugPrint('Firebase Sign-In successful: ${user.email}');
         // AuthGate will handle navigation automatically on success.
       }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        showErrorSnackbar(context, FirebaseAuthService.getErrorMessage(e));
+      }
     } catch (error) {
-      debugPrint('Auth0 Sign-In error: $error');
+      debugPrint('Firebase Sign-In error: $error');
       if (mounted) {
         showErrorSnackbar(context, 'Sign-in failed. Please try again.');
       }
@@ -62,14 +80,16 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     }
   }
 
-  // Helper function to launch URLs
-  Future<void> _launchURL(String urlString) async {
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (mounted) {
-        showErrorSnackbar(context, 'Could not launch $urlString');
-      }
-    }
+  void _navigateToRegistration() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const RegistrationScreen()),
+    );
+  }
+
+  void _navigateToPasswordReset() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const PasswordResetScreen()),
+    );
   }
 
   @override
@@ -83,7 +103,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         children: [
           // Background with geometric shapes
           _buildGeometricBackground(colorScheme, size),
-          
+
           // Main content
           SafeArea(
             child: AnimatedBuilder(
@@ -93,21 +113,28 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                   opacity: _fadeAnimation,
                   child: SlideTransition(
                     position: _slideAnimation,
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: EdgeInsets.symmetric(
                         horizontal: size.width * 0.08,
                         vertical: size.height * 0.06,
                       ),
-                      child: Column(
-                        children: [
-                          const Spacer(flex: 2),
-                          _buildBrandSection(colorScheme, textTheme, size),
-                          const Spacer(flex: 3),
-                          _buildSignInSection(colorScheme, textTheme, size),
-                          const Spacer(flex: 1),
-                          _buildFooterSection(colorScheme, textTheme),
-                          const Spacer(flex: 1),
-                        ],
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            SizedBox(height: size.height * 0.1),
+                            _buildBrandSection(colorScheme, textTheme, size),
+                            SizedBox(height: size.height * 0.08),
+                            _buildSignInForm(colorScheme, textTheme, size),
+                            SizedBox(height: size.height * 0.04),
+                            _buildSignInButton(colorScheme, textTheme),
+                            SizedBox(height: size.height * 0.02),
+                            _buildForgotPasswordLink(colorScheme, textTheme),
+                            SizedBox(height: size.height * 0.04),
+                            _buildCreateAccountLink(colorScheme, textTheme),
+                            SizedBox(height: size.height * 0.04),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -147,8 +174,8 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
               shape: BoxShape.circle,
               gradient: RadialGradient(
                 colors: [
-                  colorScheme.primary.withOpacity(0.08),
-                  colorScheme.primary.withOpacity(0.02),
+                  colorScheme.primary.withValues(alpha: 0.08),
+                  colorScheme.primary.withValues(alpha: 0.02),
                   Colors.transparent,
                 ],
               ),
@@ -165,8 +192,8 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
               shape: BoxShape.circle,
               gradient: RadialGradient(
                 colors: [
-                  colorScheme.secondary.withOpacity(0.06),
-                  colorScheme.secondary.withOpacity(0.01),
+                  colorScheme.secondary.withValues(alpha: 0.06),
+                  colorScheme.secondary.withValues(alpha: 0.01),
                   Colors.transparent,
                 ],
               ),
@@ -181,94 +208,46 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     return Column(
       children: [
         Container(
-          width: size.width * 0.32,
-          height: size.width * 0.32,
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colorScheme.primary,
-                colorScheme.secondary,
-              ],
-            ),
+            color: colorScheme.primary,
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: colorScheme.primary.withOpacity(0.3),
-                blurRadius: 24,
+                color: colorScheme.primary.withValues(alpha: 0.3),
+                blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.auto_awesome,
-                size: size.width * 0.14,
-                color: colorScheme.onPrimary,
-              ),
-              Positioned(
-                top: size.width * 0.06,
-                right: size.width * 0.06,
-                child: Container(
-                  width: size.width * 0.04,
-                  height: size.width * 0.04,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colorScheme.onPrimary.withOpacity(0.8),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: size.width * 0.08,
-                left: size.width * 0.08,
-                child: Container(
-                  width: size.width * 0.02,
-                  height: size.width * 0.02,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colorScheme.onPrimary.withOpacity(0.6),
-                  ),
-                ),
-              ),
-            ],
+          child: Icon(
+            Icons.auto_awesome,
+            size: 40,
+            color: colorScheme.onPrimary,
           ),
         ),
-        SizedBox(height: size.height * 0.04),
+        const SizedBox(height: 24),
         Text(
           'VisionSpark',
-          style: textTheme.displaySmall?.copyWith(
+          style: textTheme.headlineLarge?.copyWith(
             fontWeight: FontWeight.bold,
             color: colorScheme.onSurface,
-            letterSpacing: 1.2,
           ),
         ),
-        SizedBox(height: size.height * 0.012),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withOpacity(0.6),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.3),
-              width: 1,
-            ),
+        const SizedBox(height: 8),
+        Text(
+          'Create stunning AI-generated images',
+          style: textTheme.bodyLarge?.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
-          child: Text(
-            'Ignite your creativity with AI',
-            style: textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
   }
 
-  Widget _buildSignInSection(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+  Widget _buildSignInForm(ColorScheme colorScheme, TextTheme textTheme, Size size) {
     return Container(
       width: double.infinity,
       constraints: BoxConstraints(maxWidth: size.width * 0.85),
@@ -277,17 +256,17 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
+          color: colorScheme.outline.withValues(alpha: 0.2),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withOpacity(0.08),
+            color: colorScheme.shadow.withValues(alpha: 0.08),
             blurRadius: 24,
             offset: const Offset(0, 4),
           ),
           BoxShadow(
-            color: colorScheme.primary.withOpacity(0.05),
+            color: colorScheme.primary.withValues(alpha: 0.05),
             blurRadius: 32,
             offset: const Offset(0, 8),
           ),
@@ -311,141 +290,115 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
             textAlign: TextAlign.center,
           ),
           SizedBox(height: size.height * 0.032),
-          _buildSignInButton(colorScheme, textTheme, size),
+
+          // Email Field
+          TextFormField(
+            controller: _emailController,
+            decoration: InputDecoration(
+              labelText: 'Email',
+              hintText: 'Enter your email address',
+              prefixIcon: Icon(Icons.email_outlined, color: colorScheme.primary),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            validator: FormValidators.validateEmail,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+          ),
+          SizedBox(height: size.height * 0.02),
+
+          // Password Field
+          TextFormField(
+            controller: _passwordController,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              hintText: 'Enter your password',
+              prefixIcon: Icon(Icons.lock_outline, color: colorScheme.primary),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            validator: (value) => value?.isEmpty == true ? 'Password is required' : null,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _signIn(),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSignInButton(ColorScheme colorScheme, TextTheme textTheme, Size size) {
-    return Container(
-      width: double.infinity,
-      height: 56,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primary,
-            colorScheme.primary.withOpacity(0.8),
-          ],
+  Widget _buildSignInButton(ColorScheme colorScheme, TextTheme textTheme) {
+    return FilledButton(
+      onPressed: _isLoading ? null : _signIn,
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.primary.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        minimumSize: const Size(double.infinity, 56),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _isLoading ? null : _auth0SignIn,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isLoading) ...[
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(
-                    'Signing In...',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.onPrimary.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.login_rounded,
-                      color: colorScheme.onPrimary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(
-                    'Sign In / Sign Up',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
-                ],
-              ],
+      child: _isLoading
+          ? SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+              ),
+            )
+          : Text(
+              'Sign In',
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onPrimary,
+              ),
             ),
-          ),
+    );
+  }
+
+  Widget _buildForgotPasswordLink(ColorScheme colorScheme, TextTheme textTheme) {
+    return TextButton(
+      onPressed: _navigateToPasswordReset,
+      child: Text(
+        'Forgot Password?',
+        style: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.primary,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
   }
 
-  Widget _buildFooterSection(ColorScheme colorScheme, TextTheme textTheme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-          width: 1,
-        ),
-      ),
-      child: RichText(
-        textAlign: TextAlign.center,
-        text: TextSpan(
-          text: 'By continuing, you agree to our ',
-          style: textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant.withOpacity(0.8),
-            height: 1.4,
+  Widget _buildCreateAccountLink(ColorScheme colorScheme, TextTheme textTheme) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Don\'t have an account? ',
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
-          children: [
-            TextSpan(
-              text: 'Terms of Service',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline,
-                decorationColor: colorScheme.primary.withOpacity(0.6),
-              ),
-              recognizer: TapGestureRecognizer()
-                ..onTap = () {
-                  _launchURL('https://visionspark.app/terms-of-service.html');
-                },
-            ),
-            const TextSpan(text: ' and '),
-            TextSpan(
-              text: 'Privacy Policy',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline,
-                decorationColor: colorScheme.primary.withOpacity(0.6),
-              ),
-              recognizer: TapGestureRecognizer()
-                ..onTap = () {
-                  _launchURL('https://visionspark.app/privacy-policy.html');
-                },
-            ),
-          ],
         ),
-      ),
+        TextButton(
+          onPressed: _navigateToRegistration,
+          child: Text(
+            'Create Account',
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

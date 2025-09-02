@@ -1,0 +1,369 @@
+# VisionSpark Authentication Migration Plan
+# From Auth0 + Supabase to Firebase Email/Password Authentication + Supabase Database
+
+## 1. CURRENT SYSTEM ANALYSIS
+
+### Components to Remove:
+- **Auth0Service** (`lib/auth/auth0_service.dart`)
+  - Auth0 credential management
+  - Custom token exchange logic
+  - Duplicate user prevention logic
+  - Complex OAuth flow handling
+
+- **Supabase Authentication Integration**
+  - `signInWithIdToken()` calls
+  - `signInAnonymously()` fallbacks
+  - Custom session creation via server functions
+
+- **Server-Side Functions** (Supabase Edge Functions)
+  - `create-session-for-existing-user`
+  - `find-existing-user-by-google-id`
+  - Token generation and recovery link logic
+
+- **Dependencies to Remove**
+  - `auth0_flutter`
+  - Auth0 environment variables
+  - Google OAuth related dependencies
+
+### Current Problems Being Solved:
+- Duplicate user creation on each sign-in
+- Token generation failures in server functions
+- Complex Auth0 + Supabase integration
+- "Recovery link did not contain required tokens" errors
+- Database constraint violations (profiles_email_unique)
+- OAuth complexity and third-party dependency issues
+
+## 2. FIREBASE SETUP REQUIREMENTS
+
+### Firebase Project Configuration:
+- Create new Firebase project or use existing
+- Enable Authentication service
+- Configure Email/Password provider
+- Set up email verification (recommended for security)
+- Configure password requirements and policies
+- Set up password reset email templates
+- Configure email verification templates
+
+### Flutter Firebase Dependencies:
+```yaml
+dependencies:
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  # Form validation helpers
+  email_validator: ^2.1.17
+  # For secure password input
+  flutter_secure_storage: ^9.0.0
+```
+
+### Platform Configuration:
+
+#### Android (`android/app/build.gradle`):
+- Add `google-services.json`
+- Configure Google Services plugin
+- Update minSdkVersion to 21+ (required for Firebase Auth)
+- Add internet permission in AndroidManifest.xml
+
+### Environment Variables:
+- Remove Auth0 variables (AUTH0_DOMAIN, AUTH0_CLIENT_ID)
+- Add Firebase configuration (if needed for custom setup)
+- Consider adding password policy configurations
+
+## 3. CODE MIGRATION STRATEGY
+
+### Files to Modify/Replace:
+
+#### Core Authentication:
+- **REPLACE**: `lib/auth/auth0_service.dart` → `lib/auth/firebase_auth_service.dart`
+- **MODIFY**: `lib/auth/auth_screen.dart` (replace OAuth UI with email/password forms)
+- **ADD**: `lib/auth/registration_screen.dart` (new user registration form)
+- **ADD**: `lib/auth/password_reset_screen.dart` (password reset functionality)
+- **KEEP**: `lib/auth/auth_gate.dart` (minimal changes to stream listening)
+
+#### Service Integration:
+- **MODIFY**: `lib/main.dart` (Firebase initialization)
+- **MODIFY**: Account-related screens that call Auth0Service methods
+- **UPDATE**: Any widgets displaying user profile data
+- **ADD**: Form validation utilities for email/password inputs
+
+#### Configuration:
+- **ADD**: Firebase configuration files
+- **MODIFY**: `pubspec.yaml` (dependencies)
+- **MODIFY**: `.env` file (remove Auth0 variables)
+- **ADD**: Password policy configuration files
+
+### Session Management Changes:
+- Replace Auth0 credential storage with Firebase Auth persistence
+- Use Firebase Auth state listener instead of Supabase auth stream
+- Simplify token management (Firebase handles this automatically)
+- Implement secure password storage for "remember me" functionality
+
+### User Data Migration:
+- Existing Supabase users will need to be linked to Firebase UIDs
+- Create migration strategy for users with existing email accounts
+- Handle edge cases where users have multiple accounts
+- Implement email verification for existing users
+
+## 4. DATABASE INTEGRATION
+
+### Firebase Auth + Supabase Database Approach:
+- Firebase handles authentication and user sessions
+- Supabase database stores user profiles and app data
+- Firebase UID becomes the primary key for user identification
+
+### User Profile Synchronization:
+- On Firebase email/password sign-in, check if profile exists in Supabase
+- Create profile record if new user registration
+- Update profile metadata if existing user
+- Use Firebase UID as the profiles table primary key
+- Store email verification status in Supabase profile
+
+### Existing User Account Handling:
+- Query existing users by email address
+- Link Firebase UID to existing Supabase profile
+- Migrate user metadata from Auth0 format to Firebase format
+- Handle duplicate email scenarios gracefully
+- Implement account linking for users with existing data
+
+### Database Schema Updates:
+- Consider adding firebase_uid column to profiles table
+- Add email_verified boolean column for verification status
+- Update any foreign key relationships
+- Ensure proper indexing for performance
+- Add password_reset_requested timestamp for security tracking
+
+## 5. IMPLEMENTATION STEPS
+
+### Phase 1: Setup and Configuration
+1. Create/configure Firebase project
+2. Add Firebase configuration files to Flutter project
+3. Update pubspec.yaml with Firebase dependencies
+4. Initialize Firebase in main.dart
+5. Test basic Firebase connection
+
+### Phase 2: Authentication Service Development
+6. Create FirebaseAuthService class
+7. Implement Email/Password registration with validation
+8. Implement Email/Password sign-in with error handling
+9. Add user profile creation/update logic
+10. Implement sign-out functionality
+11. Add password reset functionality
+12. Add email verification functionality
+13. Implement form validation utilities
+14. Add error handling and logging
+
+### Phase 3: UI Development
+15. Create registration screen with email/password forms
+16. Create password reset screen
+17. Update auth_screen.dart to use email/password forms
+18. Add input validation and user feedback
+19. Implement loading states and error messages
+20. Add "forgot password" and "create account" navigation
+21. Design responsive forms for different screen sizes
+
+### Phase 4: Integration and State Management
+22. Modify auth_gate.dart to listen to Firebase Auth state
+23. Update account screens to use new service
+24. Implement secure password storage (if needed)
+25. Add email verification flow
+26. Test authentication flow end-to-end
+
+### Phase 5: Data Migration and Cleanup
+27. Create user migration script (if needed)
+28. Remove Auth0Service and related code
+29. Clean up unused dependencies
+30. Remove Supabase Edge Functions
+31. Update environment variables
+32. Remove OAuth-related configurations
+
+### Phase 6: Testing and Validation
+33. Test new user registration flow
+34. Test existing user sign-in (no duplicates)
+35. Test password reset functionality
+36. Test email verification flow
+37. Test sign-out and re-sign-in
+38. Verify user profile data integrity
+39. Test form validation and error handling
+40. Performance testing
+41. Edge case testing (network issues, etc.)
+
+## 6. TESTING STRATEGY
+
+### Email/Password Authentication Testing:
+- Register with new email → should create one user
+- Sign out and sign in again → should use same user
+- Clear app data and sign in → should authenticate existing user
+- Test with multiple email accounts
+- Test password reset flow
+- Test email verification process
+- Test invalid email format handling
+- Test weak password rejection
+- Test password confirmation matching
+
+### Form Validation Testing:
+- Test email format validation
+- Test password strength requirements
+- Test required field validation
+- Test form submission with invalid data
+- Test loading states during authentication
+- Test error message display and clearing
+- Test navigation between login/register/reset forms
+
+### Data Integrity Testing:
+- Verify user profiles are created correctly
+- Check that existing user data is preserved
+- Validate email synchronization between Firebase and Supabase
+- Test metadata storage and retrieval
+- Test email verification status tracking
+- Test user profile updates after authentication
+
+### Error Handling Testing:
+- Network connectivity issues
+- Firebase service outages
+- Invalid credentials handling
+- Account already exists scenarios
+- Password reset for non-existent accounts
+- Database connection failures
+- Email verification link expiration
+
+## 7. ROLLBACK PLAN
+
+### If Critical Issues Arise:
+1. **Immediate**: Revert to previous Auth0 implementation
+2. **Database**: Restore any modified database schemas
+3. **Dependencies**: Rollback pubspec.yaml changes
+4. **Configuration**: Restore Auth0 environment variables
+5. **Code**: Use git to revert authentication-related changes
+
+### Rollback Triggers:
+- High rate of authentication failures
+- User data loss or corruption
+- Performance degradation
+- Unable to resolve duplicate user issues
+
+### Monitoring Points:
+- Authentication success/failure rates
+- User profile creation errors
+- Database constraint violations
+- App crash rates related to auth
+
+## 8. SUCCESS CRITERIA
+
+### Primary Goals:
+- ✅ No duplicate user creation
+- ✅ Simple email/password authentication
+- ✅ Existing user data preserved
+- ✅ Simplified authentication architecture
+- ✅ Improved error handling and logging
+- ✅ Password reset functionality
+- ✅ Email verification system
+- ✅ Secure form validation
+- ✅ User-friendly registration flow
+- ✅ Responsive authentication UI
+
+### Performance Targets:
+- Sign-in time < 3 seconds
+- Registration time < 5 seconds
+- No authentication-related crashes
+- 99%+ authentication success rate
+- Reduced server-side function complexity
+- Form validation response time < 500ms
+
+### User Experience Goals:
+- Intuitive registration and login forms
+- Clear error messages and validation feedback
+- Smooth navigation between auth screens
+- Accessible form design
+- Consistent UI/UX with app design system
+
+This migration will eliminate the complex Auth0 + Supabase authentication issues and provide a more reliable, maintainable authentication system using Firebase's proven email/password infrastructure.
+
+## 9. IMMEDIATE ACTION ITEMS
+
+### Firebase Console Setup:
+
+**Step 1: Access Firebase Console**
+- URL: https://console.firebase.google.com/
+- Click "Create a project" or select existing project
+- If creating new: Enter project name "VisionSpark" (or preferred name)
+- Enable Google Analytics (recommended)
+- Select Analytics account or create new one
+
+**Step 2: Project Overview Navigation**
+- After project creation, you'll be at: https://console.firebase.google.com/project/YOUR_PROJECT_ID/overview
+- Note your Project ID (will be needed for configuration)
+
+### Authentication Configuration:
+
+**Step 3: Enable Authentication**
+- Navigate to: https://console.firebase.google.com/project/YOUR_PROJECT_ID/authentication
+- Click "Get started" if first time
+- Go to "Sign-in method" tab
+- URL will be: https://console.firebase.google.com/project/YOUR_PROJECT_ID/authentication/providers
+
+**Step 4: Configure Email/Password Provider**
+- In Sign-in providers list, click "Email/Password"
+- Toggle "Enable" switch to ON for "Email/Password"
+- Optionally enable "Email link (passwordless sign-in)" if desired
+- Click "Save"
+
+**Step 5: Configure Email Templates**
+- In Authentication settings, go to "Templates" tab
+- Customize "Password reset" email template
+- Customize "Email address verification" template
+- Set sender name and email address
+- Test email delivery
+
+**Step 6: Configure Password Policy**
+- In Authentication settings, go to "Settings" tab
+- Set minimum password length (recommended: 8+ characters)
+- Configure password complexity requirements
+- Set account lockout policies if needed
+
+### Platform Configuration:
+
+**Step 7: Android Configuration**
+- In Firebase Console, click "Project Settings" (gear icon)
+- URL: https://console.firebase.google.com/project/YOUR_PROJECT_ID/settings/general
+- Scroll to "Your apps" section
+- Click "Add app" → Android icon
+- Enter Android package name: `app.visionspark.app`
+- Enter app nickname: "VisionSpark Android"
+- Download `google-services.json` file
+- Place file in: `android/app/google-services.json`
+
+### Development Resources:
+
+**Step 9: Flutter Firebase Documentation**
+- Main Flutter Firebase docs: https://firebase.flutter.dev/
+- Getting started guide: https://firebase.flutter.dev/docs/overview/
+- Authentication guide: https://firebase.flutter.dev/docs/auth/usage/
+- Email/Password auth: https://firebase.flutter.dev/docs/auth/usage/#email--password
+
+**Step 10: Required Package URLs**
+- firebase_core: https://pub.dev/packages/firebase_core
+- firebase_auth: https://pub.dev/packages/firebase_auth
+- email_validator: https://pub.dev/packages/email_validator
+- flutter_secure_storage: https://pub.dev/packages/flutter_secure_storage
+
+**Step 11: Platform-Specific Setup Guides**
+- Android setup: https://firebase.flutter.dev/docs/installation/android/
+- Email/Password setup: https://firebase.flutter.dev/docs/auth/usage/#email--password
+
+**Step 12: Additional Configuration Resources**
+- Firebase Auth troubleshooting: https://firebase.flutter.dev/docs/auth/error-handling/
+- Email verification setup: https://firebase.flutter.dev/docs/auth/usage/#email-verification
+- Password reset implementation: https://firebase.flutter.dev/docs/auth/usage/#password-reset
+
+### Quick Checklist:
+- [ ] Firebase project created
+- [ ] Authentication enabled
+- [ ] Email/Password provider configured
+- [ ] Email templates customized (password reset, verification)
+- [ ] Password policy configured
+- [ ] google-services.json downloaded and placed
+- [ ] GoogleService-Info.plist downloaded and placed
+- [ ] Email verification enabled (recommended)
+- [ ] Test email delivery working
+
+**Next Step After Setup:**
+Once all items are checked, proceed to Phase 1 of the implementation plan above.

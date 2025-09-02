@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -7,7 +8,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../shared/utils/snackbar_utils.dart';
 import '../../shared/design_system/design_system.dart';
-import '../../auth/auth0_service.dart';
+import '../../auth/firebase_auth_service.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -28,8 +29,8 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
   bool _isSavingUsername = false;
   bool _isDeleting = false;
 
-  // Auth0 service instance
-  final _auth0Service = Auth0Service();
+  // Firebase Auth service instance
+  final _firebaseAuthService = FirebaseAuthService();
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -92,8 +93,9 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
   Future<void> _fetchUserEmail() async {
     try {
-      debugPrint('[AccountSection] Fetching user email using Auth0Service...');
-      final email = await _auth0Service.getCurrentUserEmail();
+      debugPrint('[AccountSection] Fetching user email using Firebase Auth...');
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final email = currentUser?.email;
       debugPrint('[AccountSection] Email retrieved: ${email ?? 'NULL'}');
 
       if (mounted) {
@@ -111,9 +113,10 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
   Future<void> _loadGoogleProfilePicture() async {
     try {
-      debugPrint('[AccountSection] Fetching Google profile picture using Auth0Service...');
-      final profilePictureUrl = await _auth0Service.getCurrentUserProfilePictureUrl();
-      debugPrint('[AccountSection] Google profile picture URL retrieved: ${profilePictureUrl ?? 'NULL'}');
+      debugPrint('[AccountSection] Fetching profile picture from Firebase Auth...');
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final profilePictureUrl = currentUser?.photoURL;
+      debugPrint('[AccountSection] Profile picture URL retrieved: ${profilePictureUrl ?? 'NULL'}');
 
       if (mounted) {
         setState(() {
@@ -211,8 +214,7 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
   Future<void> _signOut() async {
     try {
       debugPrint('[AccountSection] Starting logout process...');
-      final auth0Service = Auth0Service();
-      await auth0Service.signOut();
+      await _firebaseAuthService.signOut();
       debugPrint('[AccountSection] Logout completed successfully');
 
       // Show success message briefly before navigation
@@ -418,7 +420,7 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
 
                               // User info card
                               Flexible(
-                                child: _buildUserInfoCard(user, colorScheme, textTheme),
+                                child: _buildUserInfoCard(colorScheme, textTheme),
                               ),
                             ],
                           ),
@@ -585,7 +587,7 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     );
   }
 
-  Widget _buildUserInfoCard(User user, ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildUserInfoCard(ColorScheme colorScheme, TextTheme textTheme) {
     return VSCard(
       padding: const EdgeInsets.all(VSDesignTokens.space6),
       color: colorScheme.surface.withValues(alpha: 0.8),

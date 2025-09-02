@@ -20,17 +20,9 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Google Sign-In
--keep class com.google.android.gms.auth.api.signin.** { *; }
--keep class com.google.android.gms.common.api.** { *; }
-
-# Additional Google Play Services rules
--keep class com.google.android.gms.** { *; }
--dontwarn com.google.android.gms.**
-
-# Auth0 rules (if using Auth0)
--keep class com.auth0.** { *; }
--dontwarn com.auth0.**
+# Firebase rules
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.firebase.**
 
 # Supabase/HTTP client rules
 -keep class io.supabase.** { *; }

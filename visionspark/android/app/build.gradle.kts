@@ -38,9 +38,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Auth0 configuration (required by Auth0 plugin even if not using web auth)
-        manifestPlaceholders["auth0Domain"] = "dev-ujgxdp6byzkk36cs.us.auth0.com"
-        manifestPlaceholders["auth0Scheme"] = "app.visionspark.app"
+
 
 
     }
