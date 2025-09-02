@@ -17,11 +17,21 @@ const GRACE_PERIOD_MILLISECONDS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // Validation: Ensure critical variables are set
 if (!GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+  console.error('❌ MISSING: GOOGLE_SERVICE_ACCOUNT_EMAIL environment variable');
   throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL environment variable is required');
 }
 if (!GOOGLE_PRIVATE_KEY_PEM) {
+  console.error('❌ MISSING: GOOGLE_PRIVATE_KEY_PEM environment variable');
   throw new Error('GOOGLE_PRIVATE_KEY_PEM environment variable is required');
 }
+
+// Log configuration status (without sensitive data)
+console.log('✅ Google Play API Configuration Status:');
+console.log(`   📧 Service Account Email: ${GOOGLE_SERVICE_ACCOUNT_EMAIL ? 'SET' : 'MISSING'}`);
+console.log(`   🔑 Private Key: ${GOOGLE_PRIVATE_KEY_PEM ? 'SET' : 'MISSING'}`);
+console.log(`   🏗️ Project ID: ${GOOGLE_CLOUD_PROJECT_ID || 'USING_DEFAULT'}`);
+console.log(`   📦 Package Name: ${APP_PACKAGE_NAME}`);
+console.log(`   ⏰ Grace Period: ${GRACE_PERIOD_MILLISECONDS}ms (${GRACE_PERIOD_MILLISECONDS / (24 * 60 * 60 * 1000)} days)`);
 // ---
 
 // Define a new interface for the validation result

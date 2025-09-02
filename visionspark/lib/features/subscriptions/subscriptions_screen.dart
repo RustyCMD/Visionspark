@@ -213,13 +213,13 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
       });
     }
 
-    // Use standardized retry service
+    // Use standardized retry service with custom parameters for subscription verification
     final config = RetryConfig(
       maxRetries: maxRetries,
       maxTotalWait: maxTotalWait,
-      baseDelay: const Duration(seconds: 1),
-      backoffMultiplier: 2.0,
-      maxDelay: const Duration(seconds: 30),
+      baseDelay: const Duration(seconds: 2), // Slightly longer delay for database consistency
+      backoffMultiplier: 1.5, // Less aggressive backoff for subscription checks
+      maxDelay: const Duration(seconds: 15),
       useJitter: true,
     );
 
@@ -247,9 +247,15 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
         }
 
         // Provide more detailed error information for debugging
+        // Use "temporary" keyword to ensure retry logic recognizes this as retryable
         final errorDetails = _statusErrorMessage != null
-          ? 'API Error: $_statusErrorMessage'
-          : 'No active subscription found in database (may be database propagation delay)';
+          ? (_statusErrorMessage!.toLowerCase().contains('temporary') ||
+             _statusErrorMessage!.toLowerCase().contains('timeout') ||
+             _statusErrorMessage!.toLowerCase().contains('connection')
+             ? _statusErrorMessage!
+             : 'Temporary API error: $_statusErrorMessage')
+          : 'No active subscription found - temporary database propagation delay';
+        print('🔍 Subscription verification failed: $errorDetails');
         throw Exception(errorDetails);
       },
       operationType: RetryOperationType.subscriptionStatus,
@@ -336,7 +342,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with Standard
       });
     }
     try {
-      // buyNonConsumable is the correct method for both non-consumable products AND subscriptions
+      // For subscriptions, use buyNonConsumable (this handles both non-consumables and subscriptions)
+      // The in_app_purchase plugin automatically detects the product type
+      print('🛒 Initiating purchase for product: ${product.id} (${product.title})');
       await _iap.buyNonConsumable(purchaseParam: purchaseParam);
     } catch (e) {
       if (mounted) {

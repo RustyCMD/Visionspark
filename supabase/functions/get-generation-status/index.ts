@@ -114,6 +114,11 @@ serve(async (req) => {
       .eq('id', user.id)
       .single();
 
+    // Debug logging for subscription verification issues
+    console.log('🔍 Profile query result for user:', user.id);
+    console.log('🔍 Profile data:', JSON.stringify(profile, null, 2));
+    console.log('🔍 Profile error:', profileError);
+
     if (profileError || !profile) {
       console.error('Error fetching profile or profile not found for user:', user.id, profileError);
       // Fallback to default free limits if profile doesn't exist yet or error
@@ -150,10 +155,20 @@ serve(async (req) => {
 
     const now = new Date();
     // Check if subscription is active, considering the grace period
-    const isSubscriptionEffectivelyActive = 
-        profile.subscription_active && 
-        profile.subscription_expires_at && 
+    const isSubscriptionEffectivelyActive =
+        profile.subscription_active &&
+        profile.subscription_expires_at &&
         (new Date(profile.subscription_expires_at).getTime() + GRACE_PERIOD_MILLISECONDS) > now.getTime();
+
+    // Debug logging for subscription status determination
+    console.log('🔍 Subscription status check:');
+    console.log('  - subscription_active:', profile.subscription_active);
+    console.log('  - subscription_expires_at:', profile.subscription_expires_at);
+    console.log('  - current_subscription_tier:', profile.current_subscription_tier);
+    console.log('  - now:', now.toISOString());
+    console.log('  - expires_at_time:', profile.subscription_expires_at ? new Date(profile.subscription_expires_at).getTime() : 'null');
+    console.log('  - grace_period_ms:', GRACE_PERIOD_MILLISECONDS);
+    console.log('  - isSubscriptionEffectivelyActive:', isSubscriptionEffectivelyActive);
 
     if (isSubscriptionEffectivelyActive) {
       // Active subscription
@@ -164,10 +179,10 @@ serve(async (req) => {
         enhancementUsageInCurrentPeriod = 0; // Not tracked or always 0 for unlimited
         nextResetDateIso = new Date(profile.subscription_expires_at).toISOString();
       } else {
-        activeSubscriptionTier = null; // Treat as free if tier is unknown but active
+        // Keep the original tier even if it's not recognized, but treat limits as free
+        console.log(`⚠️ Active subscription with unrecognized tier: ${profile.current_subscription_tier}`);
         currentGenerationLimit = profile.generation_limit ?? DEFAULT_FREE_GENERATION_LIMIT; // Respect user's specific limit or default
         currentEnhancementLimit = profile.enhancement_limit ?? DEFAULT_FREE_ENHANCEMENT_LIMIT;
-        activeSubscriptionTier = null; // Not a recognized paid tier or subscription expired
 
         // Daily Reset Logic for both generations and enhancements (using helper function)
         const userTimezone = getUserTimezone(user, profile);
@@ -209,7 +224,7 @@ serve(async (req) => {
     const generationsRemaining = currentGenerationLimit === -1 ? -1 : Math.max(0, currentGenerationLimit - generationUsageInCurrentPeriod);
     const enhancementsRemaining = currentEnhancementLimit === -1 ? -1 : Math.max(0, currentEnhancementLimit - enhancementUsageInCurrentPeriod);
 
-    return new Response(JSON.stringify({
+    const responseData = {
       generation_limit: currentGenerationLimit,
       generations_today: generationUsageInCurrentPeriod,
       generations_remaining: generationsRemaining,
@@ -221,7 +236,13 @@ serve(async (req) => {
       // Legacy fields for backward compatibility
       limit: currentGenerationLimit,
       remaining: generationsRemaining,
-    }), {
+    };
+
+    // Debug logging for final response
+    console.log('🔍 Final response active_subscription_type:', activeSubscriptionTier);
+    console.log('🔍 Final response data:', JSON.stringify(responseData, null, 2));
+
+    return new Response(JSON.stringify(responseData), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

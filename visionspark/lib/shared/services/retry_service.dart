@@ -178,7 +178,12 @@ class RetryService {
         
         // Check if this error is retryable
         final isRetryable = _isRetryableError(error, config);
-        
+
+        if (kDebugMode) {
+          print('🔍 Error retryability check: isRetryable=$isRetryable, attempt=$attempt/${config.maxRetries}');
+          print('🔍 Error message: ${error.toString()}');
+        }
+
         // If not retryable or this is the last attempt, don't retry
         if (!isRetryable || attempt == config.maxRetries) {
           final totalTime = DateTime.now().difference(startTime);
@@ -251,7 +256,14 @@ class RetryService {
         errorString.contains('busy')) {
       return true;
     }
-    
+
+    // Database consistency and subscription-related retryable errors
+    if (errorString.contains('database propagation') ||
+        errorString.contains('subscription not found') ||
+        errorString.contains('no active subscription found')) {
+      return true;
+    }
+
     // Default to non-retryable for unknown errors
     return false;
   }

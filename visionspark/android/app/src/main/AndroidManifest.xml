@@ -3,6 +3,10 @@
     <!-- Permissions for saving images -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- Google Play Billing permissions -->
+    <uses-permission android:name="com.android.vending.BILLING" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- 
         For Android 10 (API 29) and above, WRITE_EXTERNAL_STORAGE is generally not needed 
         if using MediaStore and not accessing files directly, especially if targetSdk is 30+.
@@ -38,6 +42,11 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Google Play License Key for in-app purchases and subscriptions -->
+        <meta-data
+            android:name="com.android.vending.licensing.PUBLIC_KEY"
+            android:value="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5LzuNR/svWfjGJ8wSZ9nA5dV7rwl3Ziy0FtfOY54dA9pvg7qByqyT/Uh/YTj57sYoKV5JPuawksYSFtTm0dF7NF9NYyMefXSFRRo8vAeUxXg5UE3e6OinOOtzEJ/7gpI+jntikryFD0JFmH8Zx35u79M2ey+DsDepMgueVMnJnUIIxMGIKYHbRG1HDcRZ2zG/kmsZoSEUcWAY+SHKX1L1GwTlVsHXaMJz9gCUUSatlsgxZW9rHhlYTEGhX1mEjFqVhQ6JHt/lqxRtFuwNTGT8iQNafVIyaSIkBUN2VRK2QTJE9/QtdQvqkSPZ86T05xZjwOfIi183Sgnts0VswJNLwIDAQAB" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

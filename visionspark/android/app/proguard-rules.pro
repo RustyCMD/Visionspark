@@ -58,3 +58,12 @@
 -keep class io.flutter.view.** { *; }
 -keep class io.flutter.** { *; }
 -dontwarn io.flutter.embedding.**
+
+# Google Play Billing Client rules - CRITICAL for subscriptions
+-keep class com.android.billingclient.** { *; }
+-keep interface com.android.billingclient.** { *; }
+-dontwarn com.android.billingclient.**
+
+# Additional Google Play Services Billing rules
+-keep class com.google.android.gms.internal.play_billing.** { *; }
+-dontwarn com.google.android.gms.internal.play_billing.**

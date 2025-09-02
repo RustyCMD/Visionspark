@@ -8,6 +8,7 @@ import 'shared/connectivity_service.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
 // Import your project's widgets
 import 'auth/auth_gate.dart';
 import 'shared/notifiers/subscription_status_notifier.dart';
@@ -39,6 +40,11 @@ class ThemeController extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // CRITICAL: Enable pending purchases for Google Play Billing
+  // This is required for Android billing client 5.0+
+  // Note: This might be handled automatically in newer versions of in_app_purchase plugin
+
   await dotenv.load(fileName: ".env");
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
