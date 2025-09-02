@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_links/app_links.dart';
@@ -40,6 +41,12 @@ class ThemeController extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Configure system UI to hide navigation bar (immersive mode)
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+    overlays: [SystemUiOverlay.top], // Keep status bar, hide navigation bar
+  );
 
   // CRITICAL: Enable pending purchases for Google Play Billing
   // This is required for Android billing client 5.0+

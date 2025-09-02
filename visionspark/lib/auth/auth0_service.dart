@@ -442,6 +442,126 @@ class Auth0Service {
     return json.decode(decoded) as Map<String, dynamic>;
   }
 
+  /// Create Supabase session with Google token and user profile
+  Future<void> _createSupabaseSessionWithGoogleToken(String googleAccessToken, String? googleIdToken, UserProfile userProfile) async {
+    try {
+      debugPrint('[Auth0Service] Creating Supabase session with Google token...');
+
+      // First, check if a user with this Google ID or email already exists
+      final existingUser = await _findExistingUserByGoogleId(userProfile.sub, userProfile.email);
+
+      if (existingUser != null) {
+        debugPrint('[Auth0Service] Found existing user with Google ID: ${userProfile.sub}');
+        debugPrint('[Auth0Service] Existing user ID: ${existingUser['id']}');
+        debugPrint('[Auth0Service] Existing user email: ${existingUser['email']}');
+
+        // For existing users, create a custom session that links to the existing Supabase user
+        try {
+          // Create a custom JWT that will link to the existing user ID
+          await _createCustomSessionForExistingUser(existingUser['id'], userProfile);
+          debugPrint('[Auth0Service] Successfully linked to existing user account');
+          return;
+        } catch (e) {
+          debugPrint('[Auth0Service] Error linking to existing user: $e');
+          // If linking fails, we have a serious problem - don't create duplicate
+          throw Exception('Failed to link to existing account. Please contact support.');
+        }
+      }
+
+      // If no existing user found, create a new one
+      debugPrint('[Auth0Service] No existing user found, creating new account...');
+
+      // Use Supabase's signInWithIdToken for Google OAuth if we have an ID token
+      // This will create a proper authenticated user with email
+      if (googleIdToken != null) {
+        final response = await Supabase.instance.client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: googleIdToken,
+          accessToken: googleAccessToken,
+        );
+
+        if (response.user != null) {
+          debugPrint('[Auth0Service] Supabase Google OAuth sign-in successful');
+          debugPrint('[Auth0Service] Supabase user ID: ${response.user!.id}');
+          debugPrint('[Auth0Service] Supabase user email: ${response.user!.email}');
+
+          // The database trigger should automatically create the profile with email
+          // But let's also update user metadata for additional info
+          debugPrint('[Auth0Service] Updating user metadata with Google ID: ${userProfile.sub}');
+
+          final updateResponse = await Supabase.instance.client.auth.updateUser(
+            UserAttributes(
+              data: {
+                'name': userProfile.name,
+                'picture': userProfile.pictureUrl?.toString(),
+                'provider': 'google',
+                'google_id': userProfile.sub,
+                'sub': userProfile.sub, // Store both google_id and sub for compatibility
+              },
+            ),
+          );
+
+          if (updateResponse.user != null) {
+            debugPrint('[Auth0Service] ✅ User metadata updated successfully');
+            debugPrint('[Auth0Service] Stored Google ID: ${updateResponse.user!.userMetadata?['google_id']}');
+            debugPrint('[Auth0Service] Stored sub: ${updateResponse.user!.userMetadata?['sub']}');
+          } else {
+            debugPrint('[Auth0Service] ⚠️ Warning: User metadata update returned null user');
+          }
+
+          debugPrint('[Auth0Service] New user session created and user metadata updated');
+          return; // Success, exit early
+        }
+      }
+
+      // Fallback if ID token is not available or OAuth fails
+      debugPrint('[Auth0Service] ID token not available or OAuth failed, using fallback method');
+      throw Exception('Google ID token not available');
+
+    } catch (e) {
+      debugPrint('[Auth0Service] Supabase session creation error: $e');
+      // Fallback to manual profile creation if OAuth fails
+      await _createProfileManually(userProfile);
+    }
+  }
+
+  /// Fallback method to manually create profile if OAuth fails
+  Future<void> _createProfileManually(UserProfile userProfile) async {
+    try {
+      debugPrint('[Auth0Service] Attempting manual profile creation...');
+
+      // Sign in anonymously as fallback
+      final response = await Supabase.instance.client.auth.signInAnonymously();
+
+      if (response.user != null) {
+        // Manually insert into profiles table with email
+        await Supabase.instance.client.from('profiles').upsert({
+          'id': response.user!.id,
+          'email': userProfile.email,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        // Update user metadata
+        await Supabase.instance.client.auth.updateUser(
+          UserAttributes(
+            data: {
+              'name': userProfile.name,
+              'picture': userProfile.pictureUrl?.toString(),
+              'provider': 'google',
+              'google_id': userProfile.sub,
+              'email': userProfile.email, // Store email in metadata too
+            },
+          ),
+        );
+
+        debugPrint('[Auth0Service] Manual profile creation successful');
+      }
+    } catch (e) {
+      debugPrint('[Auth0Service] Manual profile creation error: $e');
+      rethrow;
+    }
+  }
+
   /// Find existing user by Google ID to prevent duplicate account creation
   Future<Map<String, dynamic>?> _findExistingUserByGoogleId(String googleId, [String? email]) async {
     try {
@@ -504,143 +624,45 @@ class Auth0Service {
     }
   }
 
-  /// Create Supabase session with Google token and user profile
-  Future<void> _createSupabaseSessionWithGoogleToken(String googleAccessToken, String? googleIdToken, UserProfile userProfile) async {
+  /// Create a custom session for an existing user to prevent duplicate account creation
+  Future<void> _createCustomSessionForExistingUser(String existingUserId, UserProfile userProfile) async {
     try {
-      debugPrint('[Auth0Service] Creating Supabase session with Google token...');
+      debugPrint('[Auth0Service] Creating custom session for existing user: $existingUserId');
 
-      // First, check if a user with this Google ID or email already exists
-      final existingUser = await _findExistingUserByGoogleId(userProfile.sub, userProfile.email);
+      // Use the server-side function to create a session for the existing user
+      final response = await Supabase.instance.client.functions.invoke(
+        'create-session-for-existing-user',
+        body: {
+          'userId': existingUserId,
+          'userProfile': {
+            'name': userProfile.name,
+            'email': userProfile.email,
+            'picture': userProfile.pictureUrl?.toString(),
+            'google_id': userProfile.sub,
+          },
+        },
+      );
 
-      if (existingUser != null) {
-        debugPrint('[Auth0Service] Found existing user with Google ID: ${userProfile.sub}');
-        debugPrint('[Auth0Service] Existing user ID: ${existingUser['id']}');
-        debugPrint('[Auth0Service] Existing user email: ${existingUser['email']}');
+      if (response.data != null && response.data['success'] == true) {
+        final sessionData = response.data['session'];
 
-        // For existing users, we need to be careful not to create a new account
-        // Instead, we'll try to sign them in with their existing credentials
-        try {
-          // Attempt to sign in with the Google tokens - this should recognize the existing user
-          if (googleIdToken != null) {
-            final response = await Supabase.instance.client.auth.signInWithIdToken(
-              provider: OAuthProvider.google,
-              idToken: googleIdToken,
-              accessToken: googleAccessToken,
-            );
+        debugPrint('[Auth0Service] Received session data from server');
+        debugPrint('[Auth0Service] Access token: ${sessionData['access_token']?.substring(0, 20)}...');
+        debugPrint('[Auth0Service] Refresh token: ${sessionData['refresh_token']?.substring(0, 20)}...');
+        debugPrint('[Auth0Service] User ID: ${sessionData['user']?['id']}');
 
-            if (response.user != null) {
-              debugPrint('[Auth0Service] Successfully signed in existing user');
-              debugPrint('[Auth0Service] User ID: ${response.user!.id}');
-              debugPrint('[Auth0Service] User email: ${response.user!.email}');
+        // Set the session in Supabase client using the refresh token
+        // The setSession method in Supabase Flutter takes only the refresh token
+        await Supabase.instance.client.auth.setSession(sessionData['refresh_token']);
 
-              // Verify this is the same user we found
-              if (response.user!.id == existingUser['id']) {
-                debugPrint('[Auth0Service] Confirmed: Same user account restored');
-              } else {
-                debugPrint('[Auth0Service] Warning: Different user ID returned. Expected: ${existingUser['id']}, Got: ${response.user!.id}');
-              }
-
-              // Update user metadata with latest info
-              await Supabase.instance.client.auth.updateUser(
-                UserAttributes(
-                  data: {
-                    'name': userProfile.name,
-                    'picture': userProfile.pictureUrl?.toString(),
-                    'provider': 'google',
-                    'google_id': userProfile.sub,
-                  },
-                ),
-              );
-
-              debugPrint('[Auth0Service] Existing user session restored and metadata updated');
-              return;
-            }
-          }
-        } catch (e) {
-          debugPrint('[Auth0Service] Error signing in existing user: $e');
-          // Continue to create new account if sign-in fails
-        }
+        debugPrint('[Auth0Service] Custom session set successfully for existing user');
+      } else {
+        debugPrint('[Auth0Service] Server response: ${response.data}');
+        throw Exception('Server failed to create session for existing user');
       }
-
-      // If no existing user found, create a new one
-      debugPrint('[Auth0Service] No existing user found, creating new account...');
-
-      // Use Supabase's signInWithIdToken for Google OAuth if we have an ID token
-      // This will create a proper authenticated user with email
-      if (googleIdToken != null) {
-        final response = await Supabase.instance.client.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: googleIdToken,
-          accessToken: googleAccessToken,
-        );
-
-        if (response.user != null) {
-          debugPrint('[Auth0Service] Supabase Google OAuth sign-in successful');
-          debugPrint('[Auth0Service] Supabase user ID: ${response.user!.id}');
-          debugPrint('[Auth0Service] Supabase user email: ${response.user!.email}');
-
-          // The database trigger should automatically create the profile with email
-          // But let's also update user metadata for additional info
-          await Supabase.instance.client.auth.updateUser(
-            UserAttributes(
-              data: {
-                'name': userProfile.name,
-                'picture': userProfile.pictureUrl?.toString(),
-                'provider': 'google',
-                'google_id': userProfile.sub,
-              },
-            ),
-          );
-
-          debugPrint('[Auth0Service] New user session created and user metadata updated');
-          return; // Success, exit early
-        }
-      }
-
-      // Fallback if ID token is not available or OAuth fails
-      debugPrint('[Auth0Service] ID token not available or OAuth failed, using fallback method');
-      throw Exception('Google ID token not available');
 
     } catch (e) {
-      debugPrint('[Auth0Service] Supabase session creation error: $e');
-      // Fallback to manual profile creation if OAuth fails
-      await _createProfileManually(userProfile);
-    }
-  }
-
-  /// Fallback method to manually create profile if OAuth fails
-  Future<void> _createProfileManually(UserProfile userProfile) async {
-    try {
-      debugPrint('[Auth0Service] Attempting manual profile creation...');
-
-      // Sign in anonymously as fallback
-      final response = await Supabase.instance.client.auth.signInAnonymously();
-
-      if (response.user != null) {
-        // Manually insert into profiles table with email
-        await Supabase.instance.client.from('profiles').upsert({
-          'id': response.user!.id,
-          'email': userProfile.email,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-
-        // Update user metadata
-        await Supabase.instance.client.auth.updateUser(
-          UserAttributes(
-            data: {
-              'name': userProfile.name,
-              'picture': userProfile.pictureUrl?.toString(),
-              'provider': 'google',
-              'google_id': userProfile.sub,
-              'email': userProfile.email, // Store email in metadata too
-            },
-          ),
-        );
-
-        debugPrint('[Auth0Service] Manual profile creation successful');
-      }
-    } catch (e) {
-      debugPrint('[Auth0Service] Manual profile creation error: $e');
+      debugPrint('[Auth0Service] Error creating custom session for existing user: $e');
       rethrow;
     }
   }

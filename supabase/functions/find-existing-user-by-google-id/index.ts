@@ -47,13 +47,22 @@ serve(async (req) => {
         console.error('Error listing users:', usersError);
       } else {
         // Search through users for matching Google ID
-        const matchingUser = users.users.find(user => 
-          user.user_metadata?.google_id === googleId ||
-          user.user_metadata?.sub === googleId ||
-          user.identities?.some(identity => 
+        console.log(`🔍 Searching through ${users.users.length} users for Google ID: ${googleId}`);
+
+        const matchingUser = users.users.find(user => {
+          const hasGoogleIdInMetadata = user.user_metadata?.google_id === googleId;
+          const hasSubInMetadata = user.user_metadata?.sub === googleId;
+          const hasGoogleIdentity = user.identities?.some(identity =>
             identity.provider === 'google' && identity.id === googleId
-          )
-        );
+          );
+
+          // Log each user's metadata for debugging
+          if (user.user_metadata?.google_id || user.user_metadata?.sub) {
+            console.log(`👤 User ${user.id}: google_id=${user.user_metadata?.google_id}, sub=${user.user_metadata?.sub}, email=${user.email}`);
+          }
+
+          return hasGoogleIdInMetadata || hasSubInMetadata || hasGoogleIdentity;
+        });
 
         if (matchingUser) {
           console.log(`✅ Found existing user by Google ID: ${matchingUser.id}`);

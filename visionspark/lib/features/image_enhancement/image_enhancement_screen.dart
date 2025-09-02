@@ -30,6 +30,10 @@ class ImageEnhancementScreen extends StatefulWidget {
 }
 
 class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
+  // Feature toggle - manually change this to enable/disable image enhancement
+  static const bool _isImageEnhancementEnabled = false;
+  static const String _disabledMessage = "Image enhancement is currently disabled for maintenance. Please check back later.";
+
   final _promptController = TextEditingController();
   final _picker = ImagePicker();
   
@@ -548,6 +552,48 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if feature is disabled
+    if (!_isImageEnhancementEnabled) {
+      return Scaffold(
+        body: VSResponsiveLayout(
+          child: SafeArea(
+            child: Padding(
+              padding: VSResponsive.getResponsivePadding(context),
+              child: Center(
+                child: VSCard(
+                  padding: const EdgeInsets.all(VSDesignTokens.space6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.construction,
+                        size: 64,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(height: VSDesignTokens.space4),
+                      Text(
+                        'Feature Temporarily Disabled',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: VSTypography.weightBold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: VSDesignTokens.space3),
+                      Text(
+                        _disabledMessage,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     int remaining = _enhancementLimit == -1 ? 999 : _enhancementLimit - _enhancementsToday;
 
     return Scaffold(
