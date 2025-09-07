@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/main_scaffold.dart';
 import './auth_screen.dart';
+import 'firebase_auth_service.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -23,6 +24,8 @@ class AuthGate extends StatelessWidget {
 
         if (user != null) {
           debugPrint("[AuthGate] User authenticated: ${user.email} - showing main app");
+          // Ensure profile exists via Edge Function in a microtask; don't block UI
+          Future.microtask(() => FirebaseAuthService().ensureCurrentUserProfileExists());
           return const MainScaffold(selectedIndex: 0);
         }
 

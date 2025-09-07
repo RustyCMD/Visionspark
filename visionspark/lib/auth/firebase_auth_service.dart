@@ -3,14 +3,34 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class FirebaseAuthService {
-  static final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  static final SupabaseClient _supabase = Supabase.instance.client;
+  final FirebaseAuth _firebaseAuth;
+  final SupabaseClient _supabase;
+
+  FirebaseAuthService({
+    FirebaseAuth? firebaseAuth,
+    SupabaseClient? supabase,
+  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+        _supabase = supabase ?? Supabase.instance.client;
 
   /// Get current Firebase user
   User? get currentUser => _firebaseAuth.currentUser;
 
   /// Get Firebase auth state stream
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+
+  static String? _lastEnsuredUid;
+
+  /// Public: ensure profile for current user once per session (idempotent)
+  Future<void> ensureCurrentUserProfileExists() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return;
+    if (_lastEnsuredUid == user.uid) {
+      debugPrint('[FirebaseAuthService] ensureCurrentUserProfileExists: already ensured for ${user.uid}, skipping');
+      return;
+    }
+    await _ensureUserProfileExists(user);
+    _lastEnsuredUid = user.uid;
+  }
 
   /// Register with email and password
   Future<User?> registerWithEmailAndPassword({
@@ -32,16 +52,20 @@ class FirebaseAuthService {
         // Update display name
         await user.updateDisplayName(displayName);
 
-        // Send email verification
-        await user.sendEmailVerification();
-        debugPrint('[FirebaseAuthService] Email verification sent to: $email');
-
-        // Create user profile in Supabase (don't let this fail the registration)
+        // Create user profile in Supabase (must succeed; otherwise rollback Firebase user)
         try {
           await _createUserProfile(user, displayName);
-        } catch (profileError) {
-          debugPrint('[FirebaseAuthService] Profile creation failed but continuing with registration: $profileError');
+        } catch (e, stackTrace) {
+          debugPrint('[FirebaseAuthService] Profile creation failed, rolling back Firebase user: $e');
+          debugPrint('[FirebaseAuthService] Stack trace: $stackTrace');
+          await _safeDeleteFirebaseUser(user);
+          await _firebaseAuth.signOut();
+          rethrow;
         }
+
+        // Send email verification only after successful profile creation
+        await user.sendEmailVerification();
+        debugPrint('[FirebaseAuthService] Email verification sent to: $email');
 
         debugPrint('[FirebaseAuthService] Registration successful for: $email');
         return user;
@@ -71,8 +95,8 @@ class FirebaseAuthService {
 
       final User? user = result.user;
       if (user != null) {
-        // Sync user profile with Supabase
-        await _syncUserProfile(user);
+        // Ensure user profile exists (create only if missing)
+        await _ensureUserProfileExists(user);
         debugPrint('[FirebaseAuthService] Sign-in successful for: $email');
         return user;
       }
@@ -122,13 +146,13 @@ class FirebaseAuthService {
   Future<void> signOut() async {
     try {
       debugPrint('[FirebaseAuthService] Starting sign-out process...');
-      
+
       // Sign out from Firebase
       await _firebaseAuth.signOut();
-      
+
       // Sign out from Supabase
       await _supabase.auth.signOut();
-      
+
       debugPrint('[FirebaseAuthService] Sign-out successful');
     } catch (e) {
       debugPrint('[FirebaseAuthService] Sign-out error: $e');
@@ -168,12 +192,11 @@ class FirebaseAuthService {
     }
   }
 
-  /// Sync user profile with Supabase via Edge Function
-  Future<void> _syncUserProfile(User user) async {
-    try {
-      debugPrint('[FirebaseAuthService] Syncing user profile with Supabase...');
 
-      // Call Supabase Edge Function to sync profile
+  /// Ensure user profile exists/updated via Edge Function (idempotent)
+  Future<void> _ensureUserProfileExists(User user) async {
+    try {
+      debugPrint('[FirebaseAuthService] Ensuring user profile via Edge Function (idempotent)...');
       final response = await _supabase.functions.invoke(
         'create-user-profile',
         body: {
@@ -183,17 +206,24 @@ class FirebaseAuthService {
           'email_verified': user.emailVerified,
         },
       );
+      debugPrint('[FirebaseAuthService] Ensure profile response: ${response.status} - ${response.data}');
+    } catch (e, stackTrace) {
+      debugPrint('[FirebaseAuthService] Error ensuring user profile exists: $e');
+      debugPrint('[FirebaseAuthService] Stack trace: $stackTrace');
+      // Non-fatal on login
+    }
+  }
 
-      debugPrint('[FirebaseAuthService] Profile sync response: ${response.status} - ${response.data}');
-
-      if (response.status == 200 || response.status == 201) {
-        debugPrint('[FirebaseAuthService] User profile synced with Supabase');
-      } else {
-        debugPrint('[FirebaseAuthService] Error syncing profile: Status ${response.status}, Data: ${response.data}');
-      }
+  /// Delete the just-created Firebase user safely (best-effort)
+  Future<void> _safeDeleteFirebaseUser(User user) async {
+    try {
+      debugPrint('[FirebaseAuthService] Deleting Firebase user ${user.email} (UID=${user.uid}) due to profile creation failure...');
+      await user.delete();
+      debugPrint('[FirebaseAuthService] Firebase user deleted successfully');
+    } on FirebaseAuthException catch (e) {
+      debugPrint('[FirebaseAuthService] Failed to delete Firebase user: ${e.code} - ${e.message}');
     } catch (e) {
-      debugPrint('[FirebaseAuthService] Error syncing user profile: $e');
-      // Don't rethrow - profile sync failure shouldn't block authentication
+      debugPrint('[FirebaseAuthService] Unexpected error deleting Firebase user: $e');
     }
   }
 
@@ -231,13 +261,17 @@ class FirebaseAuthService {
         await user.updatePhotoURL(photoURL);
       }
 
-      // Update Supabase profile
-      await _supabase.from('profiles').update({
-        'full_name': displayName,
-        'avatar_url': photoURL,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', user.uid);
-
+      // Update Supabase profile via Edge Function (idempotent)
+      final response = await _supabase.functions.invoke(
+        'create-user-profile',
+        body: {
+          'firebase_uid': user.uid,
+          'email': user.email,
+          'full_name': displayName ?? user.displayName,
+          'email_verified': user.emailVerified,
+        },
+      );
+      debugPrint('[FirebaseAuthService] Edge update response: ${response.status} - ${response.data}');
       debugPrint('[FirebaseAuthService] User profile updated');
     } catch (e) {
       debugPrint('[FirebaseAuthService] Error updating user profile: $e');

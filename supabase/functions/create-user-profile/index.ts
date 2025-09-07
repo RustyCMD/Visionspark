@@ -26,8 +26,9 @@ serve(async (req) => {
     // Parse request body
     const requestBody = await req.json();
     console.log(`[create-user-profile] Request body:`, requestBody);
+    console.log(`[create-user-profile] schema=v3(no_timestamps)`);
 
-    const { firebase_uid, email, full_name, email_verified } = requestBody;
+    const { firebase_uid, email } = requestBody;
 
     if (!firebase_uid || !email) {
       console.log(`[create-user-profile] Missing required fields - firebase_uid: ${firebase_uid}, email: ${email}`);
@@ -37,7 +38,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[create-user-profile] Creating/updating profile for Firebase UID: ${firebase_uid}, Email: ${email}, Full Name: ${full_name}, Email Verified: ${email_verified}`);
+    console.log(`[create-user-profile] Creating/updating profile for Firebase UID: ${firebase_uid}, Email: ${email}`);
 
     // Get environment variables
     console.log(`[create-user-profile] Getting environment variables...`);
@@ -65,8 +66,8 @@ serve(async (req) => {
     console.log(`[create-user-profile] Checking if profile exists for UID: ${firebase_uid}`);
     const { data: existingProfile, error: checkError } = await adminClient
       .from('profiles')
-      .select('id')
-      .eq('id', firebase_uid)
+      .select('firebase_uid')
+      .eq('firebase_uid', firebase_uid)
       .maybeSingle();
 
     console.log(`[create-user-profile] Profile check result - exists: ${!!existingProfile}, error: ${checkError?.message || 'none'}`);
@@ -83,17 +84,14 @@ serve(async (req) => {
       // Profile already exists, update it
       console.log(`[create-user-profile] Profile exists, updating...`);
       const updateData = {
-        email: email,
-        full_name: full_name || null,
-        email_verified: email_verified || false,
-        updated_at: new Date().toISOString(),
+        email: email
       };
       console.log(`[create-user-profile] Update data:`, updateData);
 
       const { error: updateError } = await adminClient
         .from('profiles')
         .update(updateData)
-        .eq('id', firebase_uid);
+        .eq('firebase_uid', firebase_uid);
 
       if (updateError) {
         console.error(`[create-user-profile] Error updating profile:`, updateError);
@@ -116,12 +114,8 @@ serve(async (req) => {
       // Create new profile
       console.log(`[create-user-profile] Profile doesn't exist, creating new one...`);
       const insertData = {
-        id: firebase_uid,
-        email: email,
-        full_name: full_name || null,
-        email_verified: email_verified || false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        firebase_uid: firebase_uid,
+        email: email
       };
       console.log(`[create-user-profile] Insert data:`, insertData);
 
