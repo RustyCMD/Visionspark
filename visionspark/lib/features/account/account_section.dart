@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -140,8 +139,8 @@ class _AccountSectionState extends State<AccountSection> {
           .update({'username': next}).eq('id', user.id);
       if (!mounted) return;
       setState(() => _name = next);
-      showSuccessSnackbar(context, 'Username updated.');
-      Navigator.of(dialogContext).pop();
+      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+      if (mounted) showSuccessSnackbar(context, 'Username updated.');
     } on PostgrestException catch (e) {
       if (mounted) showErrorSnackbar(context, e.message);
     } catch (_) {

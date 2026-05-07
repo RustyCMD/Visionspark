@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
@@ -164,10 +162,12 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Future<void> _pickFromGallery() async {
     try {
       final f = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-      if (f != null && mounted) setState(() {
-        _file = File(f.path);
-        _enhancedUrl = null;
-      });
+      if (f != null && mounted) {
+        setState(() {
+          _file = File(f.path);
+          _enhancedUrl = null;
+        });
+      }
     } catch (e) {
       if (mounted) showErrorSnackbar(context, 'Could not pick image: $e');
     }
@@ -176,10 +176,12 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Future<void> _takePhoto() async {
     try {
       final f = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-      if (f != null && mounted) setState(() {
-        _file = File(f.path);
-        _enhancedUrl = null;
-      });
+      if (f != null && mounted) {
+        setState(() {
+          _file = File(f.path);
+          _enhancedUrl = null;
+        });
+      }
     } catch (e) {
       if (mounted) showErrorSnackbar(context, 'Could not take photo: $e');
     }

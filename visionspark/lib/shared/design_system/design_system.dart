@@ -1,16 +1,12 @@
-/// VisionSpark Design System
-/// 
-/// A comprehensive design system that provides consistent design tokens,
-/// components, and utilities across the entire VisionSpark application.
-/// 
-/// This design system follows Material Design 3 principles while adding
-/// VisionSpark-specific customizations and enhancements.
+// VisionSpark design system barrel export.
+//
+// Re-exports the Aurora design tokens, components, responsive helpers,
+// accessibility utilities, and Flutter Material so consumers only need a
+// single import to get everything they need.
 
-// Export all design system components
-export 'design_tokens.dart';
-export 'vs_components.dart';
-export 'responsive_layout.dart';
-export 'accessibility.dart';
-
-// Re-export commonly used Flutter widgets for convenience
 export 'package:flutter/material.dart';
+
+export 'accessibility.dart';
+export 'design_tokens.dart';
+export 'responsive_layout.dart';
+export 'vs_components.dart';

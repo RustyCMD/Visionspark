@@ -9,6 +9,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  FLUTTER_VERSION: 3.32.0
+
 defaults:
   run:
     working-directory: visionspark
@@ -26,16 +29,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      # Direct download avoids the subosito/flutter-action git clone path
+      # which has been failing on hosted runners (exit 128).
+      - name: Cache Flutter SDK
+        id: flutter-cache
+        uses: actions/cache@v4
         with:
-          channel: stable
-          cache: true
+          path: ${{ runner.tool_cache }}/flutter
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}
+
+      - name: Download Flutter SDK
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.tool_cache }}
+        run: |
+          curl -fsSL -o flutter.tar.xz \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+          mkdir -p flutter
+          tar -xJf flutter.tar.xz --strip-components=1 -C flutter
+          rm flutter.tar.xz
+
+      - name: Add Flutter to PATH
+        run: |
+          echo "${{ runner.tool_cache }}/flutter/bin" >> "$GITHUB_PATH"
+          git config --global --add safe.directory "${{ runner.tool_cache }}/flutter"
 
       - name: Show Flutter version
         run: flutter --version
 
-      - name: Write placeholder .env
+      - name: Write .env
         run: |
           if [ -n "${{ secrets.SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
             printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\n" \
@@ -68,11 +89,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Cache Flutter SDK
+        id: flutter-cache
+        uses: actions/cache@v4
         with:
-          channel: stable
-          cache: true
+          path: ${{ runner.tool_cache }}/flutter
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}
+
+      - name: Download Flutter SDK
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.tool_cache }}
+        run: |
+          curl -fsSL -o flutter.tar.xz \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+          mkdir -p flutter
+          tar -xJf flutter.tar.xz --strip-components=1 -C flutter
+          rm flutter.tar.xz
+
+      - name: Add Flutter to PATH
+        run: |
+          echo "${{ runner.tool_cache }}/flutter/bin" >> "$GITHUB_PATH"
+          git config --global --add safe.directory "${{ runner.tool_cache }}/flutter"
 
       - name: Write .env
         run: |

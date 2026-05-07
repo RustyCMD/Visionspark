@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 import '../features/account/account_section.dart';
 import '../features/gallery/gallery_screen.dart';
@@ -15,13 +14,11 @@ class _Destination {
   final IconData icon;
   final IconData selectedIcon;
   final WidgetBuilder builder;
-  final bool danger;
   const _Destination({
     required this.title,
     required this.icon,
     required this.selectedIcon,
     required this.builder,
-    this.danger = false,
   });
 }
 
@@ -295,7 +292,7 @@ class _DrawerTile extends StatelessWidget {
 
 class _DrawerGroupDivider extends StatelessWidget {
   final String label;
-  const _DrawerGroupDivider({super.key, required this.label});
+  const _DrawerGroupDivider({required this.label});
 
   @override
   Widget build(BuildContext context) {

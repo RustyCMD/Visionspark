@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'design_system/design_system.dart';
 
 class OfflineScreen extends StatelessWidget {
