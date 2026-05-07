@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import '../shared/design_system/design_system.dart';
+import '../shared/utils/snackbar_utils.dart';
 import 'firebase_auth_service.dart';
 import 'form_validators.dart';
-import '../shared/utils/snackbar_utils.dart';
 
 class PasswordResetScreen extends StatefulWidget {
   const PasswordResetScreen({super.key});
@@ -11,333 +13,164 @@ class PasswordResetScreen extends StatefulWidget {
   State<PasswordResetScreen> createState() => _PasswordResetScreenState();
 }
 
-class _PasswordResetScreenState extends State<PasswordResetScreen>
-    with TickerProviderStateMixin {
+class _PasswordResetScreenState extends State<PasswordResetScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final FirebaseAuthService _authService = FirebaseAuthService();
+  final _email = TextEditingController();
+  final _auth = FirebaseAuthService();
 
-  bool _isLoading = false;
-  bool _emailSent = false;
-
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutCubic,
-    ));
-
-    _animationController.forward();
-  }
+  bool _busy = false;
+  bool _sent = false;
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _emailController.dispose();
+    _email.dispose();
     super.dispose();
   }
 
-  Future<void> _sendPasswordReset() async {
+  Future<void> _send() async {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
+    setState(() => _busy = true);
     try {
-      await _authService.sendPasswordResetEmail(_emailController.text.trim());
-      
-      if (mounted) {
-        setState(() {
-          _emailSent = true;
-          _isLoading = false;
-        });
-      }
+      await _auth.sendPasswordResetEmail(_email.text.trim());
+      if (mounted) setState(() => _sent = true);
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        showErrorSnackbar(context, FirebaseAuthService.getErrorMessage(e));
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        showErrorSnackbar(context, 'Failed to send password reset email. Please try again.');
-      }
+      if (mounted) showErrorSnackbar(context, FirebaseAuthService.getErrorMessage(e));
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not send reset email. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-  }
-
-  void _resendEmail() {
-    setState(() => _emailSent = false);
-    _sendPasswordReset();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-    final size = MediaQuery.of(context).size;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: size.width * 0.08,
-                    vertical: size.height * 0.04,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildHeader(textTheme, colorScheme),
-                      SizedBox(height: size.height * 0.06),
-                      if (_emailSent)
-                        _buildSuccessContent(colorScheme, textTheme, size)
-                      else
-                        _buildResetForm(colorScheme, textTheme, size),
-                    ],
-                  ),
-                ),
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
+      body: VSAuroraBackground(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: VSDesignTokens.space6,
+                vertical: VSDesignTokens.space5,
               ),
-            );
-          },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: _sent ? _success(cs, tt) : _form(cs, tt),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(TextTheme textTheme, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _emailSent ? 'Check Your Email' : 'Reset Password',
-          style: textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _emailSent
-              ? 'We\'ve sent a password reset link to your email address.'
-              : 'Enter your email address and we\'ll send you a link to reset your password.',
-          style: textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildResetForm(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+  Widget _form(ColorScheme cs, TextTheme tt) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Email Field
-          TextFormField(
-            controller: _emailController,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              hintText: 'Enter your email address',
-              prefixIcon: Icon(Icons.email_outlined, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+          Text(
+            'Reset your password',
+            style: tt.headlineMedium?.copyWith(
+              color: cs.onSurface,
+              fontWeight: VSTypography.weightBold,
             ),
-            validator: FormValidators.validateEmail,
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Text(
+            'Enter the email tied to your account and we\'ll send a reset link.',
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: VSDesignTokens.space6),
+          VSAccessibleTextField(
+            controller: _email,
+            labelText: 'Email',
+            hintText: 'you@example.com',
+            prefixIcon: const Icon(Icons.email_outlined),
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _sendPasswordReset(),
+            onSubmitted: (_) => _send(),
+            validator: FormValidators.validateEmail,
           ),
-          SizedBox(height: size.height * 0.04),
-
-          // Send Reset Email Button
-          FilledButton(
-            onPressed: _isLoading ? null : _sendPasswordReset,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: _isLoading
-                ? SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
-                    ),
-                  )
-                : Text(
-                    'Send Reset Email',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
+          const SizedBox(height: VSDesignTokens.space5),
+          VSButton(
+            text: 'Send reset link',
+            onPressed: _busy ? null : _send,
+            isLoading: _busy,
+            isFullWidth: true,
+            size: VSButtonSize.large,
           ),
-          SizedBox(height: size.height * 0.02),
-
-          // Back to Login Link
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Remember your password? ',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(
-                  'Sign In',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+          const SizedBox(height: VSDesignTokens.space3),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Back to sign in'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSuccessContent(ColorScheme colorScheme, TextTheme textTheme, Size size) {
+  Widget _success(ColorScheme cs, TextTheme tt) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Success Icon
         Container(
-          width: 80,
-          height: 80,
+          width: 88,
+          height: 88,
           decoration: BoxDecoration(
-            color: colorScheme.primaryContainer,
+            color: cs.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            Icons.mark_email_read_outlined,
-            size: 40,
-            color: colorScheme.primary,
+          child: Icon(Icons.mark_email_read_rounded, size: 40, color: cs.primary),
+        ),
+        const SizedBox(height: VSDesignTokens.space5),
+        Text(
+          'Check your inbox',
+          style: tt.headlineSmall?.copyWith(
+            color: cs.onSurface,
+            fontWeight: VSTypography.weightBold,
           ),
         ),
-        SizedBox(height: size.height * 0.04),
-
-        // Success Message
-        Card(
-          elevation: 0,
-          color: colorScheme.surfaceVariant.withOpacity(0.3),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Email Sent Successfully',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'We\'ve sent a password reset link to:',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _emailController.text.trim(),
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Please check your email and follow the instructions to reset your password. Don\'t forget to check your spam folder.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+        const SizedBox(height: VSDesignTokens.space2),
+        Text(
+          'We sent a reset link to',
+          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _email.text.trim(),
+          style: tt.titleMedium?.copyWith(
+            color: cs.primary,
+            fontWeight: VSTypography.weightSemiBold,
           ),
         ),
-        SizedBox(height: size.height * 0.04),
-
-        // Resend Email Button
-        OutlinedButton(
-          onPressed: _isLoading ? null : _resendEmail,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: Text(
-            'Resend Email',
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.primary,
-            ),
-          ),
+        const SizedBox(height: VSDesignTokens.space2),
+        Text(
+          'It might take a minute. Don\'t forget to check spam.',
+          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          textAlign: TextAlign.center,
         ),
-        SizedBox(height: size.height * 0.02),
-
-        // Back to Login Button
+        const SizedBox(height: VSDesignTokens.space6),
+        VSButton(
+          text: 'Resend email',
+          icon: const Icon(Icons.refresh_rounded),
+          variant: VSButtonVariant.outline,
+          isFullWidth: true,
+          onPressed: _busy
+              ? null
+              : () {
+                  setState(() => _sent = false);
+                  _send();
+                },
+        ),
+        const SizedBox(height: VSDesignTokens.space3),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Back to Sign In',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          child: const Text('Back to sign in'),
         ),
       ],
     );

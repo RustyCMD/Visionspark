@@ -1,26 +1,27 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:convert';
-import 'dart:isolate';
+
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image/image.dart' as img;
-import 'package:http/http.dart' as http;
-import '../../shared/utils/snackbar_utils.dart';
-import '../../shared/design_system/design_system.dart';
 import 'package:provider/provider.dart';
-import '../../shared/notifiers/subscription_status_notifier.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-const String _kCachedLimit = 'cached_enhancement_limit';
-const String _kCachedEnhancementsToday = 'cached_enhancements_today';
-const String _kCachedResetsAt = 'cached_enhancement_resets_at_utc_iso';
+import '../../shared/design_system/design_system.dart';
+import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/utils/snackbar_utils.dart';
+
+const _kCachedLimit = 'cached_enhancement_limit';
+const _kCachedUsed  = 'cached_enhancements_today';
+const _kCachedReset = 'cached_enhancement_resets_at_utc_iso';
 
 class ImageEnhancementScreen extends StatefulWidget {
   const ImageEnhancementScreen({super.key});
@@ -30,1137 +31,964 @@ class ImageEnhancementScreen extends StatefulWidget {
 }
 
 class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
-  // Feature toggle - manually change this to enable/disable image enhancement
-  static const bool _isImageEnhancementEnabled = false;
-  static const String _disabledMessage = "Image enhancement is currently disabled for maintenance. Please check back later.";
+  // Feature flag — left in place from the original codebase.
+  static const bool _enabled = false;
+  static const String _disabledMsg =
+      'Enhancement is paused for maintenance — check back soon.';
 
-  final _promptController = TextEditingController();
+  static const _channel = MethodChannel('com.visionspark.app/media');
   final _picker = ImagePicker();
-  
-  File? _selectedImage;
-  String? _enhancedImageUrl;
+  final _prompt = TextEditingController();
+
+  File? _file;
+  String? _enhancedUrl;
   bool _isLoading = false;
   bool _isImproving = false;
-  bool _isUploadingImage = false;
-  int _enhancementLimit = 4;
-  int _enhancementsToday = 0;
-  String? _resetsAtUtcIso;
-  String _timeUntilReset = "Calculating...";
-  bool _isLoadingStatus = true;
-  String? _statusErrorMessage;
+  bool _isFetchingRandom = false;
+  bool _isSaving = false;
+  bool _isSharing = false;
+  bool _isShared = false;
+
+  int _limit = 4;
+  int _used = 0;
+  String? _resetIso;
+  String _resetText = 'Calculating...';
+  bool _statusLoading = true;
+  String? _statusError;
   Timer? _resetTimer;
-  bool _isSavingImage = false;
-  bool _isSharingToGallery = false;
-  bool _isFetchingRandomPrompt = false;
-  bool _isSharedToGallery = false; // Track if current image has been shared to gallery
-  bool _autoUploadToGallery = false; // Track auto-upload setting
-  SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
-  String _lastSuccessfulPrompt = "";
 
-  // For enhancement strength
-  double _enhancementStrength = 0.7;
-  final List<String> _enhancementModes = ["enhance", "edit", "variation"];
-  String _selectedMode = "enhance";
+  String _lastPrompt = '';
+  bool _autoUpload = false;
+  String _mode = 'enhance';
+  double _strength = 0.7;
 
-  static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
+  SubscriptionStatusNotifier? _subNotifier;
 
   @override
   void initState() {
     super.initState();
-    _loadCachedGenerationStatus();
-    _fetchGenerationStatus();
-    _loadAutoUploadSetting();
-    _resetTimer = Timer.periodic(const Duration(seconds: 30), (_) => _updateResetsAtDisplay());
+    _loadCached();
+    _fetchStatus();
+    _loadAutoUpload();
+    _resetTimer = Timer.periodic(const Duration(seconds: 30), (_) => _tickReset());
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
-    if (_subscriptionStatusNotifierInstance != notifier) {
-      _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
-      _subscriptionStatusNotifierInstance = notifier;
-      _subscriptionStatusNotifierInstance?.addListener(_fetchGenerationStatus);
+    final n = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subNotifier != n) {
+      _subNotifier?.removeListener(_fetchStatus);
+      _subNotifier = n;
+      _subNotifier?.addListener(_fetchStatus);
     }
-    // Refresh auto-upload setting when dependencies change (e.g., returning from settings)
-    _loadAutoUploadSetting();
+    _loadAutoUpload();
   }
-  
+
   @override
   void dispose() {
-    _promptController.dispose();
+    _prompt.dispose();
     _resetTimer?.cancel();
-    _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
+    _subNotifier?.removeListener(_fetchStatus);
     super.dispose();
   }
 
-  Future<void> _loadCachedGenerationStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _enhancementLimit = prefs.getInt(_kCachedLimit) ?? 4;
-        _enhancementsToday = prefs.getInt(_kCachedEnhancementsToday) ?? 0;
-        _resetsAtUtcIso = prefs.getString(_kCachedResetsAt);
-        if (_resetsAtUtcIso != null) _updateResetsAtDisplay();
-      });
-    }
+  // ── Status ──────────────────────────────────────────────────────────────
+
+  Future<void> _loadCached() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _limit = p.getInt(_kCachedLimit) ?? 4;
+      _used = p.getInt(_kCachedUsed) ?? 0;
+      _resetIso = p.getString(_kCachedReset);
+      if (_resetIso != null) _tickReset();
+    });
   }
 
-  Future<void> _fetchGenerationStatus() async {
-    if (!mounted) return;
-    setState(() => _isLoadingStatus = true);
-    try {
-      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
-      if (!mounted) return;
+  Future<void> _saveCached() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_kCachedLimit, _limit);
+    await p.setInt(_kCachedUsed, _used);
+    if (_resetIso != null) await p.setString(_kCachedReset, _resetIso!);
+  }
 
-      final data = response.data;
+  Future<void> _loadAutoUpload() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _autoUpload = p.getBool('auto_upload_to_gallery') ?? false);
+  }
+
+  Future<void> _fetchStatus() async {
+    if (!mounted) return;
+    setState(() => _statusLoading = true);
+    try {
+      final resp = await Supabase.instance.client.functions
+          .invoke('get-generation-status');
+      if (!mounted) return;
+      final data = resp.data;
       if (data['error'] != null) {
-        setState(() => _statusErrorMessage = data['error'].toString());
+        setState(() => _statusError = data['error'].toString());
       } else {
         setState(() {
-          // Use new enhancement fields if available, fall back to generation fields for backward compatibility
-          _enhancementLimit = data['enhancement_limit'] ?? data['limit'] ?? 4;
-          _enhancementsToday = data['enhancements_today'] ?? data['generations_today'] ?? 0;
-          _resetsAtUtcIso = data['resets_at_utc_iso'];
-          _statusErrorMessage = null;
-          _updateResetsAtDisplay();
-          _saveGenerationStatusToCache();
+          _limit = (data['enhancement_limit'] ?? data['limit'] ?? 4) as int;
+          _used = (data['enhancements_today'] ?? data['generations_today'] ?? 0) as int;
+          _resetIso = data['resets_at_utc_iso'] as String?;
+          _statusError = null;
+          _tickReset();
+          _saveCached();
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _statusErrorMessage = 'Error: ${e.toString()}');
-    }
-    if (mounted) setState(() => _isLoadingStatus = false);
-  }
-
-  Future<void> _saveGenerationStatusToCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_kCachedLimit, _enhancementLimit);
-    await prefs.setInt(_kCachedEnhancementsToday, _enhancementsToday);
-    if (_resetsAtUtcIso != null) {
-      await prefs.setString(_kCachedResetsAt, _resetsAtUtcIso!);
+      if (mounted) setState(() => _statusError = e.toString());
+    } finally {
+      if (mounted) setState(() => _statusLoading = false);
     }
   }
 
-  void _updateResetsAtDisplay() {
-    if (_resetsAtUtcIso == null) return;
-    final resetTime = DateTime.tryParse(_resetsAtUtcIso!)?.toLocal();
-    if (resetTime == null) {
-      final newTimeString = "Invalid reset time";
-      if (_timeUntilReset != newTimeString) {
-        _timeUntilReset = newTimeString;
-        if (mounted) setState(() {});
-      }
-      return;
-    }
-
-    final difference = resetTime.difference(DateTime.now());
-    final String newTimeString;
-    if (difference.isNegative) {
-      newTimeString = "Limit reset!";
-    } else {
-      final h = difference.inHours;
-      final m = difference.inMinutes.remainder(60);
-      final s = difference.inSeconds.remainder(60);
-      newTimeString = "Resets in ${h}h ${m}m ${s}s";
-    }
-
-    // Only update state if the display string has changed
-    if (_timeUntilReset != newTimeString) {
-      _timeUntilReset = newTimeString;
-      if (mounted) setState(() {});
+  void _tickReset() {
+    if (_resetIso == null) return;
+    final reset = DateTime.tryParse(_resetIso!)?.toLocal();
+    if (reset == null) return;
+    final diff = reset.difference(DateTime.now());
+    final next = diff.isNegative
+        ? 'Limit reset!'
+        : 'Resets in ${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+    if (next != _resetText && mounted) {
+      setState(() => _resetText = next);
     }
   }
 
-  Future<void> _pickImageFromGallery() async {
+  // ── Picker / actions ───────────────────────────────────────────────────
+
+  Future<void> _pickFromGallery() async {
     try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-      );
-      if (pickedFile != null) {
-        setState(() {
-          _selectedImage = File(pickedFile.path);
-          _enhancedImageUrl = null;
-        });
-      }
+      final f = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (f != null && mounted) setState(() {
+        _file = File(f.path);
+        _enhancedUrl = null;
+      });
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Failed to pick image from gallery: $e');
+      if (mounted) showErrorSnackbar(context, 'Could not pick image: $e');
     }
   }
 
   Future<void> _takePhoto() async {
     try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
-      );
-      if (pickedFile != null) {
-        setState(() {
-          _selectedImage = File(pickedFile.path);
-          _enhancedImageUrl = null;
-        });
-      }
+      final f = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      if (f != null && mounted) setState(() {
+        _file = File(f.path);
+        _enhancedUrl = null;
+      });
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'Failed to take photo: $e');
+      if (mounted) showErrorSnackbar(context, 'Could not take photo: $e');
     }
   }
 
   Future<void> _improvePrompt() async {
-    final prompt = _promptController.text.trim();
-    if (prompt.isEmpty || _isLoading || _isImproving) return;
+    final text = _prompt.text.trim();
+    if (text.isEmpty || _isLoading || _isImproving) return;
     FocusScope.of(context).unfocus();
     setState(() => _isImproving = true);
-
     try {
-      final response = await Supabase.instance.client.functions.invoke(
-        'improve-prompt-proxy', body: {'prompt': prompt},
-      );
-      if (mounted) {
-        if (response.data['error'] != null) {
-          showErrorSnackbar(context, response.data['error'].toString());
-        } else if (response.data['improved_prompt'] != null) {
-          _promptController.text = response.data['improved_prompt'].trim();
-          showSuccessSnackbar(context, 'Prompt improved!');
-        }
+      final resp = await Supabase.instance.client.functions
+          .invoke('improve-prompt-proxy', body: {'prompt': text});
+      if (!mounted) return;
+      if (resp.data['error'] != null) {
+        showErrorSnackbar(context, resp.data['error'].toString());
+      } else if (resp.data['improved_prompt'] != null) {
+        _prompt.text = resp.data['improved_prompt'].toString().trim();
+        showSuccessSnackbar(context, 'Prompt improved.');
       }
-    } catch (e) {
-      debugPrint('Error improving prompt: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while improving the prompt. Please try again.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not improve prompt.');
+    } finally {
+      if (mounted) setState(() => _isImproving = false);
     }
-    if (mounted) setState(() => _isImproving = false);
   }
 
-  Future<void> _fetchRandomPrompt() async {
-    if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
+  Future<void> _fetchRandom() async {
+    if (_isLoading || _isImproving || _isFetchingRandom) return;
     FocusScope.of(context).unfocus();
-    setState(() => _isFetchingRandomPrompt = true);
-
+    setState(() => _isFetchingRandom = true);
     try {
-      final response = await Supabase.instance.client.functions.invoke('get-random-prompt');
-      if (mounted) {
-        if (response.data != null && response.data['prompt'] != null) {
-          _promptController.text = response.data['prompt'];
-          showSuccessSnackbar(context, 'New prompt loaded!');
-        } else if (response.data['error'] != null) {
-          showErrorSnackbar(context, response.data['error'].toString());
-        } else {
-          showErrorSnackbar(context, 'Failed to get a random prompt. No data.');
-        }
+      final resp = await Supabase.instance.client.functions.invoke('get-random-prompt');
+      if (!mounted) return;
+      if (resp.data?['prompt'] != null) {
+        _prompt.text = resp.data['prompt'] as String;
+        showSuccessSnackbar(context, 'New prompt loaded.');
+      } else if (resp.data?['error'] != null) {
+        showErrorSnackbar(context, resp.data['error'].toString());
+      } else {
+        showErrorSnackbar(context, 'Could not fetch a prompt.');
       }
-    } catch (e) {
-      debugPrint('Error fetching random prompt: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while fetching a new prompt.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not fetch a prompt.');
+    } finally {
+      if (mounted) setState(() => _isFetchingRandom = false);
     }
-    if (mounted) setState(() => _isFetchingRandomPrompt = false);
   }
 
-  Future<void> _enhanceImage() async {
-    if (_selectedImage == null || _promptController.text.isEmpty || _isLoading) return;
+  Future<void> _enhance() async {
+    if (_file == null || _prompt.text.trim().isEmpty || _isLoading) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _isLoading = true;
-      _enhancedImageUrl = null;
-      _isSharedToGallery = false; // Reset share state for new image
+      _enhancedUrl = null;
+      _isShared = false;
     });
-
     try {
-      // Read and validate image size
-      final imageBytes = await _selectedImage!.readAsBytes();
-
-      // Validate image size before processing
-      if (!_validateImageSize(imageBytes)) {
-        if (mounted) showErrorSnackbar(context, 'Image too large. Please select an image smaller than 10MB.');
+      final bytes = await _file!.readAsBytes();
+      if (bytes.length > 10 * 1024 * 1024) {
+        if (mounted) showErrorSnackbar(context, 'Image must be under 10MB.');
         return;
       }
-
-      // Convert image to PNG format and then to base64 using isolate to prevent blocking UI
-      final base64Image = await compute(_convertToPngAndEncode, imageBytes);
-
-      final Map<String, dynamic> requestBody = {
-        'image': base64Image,
-        'prompt': _promptController.text.trim(),
-        'mode': _selectedMode,
-        'strength': _enhancementStrength,
-      };
-
-      final response = await Supabase.instance.client.functions.invoke(
+      final base64 = await compute(_pngBase64, bytes);
+      final resp = await Supabase.instance.client.functions.invoke(
         'enhance-image-proxy',
-        body: requestBody,
+        body: {
+          'image': base64,
+          'prompt': _prompt.text.trim(),
+          'mode': _mode,
+          'strength': _strength,
+        },
       );
-
-      if (mounted) {
-        final data = response.data;
-        if (data['error'] != null) {
-          final errorMessage = _getApiErrorMessage(data);
-          showErrorSnackbar(context, errorMessage);
-        } else if (data['data'] != null && data['data'][0]['url'] != null) {
-          setState(() {
-            _enhancedImageUrl = data['data'][0]['url'];
-            _lastSuccessfulPrompt = _promptController.text;
-          });
-          await _fetchGenerationStatus();
-
-          // Auto-upload to gallery if enabled
-          if (_autoUploadToGallery) {
-            await _shareToGallery();
-            // Set share state to true after successful auto-share
-            if (mounted) {
-              setState(() {
-                _isSharedToGallery = true;
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Image enhancement error: $e');
-      if (mounted) {
-        final errorMessage = _getImageEnhancementErrorMessage(e);
-        showErrorSnackbar(context, errorMessage);
-      }
-    }
-    if (mounted) setState(() => _isLoading = false);
-  }
-
-  /// Extracts user-friendly error messages from API response data
-  String _getApiErrorMessage(Map<String, dynamic> data) {
-    final error = data['error'];
-    if (error == null) return 'An unexpected error occurred during image enhancement. Please try again.';
-
-    final errorString = error.toString();
-
-    // Check for content policy violations in the error message
-    if (errorString.toLowerCase().contains('safety system') ||
-        errorString.toLowerCase().contains('content policy')) {
-      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-    }
-
-    // Check for details object with more specific error information
-    final details = data['details'];
-    if (details != null && details is Map<String, dynamic>) {
-      final errorType = details['type'];
-      final errorCode = details['code'];
-
-      if (errorType == 'image_generation_user_error' &&
-          errorCode == 'content_policy_violation') {
-        return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
-      }
-    }
-
-    // Return the original error message if it's user-friendly
-    if (errorString.isNotEmpty && !errorString.toLowerCase().contains('unexpected')) {
-      return errorString;
-    }
-
-    return 'An unexpected error occurred during image enhancement. Please try again.';
-  }
-
-  /// Extracts user-friendly error messages from image enhancement exceptions
-  String _getImageEnhancementErrorMessage(dynamic error) {
-    // Handle FunctionException from Supabase
-    if (error is FunctionException) {
-      final details = error.details;
-
-      // Check if it's a content policy violation
-      if (details != null && details is Map<String, dynamic>) {
-        final errorDetails = details['error'];
-        if (errorDetails != null && errorDetails is Map<String, dynamic>) {
-          final errorType = errorDetails['type'];
-          final errorCode = errorDetails['code'];
-          final errorMessage = errorDetails['message'] ?? '';
-
-          // Check for content policy violations
-          if (errorType == 'image_generation_user_error' &&
-              errorCode == 'content_policy_violation') {
-            return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
-          }
-
-          // Check for safety system rejection in message
-          if (errorMessage.toLowerCase().contains('safety system') ||
-              errorMessage.toLowerCase().contains('content policy')) {
-            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-          }
-        }
-
-        // Check for error message directly in details
-        final directError = details['error'];
-        if (directError is String) {
-          if (directError.toLowerCase().contains('safety system') ||
-              directError.toLowerCase().contains('content policy')) {
-            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-          }
-          // Return the direct error message if it's user-friendly
-          if (directError.isNotEmpty && !directError.toLowerCase().contains('unexpected')) {
-            return directError;
-          }
-        }
-      }
-
-      // Handle other FunctionException cases
-      if (error.reasonPhrase != null && error.reasonPhrase!.isNotEmpty) {
-        return 'Enhancement failed: ${error.reasonPhrase}';
-      }
-    }
-
-    // Handle other exception types
-    final errorString = error.toString();
-    if (errorString.toLowerCase().contains('safety system') ||
-        errorString.toLowerCase().contains('content policy')) {
-      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-    }
-
-    // Default fallback message
-    return 'An unexpected error occurred during image enhancement. Please try again.';
-  }
-
-  Future<void> _saveImage() async {
-    if (_enhancedImageUrl == null || _isSavingImage) return;
-    setState(() => _isSavingImage = true);
-
-    try {
-      final photosPermission = Platform.isAndroid
-          ? (await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33 ? Permission.photos : Permission.storage
-          : Permission.photos;
-
-      PermissionStatus status = await photosPermission.request();
-      if (status.isGranted) {
-        // Use proper HTTP client to download the image
-        final response = await http.get(Uri.parse(_enhancedImageUrl!));
-        if (response.statusCode != 200) {
-          throw Exception('Failed to download image from server');
-        }
-
-        final filename = 'Visionspark_Enhanced_${DateTime.now().millisecondsSinceEpoch}.png';
-        final result = await _channel.invokeMethod('saveImageToGallery', {
-          'imageBytes': response.bodyBytes,
-          'filename': filename,
-          'albumName': 'Visionspark'
+      if (!mounted) return;
+      final data = resp.data;
+      if (data['error'] != null) {
+        showErrorSnackbar(context, _readableError(data['error'].toString()));
+      } else if (data['data']?[0]?['url'] != null) {
+        setState(() {
+          _enhancedUrl = data['data'][0]['url'] as String;
+          _lastPrompt = _prompt.text;
         });
-
-        if (result == true) {
-          if (mounted) showSuccessSnackbar(context, 'Enhanced image saved to Gallery!');
-        } else {
-          throw Exception('Failed to save image to gallery');
+        await _fetchStatus();
+        if (_autoUpload) {
+          await _share();
+          if (mounted) setState(() => _isShared = true);
         }
-      } else {
-        if (mounted) showErrorSnackbar(context, 'Storage permission is required to save images.');
       }
     } catch (e) {
-      debugPrint('Error saving image: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while saving the image. Please try again.');
+      if (mounted) showErrorSnackbar(context, _readableError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    if (mounted) setState(() => _isSavingImage = false);
   }
 
-  Future<void> _shareToGallery() async {
-    if (_enhancedImageUrl == null || _isSharingToGallery) return;
-    setState(() => _isSharingToGallery = true);
+  String _readableError(String s) {
+    final l = s.toLowerCase();
+    if (l.contains('safety system') || l.contains('content policy')) {
+      return 'Content policy: please rephrase your prompt.';
+    }
+    return s;
+  }
 
+  Future<void> _save() async {
+    if (_enhancedUrl == null || _isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final perm = Platform.isAndroid
+          ? ((await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33
+              ? Permission.photos
+              : Permission.storage)
+          : Permission.photos;
+      if (!(await perm.request()).isGranted) {
+        if (mounted) showErrorSnackbar(context, 'Storage permission required.');
+        return;
+      }
+      final res = await http.get(Uri.parse(_enhancedUrl!));
+      if (res.statusCode != 200) throw Exception('Download failed');
+      await _channel.invokeMethod('saveImageToGallery', {
+        'imageBytes': res.bodyBytes,
+        'filename': 'Visionspark_Enhanced_${DateTime.now().millisecondsSinceEpoch}.png',
+        'albumName': 'Visionspark',
+      });
+      if (mounted) showSuccessSnackbar(context, 'Image saved.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not save image.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _share() async {
+    if (_enhancedUrl == null || _isSharing) return;
+    setState(() => _isSharing = true);
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('You must be logged in to share.');
-
-      // Use proper HTTP client to download the image
-      final response = await http.get(Uri.parse(_enhancedImageUrl!));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download image from server');
-      }
-
-      final imageBytes = response.bodyBytes;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final mainPath = 'public/${user.id}_enhanced_$timestamp.png';
-
-      await Supabase.instance.client.storage.from('imagestorage').uploadBinary(mainPath, imageBytes);
-
+      if (user == null) throw Exception('Not signed in');
+      final res = await http.get(Uri.parse(_enhancedUrl!));
+      if (res.statusCode != 200) throw Exception('Download failed');
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final mainPath = 'public/${user.id}_enhanced_$ts.png';
+      await Supabase.instance.client.storage
+          .from('imagestorage')
+          .uploadBinary(mainPath, res.bodyBytes);
       String? thumbPath;
       try {
-        final thumbBytes = await _createThumbnail(imageBytes);
-        thumbPath = 'public/${user.id}_enhanced_${timestamp}_thumb.png';
-        await Supabase.instance.client.storage.from('imagestorage').uploadBinary(thumbPath, thumbBytes);
-      } catch (e) {
-        debugPrint('Thumbnail generation failed: $e');
-      }
-
+        final thumb = await compute(_thumb, res.bodyBytes);
+        thumbPath = 'public/${user.id}_enhanced_${ts}_thumb.png';
+        await Supabase.instance.client.storage
+            .from('imagestorage')
+            .uploadBinary(thumbPath, thumb);
+      } catch (_) {/* non-fatal */}
       await Supabase.instance.client.from('gallery_images').insert({
-        'user_id': user.id, 'image_path': mainPath,
-        'prompt': _promptController.text, 'thumbnail_url': thumbPath,
+        'user_id': user.id,
+        'image_path': mainPath,
+        'prompt': _prompt.text,
+        'thumbnail_url': thumbPath,
       });
-
       if (mounted) {
-        setState(() {
-          _isSharedToGallery = true; // Mark image as shared
-        });
-        showSuccessSnackbar(context, 'Enhanced image shared to gallery!');
+        setState(() => _isShared = true);
+        showSuccessSnackbar(context, 'Shared to gallery.');
       }
-    } catch (e) {
-      debugPrint('Failed to share to gallery: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while sharing the image. Please try again.');
-    }
-    if (mounted) setState(() => _isSharingToGallery = false);
-  }
-
-  Future<Uint8List> _createThumbnail(Uint8List imageBytes) async {
-    return await compute(_createThumbnailInIsolate, imageBytes);
-  }
-
-  Future<void> _loadAutoUploadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _autoUploadToGallery = prefs.getBool('auto_upload_to_gallery') ?? false;
-      });
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not share.');
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
     }
   }
 
-  // Static methods for isolate processing
-  static String _convertToPngAndEncode(Uint8List imageBytes) {
-    // Decode the image from any format
-    final originalImage = img.decodeImage(imageBytes);
-    if (originalImage == null) {
-      throw Exception('Failed to decode image. Please ensure the image is in a supported format.');
-    }
-
-    // Encode as PNG to ensure compatibility with OpenAI API
-    final pngBytes = img.encodePng(originalImage);
-
-    // Convert to base64
-    return base64Encode(pngBytes);
+  static String _pngBase64(Uint8List bytes) {
+    final dec = img.decodeImage(bytes);
+    if (dec == null) throw Exception('Decode failed');
+    return base64Encode(img.encodePng(dec));
   }
 
-  static Uint8List _createThumbnailInIsolate(Uint8List imageBytes) {
-    final originalImage = img.decodeImage(imageBytes);
-    if (originalImage == null) throw Exception('Failed to decode image.');
-    final thumbnail = img.copyResize(originalImage, width: 200);
-    return Uint8List.fromList(img.encodePng(thumbnail));
+  static Uint8List _thumb(Uint8List bytes) {
+    final dec = img.decodeImage(bytes);
+    if (dec == null) throw Exception('Decode failed');
+    return Uint8List.fromList(img.encodePng(img.copyResize(dec, width: 200)));
   }
 
-  // Helper method to validate image size
-  bool _validateImageSize(Uint8List imageBytes) {
-    const int maxSizeBytes = 10 * 1024 * 1024; // 10MB limit
-    return imageBytes.length <= maxSizeBytes;
-  }
-
-  // Computed getter for enhance button state
-  bool get _canEnhanceImage {
-    if (_selectedImage == null || _promptController.text.isEmpty) return false;
-    final remaining = _enhancementLimit == -1 ? 999 : _enhancementLimit - _enhancementsToday;
-    if (_enhancementLimit != -1 && remaining <= 0) return false;
-    if (_isLoading || _isFetchingRandomPrompt || _isImproving) return false;
-    return true;
-  }
+  // ── UI ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    // Check if feature is disabled
-    if (!_isImageEnhancementEnabled) {
-      return Scaffold(
-        body: VSResponsiveLayout(
-          child: SafeArea(
-            child: Padding(
-              padding: VSResponsive.getResponsivePadding(context),
-              child: Center(
-                child: VSCard(
-                  padding: const EdgeInsets.all(VSDesignTokens.space6),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.construction,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(height: VSDesignTokens.space4),
-                      Text(
-                        'Feature Temporarily Disabled',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: VSTypography.weightBold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: VSDesignTokens.space3),
-                      Text(
-                        _disabledMessage,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    if (!_enabled) return _DisabledView(message: _disabledMsg);
 
-    int remaining = _enhancementLimit == -1 ? 999 : _enhancementLimit - _enhancementsToday;
+    final remaining = _limit == -1 ? 999 : _limit - _used;
+    final canEnhance = _file != null &&
+        _prompt.text.trim().isNotEmpty &&
+        !_isLoading &&
+        !_isImproving &&
+        !_isFetchingRandom &&
+        (_limit == -1 || remaining > 0);
 
     return Scaffold(
       body: VSResponsiveLayout(
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: ListView(
             padding: VSResponsive.getResponsivePadding(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildEnhancementStatus(context, remaining, _enhancementLimit),
-                const VSResponsiveSpacing(),
-                _buildImageUploadSection(context),
-                const VSResponsiveSpacing(),
-                _buildPromptInput(context),
-                const VSResponsiveSpacing(mobile: VSDesignTokens.space4),
-                _buildEnhancementSettings(context),
-                const VSResponsiveSpacing(),
-                _buildResultSection(context),
-                const VSResponsiveSpacing(),
-                _buildLastPromptDisplay(context),
-                const VSResponsiveSpacing(),
-                VSButton(
-                  text: 'Enhance Image',
-                  onPressed: _canEnhanceImage ? _enhanceImage : null,
-                  isLoading: _isLoading,
-                  isFullWidth: true,
-                  size: VSButtonSize.large,
-                  variant: VSButtonVariant.primary,
-                ),
-                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
+            children: [
+              _StatusCard(
+                limit: _limit,
+                remaining: remaining,
+                isLoading: _statusLoading,
+                error: _statusError,
+                resetText: _resetText,
+              ),
+              const SizedBox(height: VSDesignTokens.space5),
+              _imagePicker(),
+              const SizedBox(height: VSDesignTokens.space5),
+              _promptCard(),
+              const SizedBox(height: VSDesignTokens.space5),
+              _settingsCard(),
+              const SizedBox(height: VSDesignTokens.space5),
+              _resultCard(),
+              if (_lastPrompt.isNotEmpty) ...[
+                const SizedBox(height: VSDesignTokens.space4),
+                _lastPromptCard(),
               ],
-            ),
+              const SizedBox(height: VSDesignTokens.space6),
+              VSButton(
+                text: _isLoading ? 'Enhancing…' : 'Enhance image',
+                icon: _isLoading ? null : const Icon(Icons.auto_fix_high),
+                onPressed: canEnhance ? _enhance : null,
+                isLoading: _isLoading,
+                isFullWidth: true,
+                size: VSButtonSize.large,
+              ),
+              const SizedBox(height: VSDesignTokens.space12),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildEnhancementStatus(BuildContext context, int remaining, int limit) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _imagePicker() {
+    final cs = Theme.of(context).colorScheme;
+    return VSCard(
+      padding: EdgeInsets.zero,
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: SizedBox(
+        height: 220,
+        child: _file == null
+            ? VSEmptyState(
+                icon: Icons.add_photo_alternate_outlined,
+                title: 'Choose an image to enhance',
+                subtitle: 'Pick from gallery or capture a new photo.',
+                action: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    VSButton(
+                      text: 'Gallery',
+                      icon: const Icon(Icons.photo_library_outlined),
+                      onPressed: _pickFromGallery,
+                      variant: VSButtonVariant.outline,
+                    ),
+                    const SizedBox(width: VSDesignTokens.space3),
+                    VSButton(
+                      text: 'Camera',
+                      icon: const Icon(Icons.camera_alt_outlined),
+                      onPressed: _takePhoto,
+                      variant: VSButtonVariant.outline,
+                    ),
+                  ],
+                ),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+                    child: Image.file(_file!, fit: BoxFit.cover),
+                  ),
+                  Positioned(
+                    top: VSDesignTokens.space2,
+                    right: VSDesignTokens.space2,
+                    child: _circleAction(
+                      icon: Icons.close_rounded,
+                      tooltip: 'Remove',
+                      onTap: () => setState(() {
+                        _file = null;
+                        _enhancedUrl = null;
+                      }),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: VSDesignTokens.space2,
+                    right: VSDesignTokens.space2,
+                    child: Row(
+                      children: [
+                        _circleAction(
+                          icon: Icons.photo_library_outlined,
+                          tooltip: 'Pick another',
+                          onTap: _pickFromGallery,
+                        ),
+                        const SizedBox(width: VSDesignTokens.space2),
+                        _circleAction(
+                          icon: Icons.camera_alt_outlined,
+                          tooltip: 'Retake',
+                          onTap: _takePhoto,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
 
-    if (_isLoadingStatus) {
-      return Center(
-        child: VSLoadingIndicator(
-          message: 'Loading status...',
-          size: VSDesignTokens.iconL,
-        ),
-      );
-    }
+  Widget _circleAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surface.withValues(alpha: 0.9),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, color: cs.primary),
+        onPressed: onTap,
+      ),
+    );
+  }
 
-    if (_statusErrorMessage != null) {
-      return Center(
-        child: VSCard(
-          padding: const EdgeInsets.all(VSDesignTokens.space4),
-          color: colorScheme.errorContainer.withValues(alpha: 0.1),
-          child: Text(
-            _statusErrorMessage!,
-            style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
-            textAlign: TextAlign.center,
+  Widget _promptCard() {
+    final cs = Theme.of(context).colorScheme;
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const VSSectionHeader(
+            icon: Icons.edit_note_rounded,
+            title: 'Enhancement prompt',
+            subtitle: 'Describe what to add, change, or stylize.',
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+          VSAccessibleTextField(
+            controller: _prompt,
+            labelText: 'Prompt',
+            hintText: 'Make it cinematic, golden hour…',
+            maxLines: 5,
+            textAlignVertical: TextAlignVertical.top,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: VSDesignTokens.space3),
+          Row(
+            children: [
+              Expanded(
+                child: VSButton(
+                  text: _isImproving ? 'Improving…' : 'Improve',
+                  icon: _isImproving ? null : const Icon(Icons.auto_fix_high_outlined),
+                  onPressed:
+                      _isFetchingRandom || _isImproving ? null : _improvePrompt,
+                  isLoading: _isImproving,
+                  variant: VSButtonVariant.outline,
+                ),
+              ),
+              const SizedBox(width: VSDesignTokens.space3),
+              Expanded(
+                child: VSButton(
+                  text: _isFetchingRandom ? 'Loading…' : 'Surprise me',
+                  icon: _isFetchingRandom ? null : const Icon(Icons.casino_outlined),
+                  onPressed:
+                      _isImproving || _isFetchingRandom ? null : _fetchRandom,
+                  isLoading: _isFetchingRandom,
+                  variant: VSButtonVariant.outline,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsCard() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const VSSectionHeader(
+            icon: Icons.tune_rounded,
+            title: 'Settings',
+            subtitle: 'Choose mode and intensity.',
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+          Wrap(
+            spacing: VSDesignTokens.space2,
+            runSpacing: VSDesignTokens.space2,
+            children: [
+              for (final m in const ['enhance', 'edit', 'variation'])
+                _ModeChip(
+                  label: m[0].toUpperCase() + m.substring(1),
+                  selected: _mode == m,
+                  onTap: () => setState(() => _mode = m),
+                ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Strength',
+                style: tt.titleSmall?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: VSTypography.weightSemiBold,
+                ),
+              ),
+              Text(
+                '${(_strength * 100).round()}%',
+                style: tt.titleSmall?.copyWith(
+                  color: cs.primary,
+                  fontWeight: VSTypography.weightBold,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _strength,
+            min: 0.1,
+            max: 1.0,
+            divisions: 9,
+            onChanged: (v) => setState(() => _strength = v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultCard() {
+    final cs = Theme.of(context).colorScheme;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainer,
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_enhancedUrl == null && !_isLoading)
+                const VSEmptyState(
+                  icon: Icons.auto_fix_high_outlined,
+                  title: 'Your enhanced image will appear here',
+                  subtitle: 'Pick an image and add a prompt to get started.',
+                ),
+              if (_enhancedUrl != null)
+                Image.network(
+                  _enhancedUrl!,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, p) => p == null
+                      ? child
+                      : Center(
+                          child: VSLoadingIndicator(
+                            message: 'Loading enhanced image…',
+                            color: cs.primary,
+                          ),
+                        ),
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: VSEmptyState(
+                      icon: Icons.broken_image_outlined,
+                      title: 'Failed to load',
+                    ),
+                  ),
+                ),
+              if (_isLoading)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  child: Center(
+                    child: VSLoadingIndicator(
+                      message: 'Enhancing your image…',
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              if (_enhancedUrl != null && !_isLoading)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(VSDesignTokens.space3),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.65),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _MiniAction(
+                          icon: Icons.download_rounded,
+                          label: 'Save',
+                          loading: _isSaving,
+                          onTap: _save,
+                        ),
+                        if (!_autoUpload && !_isShared)
+                          _MiniAction(
+                            icon: Icons.share_rounded,
+                            label: 'Share',
+                            loading: _isSharing,
+                            onTap: _share,
+                          ),
+                        if (!_autoUpload && _isShared)
+                          _MiniAction(
+                            icon: Icons.check_circle_rounded,
+                            label: 'Shared',
+                            loading: false,
+                            onTap: null,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    double progress = limit < 0 ? 1.0 : limit == 0 ? 0.0 : (remaining / limit).clamp(0.0, 1.0);
-
+  Widget _lastPromptCard() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return VSCard(
       padding: const EdgeInsets.all(VSDesignTokens.space4),
-      color: colorScheme.surfaceContainerLow,
       borderRadius: VSDesignTokens.radiusL,
+      color: cs.surfaceContainerLow,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Last enhancement prompt',
+            style: tt.labelMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: VSTypography.weightSemiBold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            _lastPrompt,
+            style: tt.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.9),
+              fontStyle: FontStyle.italic,
+            ),
+            maxLines: 3,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  final int limit;
+  final int remaining;
+  final bool isLoading;
+  final String? error;
+  final String resetText;
+  const _StatusCard({
+    required this.limit,
+    required this.remaining,
+    required this.isLoading,
+    required this.error,
+    required this.resetText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    if (isLoading) {
+      return VSCard(
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        borderRadius: VSDesignTokens.radiusL,
+        color: cs.surfaceContainer,
+        child: Center(child: VSLoadingIndicator(message: 'Loading status…')),
+      );
+    }
+    if (error != null) {
+      return VSCard(
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        borderRadius: VSDesignTokens.radiusL,
+        color: cs.errorContainer,
+        child: Text(
+          error!,
+          style: tt.bodyMedium?.copyWith(color: cs.onErrorContainer),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    final progress = limit < 0 ? 1.0 : limit == 0 ? 0.0 : (remaining / limit).clamp(0.0, 1.0);
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space4),
+      borderRadius: VSDesignTokens.radiusL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              VSResponsiveText(
-                text: 'Enhancements Remaining',
-                baseStyle: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: VSTypography.weightMedium,
+              Text(
+                'Enhancements remaining',
+                style: tt.titleSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: VSTypography.weightSemiBold,
                 ),
               ),
               Text(
                 limit == -1 ? 'Unlimited' : '$remaining / $limit',
-                style: textTheme.titleMedium?.copyWith(
+                style: tt.titleMedium?.copyWith(
+                  color: cs.onSurface,
                   fontWeight: VSTypography.weightBold,
-                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
           const SizedBox(height: VSDesignTokens.space3),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: VSDesignTokens.space2,
+          ClipRRect(
             borderRadius: BorderRadius.circular(VSDesignTokens.radiusXS),
-            backgroundColor: colorScheme.surfaceContainerHighest,
-            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: cs.surfaceContainerHigh,
+              valueColor: AlwaysStoppedAnimation(cs.primary),
+            ),
           ),
-          const SizedBox(height: VSDesignTokens.space2),
-          if (limit != -1)
-            Text(
-              _timeUntilReset,
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+          if (limit != -1) ...[
+            const SizedBox(height: VSDesignTokens.space2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                resetText,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
               ),
             ),
+          ],
         ],
       ),
     );
   }
+}
 
-  Widget _buildImageUploadSection(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+class _ModeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _ModeChip({required this.label, required this.selected, required this.onTap});
 
-    return VSCard(
-      padding: EdgeInsets.zero,
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      border: Border.all(
-        color: colorScheme.outline.withValues(alpha: 0.3),
-        width: 1,
-      ),
-      child: Container(
-        height: VSResponsive.isMobile(context) ? 200 : 250,
-        child: _selectedImage == null
-          ? VSEmptyState(
-              icon: Icons.image_outlined,
-              title: 'Select an image to enhance',
-              subtitle: 'Choose from gallery or take a new photo',
-              action: VSResponsiveBuilder(
-                builder: (context, breakpoint) {
-                  if (breakpoint == VSBreakpoint.mobile) {
-                    return Column(
-                      children: [
-                        VSButton(
-                          text: 'Gallery',
-                          icon: const Icon(Icons.photo_library),
-                          onPressed: _pickImageFromGallery,
-                          variant: VSButtonVariant.outline,
-                          size: VSButtonSize.small, // Smaller button
-                          isFullWidth: true,
-                        ),
-                        const SizedBox(height: VSDesignTokens.space1), // Reduced spacing
-                        VSButton(
-                          text: 'Camera',
-                          icon: const Icon(Icons.camera_alt),
-                          onPressed: _takePhoto,
-                          variant: VSButtonVariant.outline,
-                          size: VSButtonSize.small, // Smaller button
-                          isFullWidth: true,
-                        ),
-                      ],
-                    );
-                  } else {
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        VSButton(
-                          text: 'Gallery',
-                          icon: const Icon(Icons.photo_library),
-                          onPressed: _pickImageFromGallery,
-                          variant: VSButtonVariant.outline,
-                        ),
-                        VSButton(
-                          text: 'Camera',
-                          icon: const Icon(Icons.camera_alt),
-                          onPressed: _takePhoto,
-                          variant: VSButtonVariant.outline,
-                        ),
-                      ],
-                    );
-                  }
-                },
-              ),
-            )
-          : Stack(
-              children: [
-                Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
-                    image: DecorationImage(
-                      image: FileImage(_selectedImage!),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: VSDesignTokens.space2,
-                  right: VSDesignTokens.space2,
-                  child: VSAccessibleButton(
-                    onPressed: () => setState(() {
-                      _selectedImage = null;
-                      _enhancedImageUrl = null;
-                    }),
-                    semanticLabel: 'Remove selected image',
-                    tooltip: 'Remove image',
-                    backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
-                    borderRadius: VSDesignTokens.radiusXL,
-                    child: Icon(Icons.close, color: colorScheme.error),
-                  ),
-                ),
-                Positioned(
-                  bottom: VSDesignTokens.space2,
-                  right: VSDesignTokens.space2,
-                  child: Row(
-                    children: [
-                      VSAccessibleButton(
-                        onPressed: _pickImageFromGallery,
-                        semanticLabel: 'Change image from gallery',
-                        tooltip: 'Change from Gallery',
-                        backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
-                        borderRadius: VSDesignTokens.radiusXL,
-                        child: Icon(Icons.photo_library, color: colorScheme.primary),
-                      ),
-                      const SizedBox(width: VSDesignTokens.space2),
-                      VSAccessibleButton(
-                        onPressed: _takePhoto,
-                        semanticLabel: 'Take new photo',
-                        tooltip: 'Take New Photo',
-                        backgroundColor: colorScheme.surface.withValues(alpha: 0.9),
-                        borderRadius: VSDesignTokens.radiusXL,
-                        child: Icon(Icons.camera_alt, color: colorScheme.primary),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-      ),
-    );
-  }
-
-  Widget _buildPromptInput(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        VSAccessibleTextField(
-          controller: _promptController,
-          labelText: 'Enhancement Prompt',
-          hintText: 'Describe what you want to add or change in the image...',
-          semanticLabel: 'Enhancement prompt input field',
-          maxLines: 5,
-          textAlignVertical: TextAlignVertical.top,
-          onChanged: (value) {
-            // Optional: Add real-time validation or suggestions
-          },
-        ),
-        const SizedBox(height: VSDesignTokens.space3),
-        Row(
-          children: [
-            Expanded(
-              child: VSButton(
-                text: 'Improve Prompt',
-                icon: _isImproving
-                  ? null
-                  : const Icon(Icons.auto_awesome),
-                onPressed: _isFetchingRandomPrompt ? null : _improvePrompt,
-                isLoading: _isImproving,
-                variant: VSButtonVariant.outline,
-                size: VSButtonSize.medium,
-              ),
-            ),
-            const SizedBox(width: VSDesignTokens.space3),
-            Expanded(
-              child: VSButton(
-                text: 'Surprise Me!',
-                icon: _isFetchingRandomPrompt
-                  ? null
-                  : const Icon(Icons.casino),
-                onPressed: _isImproving ? null : _fetchRandomPrompt,
-                isLoading: _isFetchingRandomPrompt,
-                variant: VSButtonVariant.outline,
-                size: VSButtonSize.medium,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEnhancementSettings(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return VSCard(
-      padding: const EdgeInsets.all(VSDesignTokens.space4),
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.tune,
-                color: colorScheme.primary,
-                size: VSDesignTokens.iconM,
-              ),
-              const SizedBox(width: VSDesignTokens.space2),
-              VSResponsiveText(
-                text: 'Enhancement Settings',
-                baseStyle: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: VSTypography.weightSemiBold,
-                ),
-              ),
-            ],
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = selected ? cs.onPrimary : cs.onSurface;
+    final bg = selected ? cs.primary : cs.surfaceContainerHigh;
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space4,
+            vertical: VSDesignTokens.space3,
           ),
-          const SizedBox(height: VSDesignTokens.space4),
-
-          // Enhancement Mode
-          Text(
-            'Mode',
-            style: textTheme.titleSmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: VSTypography.weightMedium,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: fg,
+              fontWeight: selected
+                  ? VSTypography.weightSemiBold
+                  : VSTypography.weightMedium,
             ),
           ),
-          const SizedBox(height: VSDesignTokens.space2),
-          DropdownButtonFormField<String>(
-            value: _selectedMode,
-            items: _enhancementModes.map((String mode) {
-              String displayName = mode == 'enhance' ? 'Enhance' : mode == 'edit' ? 'Edit' : 'Variation';
-              return DropdownMenuItem<String>(
-                value: mode,
-                child: Text(
-                  displayName,
-                  style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface),
-                ),
-              );
-            }).toList(),
-            onChanged: (String? newValue) {
-              if (newValue != null) {
-                setState(() {
-                  _selectedMode = newValue;
-                });
-              }
-            },
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: VSDesignTokens.space3,
-                vertical: VSDesignTokens.space2,
-              ),
-            ),
-            dropdownColor: colorScheme.surfaceContainerHigh,
-          ),
-
-          const SizedBox(height: VSDesignTokens.space4),
-
-          // Enhancement Strength
-          Container(
-            padding: const EdgeInsets.all(VSDesignTokens.space3),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-              border: Border.all(
-                color: colorScheme.outlineVariant,
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Enhancement Strength: ${(_enhancementStrength * 100).round()}%',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightMedium,
-                  ),
-                ),
-                const SizedBox(height: VSDesignTokens.space2),
-                Slider(
-                  value: _enhancementStrength,
-                  min: 0.1,
-                  max: 1.0,
-                  divisions: 9,
-                  onChanged: (double value) {
-                    setState(() {
-                      _enhancementStrength = value;
-                    });
-                  },
-                  activeColor: colorScheme.primary,
-                  inactiveColor: colorScheme.surfaceContainerHighest,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultSection(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: VSCard(
-        elevation: VSDesignTokens.elevation2,
-        color: colorScheme.surfaceContainerLowest,
-        margin: EdgeInsets.zero,
-        borderRadius: VSDesignTokens.radiusXL,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_enhancedImageUrl == null && !_isLoading)
-              VSEmptyState(
-                icon: Icons.auto_fix_high,
-                title: "Your enhanced image will appear here",
-                subtitle: "Select an image and add a prompt to get started",
-              ),
-            if (_enhancedImageUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
-                child: Image.network(
-                  _enhancedImageUrl!,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: VSLoadingIndicator(
-                        message: 'Loading enhanced image...',
-                        size: VSDesignTokens.iconL,
-                        color: colorScheme.primary,
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) => Center(
-                    child: VSEmptyState(
-                      icon: Icons.broken_image,
-                      title: 'Failed to load enhanced image',
-                      subtitle: 'Please try again',
-                    ),
-                  ),
-                ),
-              ),
-            Visibility(
-              visible: _isLoading,
-              maintainState: true,
-              maintainAnimation: true,
-              maintainSize: true,
-              child: Container(
-                width: double.infinity,
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  color: colorScheme.scrim.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
-                ),
-                child: Center(
-                  child: VSLoadingIndicator(
-                    message: 'Enhancing your image...',
-                    size: VSDesignTokens.iconXL,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-            if (_enhancedImageUrl != null && !_isLoading)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        colorScheme.scrim.withValues(alpha: 0.7),
-                        colorScheme.scrim.withValues(alpha: 0.0),
-                      ],
-                      stops: const [0.0, 1.0]
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildActionButton(context, 'Save', Icons.save_alt, _isSavingImage, _saveImage, colorScheme),
-                      // Share button logic based on auto-upload setting and share state
-                      if (!_autoUploadToGallery && !_isSharedToGallery)
-                        // Show share button when auto-upload is OFF and image hasn't been shared
-                        _buildActionButton(context, 'Share', Icons.ios_share, _isSharingToGallery, _shareToGallery, colorScheme),
-                      if (!_autoUploadToGallery && _isSharedToGallery)
-                        // Show "Shared" indicator when auto-upload is OFF and image has been shared
-                        _buildActionButton(context, 'Shared', Icons.check_circle_rounded, false, null, colorScheme),
-                      // When auto-upload is ON, no share button is shown since it's automatically shared
-                    ],
-                  ),
-                ),
-              )
-          ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildActionButton(BuildContext context, String label, IconData icon, bool isLoading, VoidCallback? onPressed, ColorScheme colorScheme) {
-    final TextTheme textTheme = Theme.of(context).textTheme;
+class _MiniAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool loading;
+  final VoidCallback? onTap;
+  const _MiniAction({
+    required this.icon,
+    required this.label,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        FloatingActionButton.small(
-          onPressed: isLoading ? null : onPressed,
-          heroTag: label,
-          backgroundColor: colorScheme.surface.withValues(alpha: 0.85),
-          foregroundColor: colorScheme.onSurface,
-          elevation: 2,
-          child: isLoading
-            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary)))
-            : Icon(icon, size: 22),
+        Material(
+          color: cs.surface.withValues(alpha: 0.9),
+          shape: const CircleBorder(),
+          child: IconButton(
+            onPressed: loading ? null : onTap,
+            icon: loading
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                  )
+                : Icon(icon, color: cs.primary),
+          ),
         ),
-        const SizedBox(height: 6),
-        Text(label, style: textTheme.labelSmall?.copyWith(color: VSColors.white87, fontWeight: VSTypography.weightMedium)),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: VSTypography.weightSemiBold,
+          ),
+        ),
       ],
     );
   }
+}
 
-  Widget _buildLastPromptDisplay(BuildContext context) {
-    if (_lastSuccessfulPrompt.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant)
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Last Enhancement Prompt:",
-            style: textTheme.labelMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.bold,
+class _DisabledView extends StatelessWidget {
+  final String message;
+  const _DisabledView({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Scaffold(
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: VSResponsive.getResponsivePadding(context),
+              child: VSCard(
+                padding: const EdgeInsets.all(VSDesignTokens.space6),
+                borderRadius: VSDesignTokens.radiusXL,
+                color: cs.surfaceContainer,
+                border: Border.all(color: cs.outlineVariant),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(VSDesignTokens.space5),
+                      decoration: BoxDecoration(
+                        color: cs.primaryContainer.withValues(alpha: 0.4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.construction_rounded,
+                        color: cs.primary,
+                        size: VSDesignTokens.iconL,
+                      ),
+                    ),
+                    const SizedBox(height: VSDesignTokens.space4),
+                    Text(
+                      'Paused for maintenance',
+                      style: tt.headlineSmall?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: VSTypography.weightBold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: VSDesignTokens.space2),
+                    Text(
+                      message,
+                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
+              ),
+            ),
           ),
-          const SizedBox(height: 4),
-          SelectableText(
-            _lastSuccessfulPrompt,
-            style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
-                  fontStyle: FontStyle.italic,
-                ),
-            maxLines: 3,
-            minLines: 1,
-          ),
-        ],
+        ),
       ),
     );
   }

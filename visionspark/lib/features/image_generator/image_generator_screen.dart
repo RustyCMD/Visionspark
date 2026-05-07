@@ -1,37 +1,36 @@
 import 'dart:async';
 import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
-import '../../shared/utils/snackbar_utils.dart';
-import '../../shared/design_system/design_system.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../shared/design_system/design_system.dart';
 import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
-const String _kCachedLimit = 'cached_generation_limit';
-const String _kCachedGenerationsToday = 'cached_generations_today';
-const String _kCachedResetsAt = 'cached_resets_at_utc_iso';
+const _kCachedLimit = 'cached_generation_limit';
+const _kCachedGenerationsToday = 'cached_generations_today';
+const _kCachedResetsAt = 'cached_resets_at_utc_iso';
 
-// Helper classes for better organization
-class AspectRatioOption {
+class _AspectOption {
   final String label;
   final String value;
   final IconData icon;
   final double ratio;
-
-  const AspectRatioOption(this.label, this.value, this.icon, this.ratio);
+  const _AspectOption(this.label, this.value, this.icon, this.ratio);
 }
 
-class StyleOption {
-  final String value;
-  final String displayName;
+class _StyleOption {
+  final String key;
+  final String label;
   final IconData icon;
-
-  const StyleOption(this.value, this.displayName, this.icon);
+  const _StyleOption(this.key, this.label, this.icon);
 }
 
 class ImageGeneratorScreen extends StatefulWidget {
@@ -41,894 +40,974 @@ class ImageGeneratorScreen extends StatefulWidget {
   State<ImageGeneratorScreen> createState() => _ImageGeneratorScreenState();
 }
 
-class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
-    with TickerProviderStateMixin {
-  // Controllers
-  final _promptController = TextEditingController();
-  late final TextEditingController _negativePromptController;
-  final _promptFocusNode = FocusNode();
-  final _negativePromptFocusNode = FocusNode();
+class _ImageGeneratorScreenState extends State<ImageGeneratorScreen> {
+  static const _channel = MethodChannel('com.visionspark.app/media');
 
-  // Animation controllers
-  late AnimationController _fadeAnimationController;
-  late AnimationController _slideAnimationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  final _prompt = TextEditingController();
+  final _negative = TextEditingController();
+  final _promptFocus = FocusNode();
+  final _negativeFocus = FocusNode();
 
-  // State variables
-  String? _generatedImageUrl;
-  bool _isLoading = false;
+  String? _imageUrl;
+  String _lastPrompt = '';
+  bool _isGenerating = false;
   bool _isImproving = false;
-  bool _isSavingImage = false;
-  bool _isSharingToGallery = false;
-  bool _isFetchingRandomPrompt = false;
-  bool _isSharedToGallery = false; // Track if current image has been shared to gallery
+  bool _isFetchingRandom = false;
+  bool _isSaving = false;
+  bool _isSharing = false;
+  bool _isShared = false;
 
-  // Generation status
-  int _generationLimit = 3;
-  int _generationsToday = 0;
-  String? _resetsAtUtcIso;
-  String _timeUntilReset = "Calculating...";
-  bool _isLoadingStatus = true;
-  String? _statusErrorMessage;
+  int _limit = 3;
+  int _used = 0;
+  String? _resetsIso;
+  String _resetText = 'Calculating...';
+  bool _statusLoading = true;
+  String? _statusError;
   Timer? _resetTimer;
 
-  // UI state
-  String _lastSuccessfulPrompt = "";
-  bool _showAdvancedOptions = false;
-  bool _autoUploadToGallery = false; // Track auto-upload setting
+  bool _showAdvanced = false;
+  bool _autoUpload = false;
+  String _aspect = '1024x1024';
+  String _style = 'None';
 
-  // Subscription notifier
-  SubscriptionStatusNotifier? _subscriptionStatusNotifierInstance;
+  SubscriptionStatusNotifier? _subNotifier;
 
-  // Aspect ratio configuration
-  final List<AspectRatioOption> _aspectRatioOptions = [
-    AspectRatioOption("Square", "1024x1024", Icons.crop_square, 1.0),
-    AspectRatioOption("Landscape", "1792x1024", Icons.crop_landscape, 1792/1024),
-    AspectRatioOption("Portrait", "1024x1792", Icons.crop_portrait, 1024/1792),
+  static const _aspects = [
+    _AspectOption('Square', '1024x1024', Icons.crop_square_rounded, 1.0),
+    _AspectOption('Landscape', '1792x1024', Icons.crop_landscape_rounded, 1792 / 1024),
+    _AspectOption('Portrait', '1024x1792', Icons.crop_portrait_rounded, 1024 / 1792),
   ];
-  String _selectedAspectRatioValue = "1024x1024";
 
-  // Style configuration
-  final Map<String, StyleOption> _styleOptions = {
-    'None': StyleOption('None', 'Default', Icons.auto_awesome_outlined),
-    'vivid': StyleOption('vivid', 'Vivid', Icons.palette),
-    'natural': StyleOption('natural', 'Natural', Icons.nature),
+  static const _styles = {
+    'None':    _StyleOption('None',    'Default', Icons.auto_awesome_outlined),
+    'vivid':   _StyleOption('vivid',   'Vivid',   Icons.palette_outlined),
+    'natural': _StyleOption('natural', 'Natural', Icons.eco_outlined),
   };
-  String _selectedStyle = 'None';
-
-  static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
 
   @override
   void initState() {
     super.initState();
-    _negativePromptController = TextEditingController();
-
-    // Initialize animations
-    _fadeAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _slideAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeAnimationController, curve: Curves.easeInOut),
-    );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
-      CurvedAnimation(parent: _slideAnimationController, curve: Curves.easeOutCubic),
-    );
-
-    _loadCachedGenerationStatus();
-    _fetchGenerationStatus();
-    _loadAutoUploadSetting();
-    _resetTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateResetsAtDisplay());
-
-    // Start animations
-    _fadeAnimationController.forward();
-    _slideAnimationController.forward();
+    _loadCachedStatus();
+    _fetchStatus();
+    _loadAutoUpload();
+    _resetTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickReset());
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
-    if (_subscriptionStatusNotifierInstance != notifier) {
-      _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
-      _subscriptionStatusNotifierInstance = notifier;
-      _subscriptionStatusNotifierInstance?.addListener(_fetchGenerationStatus);
+    final n = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_subNotifier != n) {
+      _subNotifier?.removeListener(_fetchStatus);
+      _subNotifier = n;
+      _subNotifier?.addListener(_fetchStatus);
     }
-    // Refresh auto-upload setting when dependencies change (e.g., returning from settings)
-    _loadAutoUploadSetting();
+    _loadAutoUpload();
   }
-  
+
   @override
   void dispose() {
-    _promptController.dispose();
-    _negativePromptController.dispose();
-    _promptFocusNode.dispose();
-    _negativePromptFocusNode.dispose();
-    _fadeAnimationController.dispose();
-    _slideAnimationController.dispose();
+    _prompt.dispose();
+    _negative.dispose();
+    _promptFocus.dispose();
+    _negativeFocus.dispose();
     _resetTimer?.cancel();
-    _subscriptionStatusNotifierInstance?.removeListener(_fetchGenerationStatus);
+    _subNotifier?.removeListener(_fetchStatus);
     super.dispose();
   }
 
-  Future<void> _loadCachedGenerationStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _generationLimit = prefs.getInt(_kCachedLimit) ?? 3;
-        _generationsToday = prefs.getInt(_kCachedGenerationsToday) ?? 0;
-        _resetsAtUtcIso = prefs.getString(_kCachedResetsAt);
-        if (_resetsAtUtcIso != null) _updateResetsAtDisplay();
-      });
-    }
+  // ── Status helpers ──────────────────────────────────────────────────────
+
+  Future<void> _loadCachedStatus() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _limit = p.getInt(_kCachedLimit) ?? 3;
+      _used = p.getInt(_kCachedGenerationsToday) ?? 0;
+      _resetsIso = p.getString(_kCachedResetsAt);
+      if (_resetsIso != null) _tickReset();
+    });
   }
 
-  Future<void> _fetchGenerationStatus() async {
-    if (!mounted) return;
-    setState(() => _isLoadingStatus = true);
-    try {
-      final response = await Supabase.instance.client.functions.invoke('get-generation-status');
-      if (!mounted) return;
+  Future<void> _saveCachedStatus() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_kCachedLimit, _limit);
+    await p.setInt(_kCachedGenerationsToday, _used);
+    if (_resetsIso != null) await p.setString(_kCachedResetsAt, _resetsIso!);
+  }
 
-      final data = response.data;
+  Future<void> _loadAutoUpload() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _autoUpload = p.getBool('auto_upload_to_gallery') ?? false);
+  }
+
+  Future<void> _fetchStatus() async {
+    if (!mounted) return;
+    setState(() => _statusLoading = true);
+    try {
+      final resp = await Supabase.instance.client.functions.invoke('get-generation-status');
+      if (!mounted) return;
+      final data = resp.data;
       if (data['error'] != null) {
-        setState(() => _statusErrorMessage = data['error'].toString());
+        setState(() => _statusError = data['error'].toString());
       } else {
         setState(() {
-          // Use new fields if available, fall back to legacy fields for backward compatibility
-          _generationLimit = data['generation_limit'] ?? data['limit'] ?? 3;
-          _generationsToday = data['generations_today'] ?? 0;
-          _resetsAtUtcIso = data['resets_at_utc_iso'];
-          _statusErrorMessage = null;
-          _updateResetsAtDisplay();
-          _saveGenerationStatusToCache();
+          _limit = (data['generation_limit'] ?? data['limit'] ?? 3) as int;
+          _used = (data['generations_today'] ?? 0) as int;
+          _resetsIso = data['resets_at_utc_iso'] as String?;
+          _statusError = null;
+          _tickReset();
+          _saveCachedStatus();
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _statusErrorMessage = 'Error: ${e.toString()}');
-    }
-    if (mounted) setState(() => _isLoadingStatus = false);
-  }
-
-  Future<void> _saveGenerationStatusToCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_kCachedLimit, _generationLimit);
-    await prefs.setInt(_kCachedGenerationsToday, _generationsToday);
-    if (_resetsAtUtcIso != null) {
-      // Fix: Removed unnecessary '!' on a non-nullable const
-      await prefs.setString(_kCachedResetsAt, _resetsAtUtcIso!);
+      if (mounted) setState(() => _statusError = e.toString());
+    } finally {
+      if (mounted) setState(() => _statusLoading = false);
     }
   }
 
-  void _updateResetsAtDisplay() {
-    if (_resetsAtUtcIso == null) return;
-    final resetTime = DateTime.tryParse(_resetsAtUtcIso!)?.toLocal();
-    if (resetTime == null) return;
-    
-    final difference = resetTime.difference(DateTime.now());
-    if (difference.isNegative) {
-      _timeUntilReset = "Limit reset!";
-    } else {
-      final h = difference.inHours;
-      final m = difference.inMinutes.remainder(60);
-      final s = difference.inSeconds.remainder(60);
-      _timeUntilReset = "Resets in ${h}h ${m}m ${s}s";
+  void _tickReset() {
+    if (_resetsIso == null) return;
+    final reset = DateTime.tryParse(_resetsIso!)?.toLocal();
+    if (reset == null) return;
+    final diff = reset.difference(DateTime.now());
+    final next = diff.isNegative
+        ? 'Limit reset!'
+        : 'Resets in ${diff.inHours}h ${diff.inMinutes.remainder(60)}m ${diff.inSeconds.remainder(60)}s';
+    if (next != _resetText && mounted) {
+      setState(() => _resetText = next);
     }
-    if (mounted) setState(() {});
   }
+
+  // ── Actions ─────────────────────────────────────────────────────────────
 
   Future<void> _improvePrompt() async {
-    final prompt = _promptController.text.trim();
-    if (prompt.isEmpty || _isLoading || _isImproving) return;
+    final text = _prompt.text.trim();
+    if (text.isEmpty || _isGenerating || _isImproving) return;
     FocusScope.of(context).unfocus();
     setState(() => _isImproving = true);
-
     try {
-      final response = await Supabase.instance.client.functions.invoke(
-        'improve-prompt-proxy', body: {'prompt': prompt},
-      );
-      if (mounted) {
-        if (response.data['error'] != null) {
-          showErrorSnackbar(context, response.data['error'].toString());
-        } else if (response.data['improved_prompt'] != null) {
-          _promptController.text = response.data['improved_prompt'].trim();
-          showSuccessSnackbar(context, 'Prompt improved!');
-        }
+      final resp = await Supabase.instance.client.functions
+          .invoke('improve-prompt-proxy', body: {'prompt': text});
+      if (!mounted) return;
+      if (resp.data['error'] != null) {
+        showErrorSnackbar(context, resp.data['error'].toString());
+      } else if (resp.data['improved_prompt'] != null) {
+        _prompt.text = resp.data['improved_prompt'].toString().trim();
+        showSuccessSnackbar(context, 'Prompt improved.');
       }
-    } catch (e) {
-      debugPrint('Error improving prompt: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while improving the prompt. Please try again.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not improve prompt. Try again.');
+    } finally {
+      if (mounted) setState(() => _isImproving = false);
     }
-    if (mounted) setState(() => _isImproving = false);
   }
 
-  Future<void> _fetchRandomPrompt() async {
-    if (_isLoading || _isImproving || _isFetchingRandomPrompt) return;
+  Future<void> _fetchRandom() async {
+    if (_isGenerating || _isImproving || _isFetchingRandom) return;
     FocusScope.of(context).unfocus();
-    setState(() => _isFetchingRandomPrompt = true);
-
+    setState(() => _isFetchingRandom = true);
     try {
-      final response = await Supabase.instance.client.functions.invoke('get-random-prompt');
-      if (mounted) {
-        if (response.data != null && response.data['prompt'] != null) {
-          _promptController.text = response.data['prompt'];
-          showSuccessSnackbar(context, 'New prompt loaded!');
-        } else if (response.data['error'] != null) {
-          showErrorSnackbar(context, response.data['error'].toString());
-        } else {
-          showErrorSnackbar(context, 'Failed to get a random prompt. No data.');
-        }
+      final resp = await Supabase.instance.client.functions.invoke('get-random-prompt');
+      if (!mounted) return;
+      if (resp.data?['prompt'] != null) {
+        _prompt.text = resp.data['prompt'] as String;
+        showSuccessSnackbar(context, 'New prompt loaded.');
+      } else if (resp.data?['error'] != null) {
+        showErrorSnackbar(context, resp.data['error'].toString());
+      } else {
+        showErrorSnackbar(context, 'Failed to fetch a random prompt.');
       }
-    } catch (e) {
-      debugPrint('Error fetching random prompt: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while fetching a new prompt.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not fetch a prompt. Try again.');
+    } finally {
+      if (mounted) setState(() => _isFetchingRandom = false);
     }
-    if (mounted) setState(() => _isFetchingRandomPrompt = false);
   }
 
-  Future<void> _generateImage() async {
-    if (_promptController.text.isEmpty || _isLoading || _isImproving || _isFetchingRandomPrompt) return;
+  Future<void> _generate() async {
+    if (_prompt.text.trim().isEmpty || _isGenerating || _isImproving || _isFetchingRandom) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() {
-      _isLoading = true;
-      _generatedImageUrl = null;
-      _isSharedToGallery = false; // Reset share state for new image
+      _isGenerating = true;
+      _imageUrl = null;
+      _isShared = false;
     });
 
     try {
-      // Prepare the base body for the API call
-      final Map<String, dynamic> requestBody = {
-        'prompt': _promptController.text.trim(),
-        'size': _selectedAspectRatioValue,
+      final body = <String, dynamic>{
+        'prompt': _prompt.text.trim(),
+        'size': _aspect,
       };
+      final neg = _negative.text.trim();
+      if (neg.isNotEmpty) body['negative_prompt'] = neg;
+      if (_style != 'None') body['style'] = _style;
 
-      // Add negative_prompt if it's not empty
-      final String negativePrompt = _negativePromptController.text.trim();
-      if (negativePrompt.isNotEmpty) {
-        requestBody['negative_prompt'] = negativePrompt;
-      }
+      final resp = await Supabase.instance.client.functions
+          .invoke('generate-image-proxy', body: body);
+      if (!mounted) return;
 
-      // Add style if it's not 'None'
-      if (_selectedStyle != 'None') {
-        requestBody['style'] = _selectedStyle;
-      }
-
-      final response = await Supabase.instance.client.functions.invoke(
-        'generate-image-proxy',
-        body: requestBody,
-      );
-
-      if (mounted) {
-        final data = response.data;
-        if (data['error'] != null) {
-          final errorMessage = _getApiErrorMessage(data);
-          showErrorSnackbar(context, errorMessage);
-        } else if (data['data'] != null && data['data'][0]['url'] != null) {
-          setState(() {
-            _generatedImageUrl = data['data'][0]['url'];
-            _lastSuccessfulPrompt = _promptController.text; // Store the successful prompt
-          });
-          await _fetchGenerationStatus();
-
-          // Auto-upload to gallery if enabled
-          if (_autoUploadToGallery) {
-            await _shareToGallery();
-            // Set share state to true after successful auto-share
-            if (mounted) {
-              setState(() {
-                _isSharedToGallery = true;
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Image generation error: $e');
-      if (mounted) {
-        final errorMessage = _getImageGenerationErrorMessage(e);
-        showErrorSnackbar(context, errorMessage);
-      }
-    }
-    if (mounted) setState(() => _isLoading = false);
-  }
-
-  /// Extracts user-friendly error messages from API response data
-  String _getApiErrorMessage(Map<String, dynamic> data) {
-    final error = data['error'];
-    if (error == null) return 'An unexpected error occurred during image generation. Please try again.';
-
-    final errorString = error.toString();
-
-    // Check for content policy violations in the error message
-    if (errorString.toLowerCase().contains('safety system') ||
-        errorString.toLowerCase().contains('content policy')) {
-      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-    }
-
-    // Check for details object with more specific error information
-    final details = data['details'];
-    if (details != null && details is Map<String, dynamic>) {
-      final errorType = details['type'];
-      final errorCode = details['code'];
-
-      if (errorType == 'image_generation_user_error' &&
-          errorCode == 'content_policy_violation') {
-        return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
-      }
-    }
-
-    // Return the original error message if it's user-friendly
-    if (errorString.isNotEmpty && !errorString.toLowerCase().contains('unexpected')) {
-      return errorString;
-    }
-
-    return 'An unexpected error occurred during image generation. Please try again.';
-  }
-
-  /// Extracts user-friendly error messages from image generation exceptions
-  String _getImageGenerationErrorMessage(dynamic error) {
-    // Handle FunctionException from Supabase
-    if (error is FunctionException) {
-      final details = error.details;
-
-      // Check if it's a content policy violation
-      if (details != null && details is Map<String, dynamic>) {
-        final errorDetails = details['error'];
-        if (errorDetails != null && errorDetails is Map<String, dynamic>) {
-          final errorType = errorDetails['type'];
-          final errorCode = errorDetails['code'];
-          final errorMessage = errorDetails['message'] ?? '';
-
-          // Check for content policy violations
-          if (errorType == 'image_generation_user_error' &&
-              errorCode == 'content_policy_violation') {
-            return 'Content Policy Violation: Your prompt contains content that is not allowed by our safety system. Please try rephrasing your prompt to avoid violent, harmful, or inappropriate content.';
-          }
-
-          // Check for safety system rejection in message
-          if (errorMessage.toLowerCase().contains('safety system') ||
-              errorMessage.toLowerCase().contains('content policy')) {
-            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-          }
-        }
-
-        // Check for error message directly in details
-        final directError = details['error'];
-        if (directError is String) {
-          if (directError.toLowerCase().contains('safety system') ||
-              directError.toLowerCase().contains('content policy')) {
-            return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-          }
-          // Return the direct error message if it's user-friendly
-          if (directError.isNotEmpty && !directError.toLowerCase().contains('unexpected')) {
-            return directError;
-          }
-        }
-      }
-
-      // Handle other FunctionException cases
-      if (error.reasonPhrase != null && error.reasonPhrase!.isNotEmpty) {
-        return 'Generation failed: ${error.reasonPhrase}';
-      }
-    }
-
-    // Handle other exception types
-    final errorString = error.toString();
-    if (errorString.toLowerCase().contains('safety system') ||
-        errorString.toLowerCase().contains('content policy')) {
-      return 'Content Policy Violation: Your prompt was rejected by our safety system. Please modify your prompt to avoid potentially harmful or inappropriate content and try again.';
-    }
-
-    // Default fallback message
-    return 'An unexpected error occurred during image generation. Please try again.';
-  }
-
-  Future<void> _saveImage() async {
-    if (_generatedImageUrl == null || _isSavingImage) return;
-    setState(() => _isSavingImage = true);
-
-    try {
-      final photosPermission = Platform.isAndroid 
-          ? (await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33 ? Permission.photos : Permission.storage
-          : Permission.photos;
-      
-      PermissionStatus status = await photosPermission.request();
-      if (status.isGranted) {
-        final ByteData imageData = await NetworkAssetBundle(Uri.parse(_generatedImageUrl!)).load('');
-        final filename = 'Visionspark_${DateTime.now().millisecondsSinceEpoch}.png';
-        await _channel.invokeMethod('saveImageToGallery', {
-          'imageBytes': imageData.buffer.asUint8List(),
-          'filename': filename,
-          'albumName': 'Visionspark'
+      final data = resp.data;
+      if (data['error'] != null) {
+        showErrorSnackbar(context, _readableApiError(data));
+      } else if (data['data']?[0]?['url'] != null) {
+        setState(() {
+          _imageUrl = data['data'][0]['url'] as String;
+          _lastPrompt = _prompt.text;
         });
-        if (mounted) showSuccessSnackbar(context, 'Image saved to Gallery!');
-      } else {
-        if (mounted) showErrorSnackbar(context, 'Storage permission is required to save images.');
+        await _fetchStatus();
+        if (_autoUpload) {
+          await _share();
+          if (mounted) setState(() => _isShared = true);
+        }
       }
     } catch (e) {
-      debugPrint('Error saving image: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while saving the image. Please try again.');
+      if (mounted) showErrorSnackbar(context, _readableExceptionError(e));
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
     }
-    if (mounted) setState(() => _isSavingImage = false);
   }
 
-  Future<void> _shareToGallery() async {
-    if (_generatedImageUrl == null || _isSharingToGallery) return;
-    setState(() => _isSharingToGallery = true);
-    
+  String _readableApiError(Map<String, dynamic> data) {
+    final raw = data['error']?.toString() ?? '';
+    if (_isPolicy(raw)) return _policyMessage();
+    final details = data['details'];
+    if (details is Map &&
+        details['type'] == 'image_generation_user_error' &&
+        details['code'] == 'content_policy_violation') {
+      return _policyMessage();
+    }
+    return raw.isNotEmpty ? raw : 'Image generation failed. Please try again.';
+  }
+
+  String _readableExceptionError(Object error) {
+    if (error is FunctionException) {
+      final d = error.details;
+      if (d is Map) {
+        final inner = d['error'];
+        if (inner is Map) {
+          final type = inner['type']?.toString();
+          final code = inner['code']?.toString();
+          final message = inner['message']?.toString() ?? '';
+          if (type == 'image_generation_user_error' && code == 'content_policy_violation') {
+            return _policyMessage();
+          }
+          if (_isPolicy(message)) return _policyMessage();
+        } else if (inner is String) {
+          if (_isPolicy(inner)) return _policyMessage();
+          if (inner.isNotEmpty) return inner;
+        }
+      }
+      if ((error.reasonPhrase ?? '').isNotEmpty) return 'Generation failed: ${error.reasonPhrase}';
+    }
+    final s = error.toString();
+    if (_isPolicy(s)) return _policyMessage();
+    return 'Image generation failed. Please try again.';
+  }
+
+  bool _isPolicy(String s) {
+    final l = s.toLowerCase();
+    return l.contains('safety system') || l.contains('content policy');
+  }
+
+  String _policyMessage() =>
+      'Content policy: your prompt was rejected by the safety system. Please rephrase and try again.';
+
+  Future<void> _save() async {
+    if (_imageUrl == null || _isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final perm = Platform.isAndroid
+          ? ((await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33
+              ? Permission.photos
+              : Permission.storage)
+          : Permission.photos;
+      final status = await perm.request();
+      if (!status.isGranted) {
+        if (mounted) showErrorSnackbar(context, 'Storage permission required to save.');
+        return;
+      }
+      final bytes = (await NetworkAssetBundle(Uri.parse(_imageUrl!)).load(''))
+          .buffer
+          .asUint8List();
+      await _channel.invokeMethod('saveImageToGallery', {
+        'imageBytes': bytes,
+        'filename': 'Visionspark_${DateTime.now().millisecondsSinceEpoch}.png',
+        'albumName': 'Visionspark',
+      });
+      if (mounted) showSuccessSnackbar(context, 'Image saved to gallery.');
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not save image. Try again.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _share() async {
+    if (_imageUrl == null || _isSharing) return;
+    setState(() => _isSharing = true);
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('You must be logged in to share.');
-
-      final ByteData imageData = await NetworkAssetBundle(Uri.parse(_generatedImageUrl!)).load('');
-      final imageBytes = imageData.buffer.asUint8List();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final mainPath = 'public/${user.id}_$timestamp.png';
-
-      await Supabase.instance.client.storage.from('imagestorage').uploadBinary(mainPath, imageBytes);
+      if (user == null) throw Exception('Not signed in');
+      final bytes = (await NetworkAssetBundle(Uri.parse(_imageUrl!)).load(''))
+          .buffer
+          .asUint8List();
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final mainPath = 'public/${user.id}_$ts.png';
+      await Supabase.instance.client.storage
+          .from('imagestorage')
+          .uploadBinary(mainPath, bytes);
 
       String? thumbPath;
       try {
-        final thumbBytes = await _createThumbnail(imageBytes);
-        thumbPath = 'public/${user.id}_${timestamp}_thumb.png';
-        await Supabase.instance.client.storage.from('imagestorage').uploadBinary(thumbPath, thumbBytes);
-      } catch (e) {
-        debugPrint('Thumbnail generation failed: $e');
-      }
+        final thumb = _makeThumb(bytes);
+        thumbPath = 'public/${user.id}_${ts}_thumb.png';
+        await Supabase.instance.client.storage
+            .from('imagestorage')
+            .uploadBinary(thumbPath, thumb);
+      } catch (_) {/* non-fatal */}
 
       await Supabase.instance.client.from('gallery_images').insert({
-        'user_id': user.id, 'image_path': mainPath,
-        'prompt': _promptController.text, 'thumbnail_url': thumbPath,
+        'user_id': user.id,
+        'image_path': mainPath,
+        'prompt': _prompt.text,
+        'thumbnail_url': thumbPath,
       });
 
       if (mounted) {
-        setState(() {
-          _isSharedToGallery = true; // Mark image as shared
-        });
-        showSuccessSnackbar(context, 'Image shared to gallery!');
+        setState(() => _isShared = true);
+        showSuccessSnackbar(context, 'Shared to gallery.');
       }
-    } catch (e) {
-      debugPrint('Failed to share to gallery: $e');
-      if (mounted) showErrorSnackbar(context, 'An unexpected error occurred while sharing the image. Please try again.');
-    }
-    if (mounted) setState(() => _isSharingToGallery = false);
-  }
-
-  Future<Uint8List> _createThumbnail(Uint8List imageBytes) async {
-      final originalImage = img.decodeImage(imageBytes);
-      if (originalImage == null) throw Exception('Failed to decode image.');
-      final thumbnail = img.copyResize(originalImage, width: 200);
-      return Uint8List.fromList(img.encodePng(thumbnail));
-  }
-
-  Future<void> _loadAutoUploadSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _autoUploadToGallery = prefs.getBool('auto_upload_to_gallery') ?? false;
-      });
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not share. Try again.');
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
     }
   }
 
-  // --- UI Builder Methods ---
+  Uint8List _makeThumb(Uint8List bytes) {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) throw Exception('decode');
+    return Uint8List.fromList(img.encodePng(img.copyResize(decoded, width: 200)));
+  }
 
-  Widget _buildHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+  // ── UI ──────────────────────────────────────────────────────────────────
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  @override
+  Widget build(BuildContext context) {
+    final remaining = _limit == -1 ? 999 : _limit - _used;
+    final canGenerate = (remaining > 0 || _limit == -1) &&
+        !_isGenerating &&
+        !_isFetchingRandom &&
+        !_isImproving &&
+        _prompt.text.trim().isNotEmpty;
+
+    return Scaffold(
+      body: VSResponsiveLayout(
+        child: SafeArea(
+          child: ListView(
+            padding: VSResponsive.getResponsivePadding(context),
+            children: [
+              _StatusCard(
+                limit: _limit,
+                remaining: remaining,
+                isLoading: _statusLoading,
+                error: _statusError,
+                resetText: _resetText,
+              ),
+              const SizedBox(height: VSDesignTokens.space5),
+              _promptCard(),
+              const SizedBox(height: VSDesignTokens.space4),
+              _advancedToggle(),
+              if (_showAdvanced) ...[
+                const SizedBox(height: VSDesignTokens.space4),
+                _advancedPanel(),
+              ],
+              const SizedBox(height: VSDesignTokens.space5),
+              _resultCard(),
+              if (_lastPrompt.isNotEmpty) ...[
+                const SizedBox(height: VSDesignTokens.space4),
+                _lastPromptCard(),
+              ],
+              const SizedBox(height: VSDesignTokens.space6),
+              VSButton(
+                text: _isGenerating ? 'Generating...' : 'Generate image',
+                icon: _isGenerating ? null : const Icon(Icons.auto_awesome),
+                onPressed: canGenerate ? _generate : null,
+                isLoading: _isGenerating,
+                isFullWidth: true,
+                size: VSButtonSize.large,
+              ),
+              const SizedBox(height: VSDesignTokens.space12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _promptCard() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final length = _prompt.text.length;
+    const maxLen = 4000;
+    final near = length > maxLen * 0.8;
+
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const VSSectionHeader(
+            icon: Icons.edit_note_rounded,
+            title: 'Describe your image',
+            subtitle: 'Be specific — colors, mood, lighting, composition.',
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+          TextField(
+            controller: _prompt,
+            focusNode: _promptFocus,
+            minLines: 3,
+            maxLines: 6,
+            maxLength: maxLen,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'A glowing aurora over a quiet mountain lake at dawn…',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Row(
+            children: [
+              Expanded(
+                child: VSButton(
+                  text: _isImproving ? 'Improving…' : 'Improve',
+                  icon: _isImproving ? null : const Icon(Icons.auto_fix_high_outlined),
+                  onPressed: _isImproving || _isGenerating ? null : _improvePrompt,
+                  isLoading: _isImproving,
+                  variant: VSButtonVariant.outline,
+                ),
+              ),
+              const SizedBox(width: VSDesignTokens.space3),
+              Expanded(
+                child: VSButton(
+                  text: _isFetchingRandom ? 'Loading…' : 'Surprise me',
+                  icon: _isFetchingRandom ? null : const Icon(Icons.casino_outlined),
+                  onPressed:
+                      _isFetchingRandom || _isGenerating ? null : _fetchRandom,
+                  isLoading: _isFetchingRandom,
+                  variant: VSButtonVariant.outline,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Detail = better results',
+                style: tt.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+              Text(
+                '$length / $maxLen',
+                style: tt.bodySmall?.copyWith(
+                  color: near ? cs.error : cs.onSurfaceVariant,
+                  fontWeight: near ? VSTypography.weightSemiBold : VSTypography.weightRegular,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _advancedToggle() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Material(
+      color: cs.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+      child: InkWell(
+        onTap: () => setState(() => _showAdvanced = !_showAdvanced),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+        child: Padding(
+          padding: const EdgeInsets.all(VSDesignTokens.space4),
+          child: Row(
+            children: [
+              Icon(Icons.tune_rounded, color: cs.primary, size: VSDesignTokens.iconM),
+              const SizedBox(width: VSDesignTokens.space3),
+              Expanded(
+                child: Text(
+                  'Advanced options',
+                  style: tt.titleMedium?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ),
+              AnimatedRotation(
+                turns: _showAdvanced ? 0.5 : 0,
+                duration: VSDesignTokens.durationFast,
+                child: Icon(Icons.keyboard_arrow_down_rounded, color: cs.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _advancedPanel() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final disabled = _isGenerating || _isImproving || _isFetchingRandom;
+
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Aspect ratio',
+            style: tt.titleSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: VSTypography.weightSemiBold,
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Wrap(
+            spacing: VSDesignTokens.space2,
+            runSpacing: VSDesignTokens.space2,
+            children: [
+              for (final a in _aspects)
+                _ChipChoice(
+                  icon: a.icon,
+                  label: a.label,
+                  selected: _aspect == a.value,
+                  onTap: disabled ? null : () => setState(() => _aspect = a.value),
+                ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space5),
+          Text(
+            'Style',
+            style: tt.titleSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: VSTypography.weightSemiBold,
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          Wrap(
+            spacing: VSDesignTokens.space2,
+            runSpacing: VSDesignTokens.space2,
+            children: [
+              for (final s in _styles.values)
+                _ChipChoice(
+                  icon: s.icon,
+                  label: s.label,
+                  selected: _style == s.key,
+                  onTap: disabled ? null : () => setState(() => _style = s.key),
+                ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space5),
+          Text(
+            'Negative prompt (optional)',
+            style: tt.titleSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: VSTypography.weightSemiBold,
+            ),
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          TextField(
+            controller: _negative,
+            focusNode: _negativeFocus,
+            minLines: 2,
+            maxLines: 3,
+            maxLength: 1000,
+            decoration: const InputDecoration(
+              hintText: 'blurry, low quality, watermark…',
+              counterText: '',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultCard() {
+    final cs = Theme.of(context).colorScheme;
+    final aspect = _aspects.firstWhere(
+      (a) => a.value == _aspect,
+      orElse: () => _aspects.first,
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+      child: AspectRatio(
+        aspectRatio: aspect.ratio,
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainer,
+            border: Border.all(color: cs.outlineVariant),
+            borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_imageUrl == null && !_isGenerating) _placeholder(aspect),
+              if (_imageUrl != null)
+                Hero(
+                  tag: 'generated_image',
+                  child: Image.network(
+                    _imageUrl!,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (_, child, p) => p == null
+                        ? child
+                        : Center(
+                            child: VSLoadingIndicator(
+                              message: 'Loading image…',
+                              color: cs.primary,
+                            ),
+                          ),
+                    errorBuilder: (_, __, ___) => Container(
+                      color: cs.errorContainer,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: cs.onErrorContainer,
+                          size: VSDesignTokens.iconL,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_isGenerating) _generatingOverlay(),
+              if (_imageUrl != null && !_isGenerating) _actionsOverlay(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(_AspectOption a) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(VSDesignTokens.space5),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(VSDesignTokens.space5),
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
+                color: cs.primaryContainer.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.auto_awesome,
-                color: colorScheme.onPrimaryContainer,
-                size: 28,
+              child: Icon(a.icon, size: VSDesignTokens.iconXL, color: cs.primary),
+            ),
+            const SizedBox(height: VSDesignTokens.space4),
+            Text(
+              'Your ${a.label.toLowerCase()} image will appear here',
+              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              'Type a prompt and tap Generate.',
+              style: tt.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _generatingOverlay() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            cs.primary.withValues(alpha: 0.18),
+            cs.secondary.withValues(alpha: 0.18),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(VSDesignTokens.space4),
+              decoration: BoxDecoration(
+                color: cs.surface.withValues(alpha: 0.9),
+                shape: BoxShape.circle,
+              ),
+              child: CircularProgressIndicator(strokeWidth: 3, color: cs.primary),
+            ),
+            const SizedBox(height: VSDesignTokens.space5),
+            Text(
+              'Painting pixels…',
+              style: tt.titleMedium?.copyWith(
+                color: cs.onSurface,
+                fontWeight: VSTypography.weightSemiBold,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(height: VSDesignTokens.space2),
+            Text(
+              'This usually takes a few seconds.',
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionsOverlay() {
+    final cs = Theme.of(context).colorScheme;
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.all(VSDesignTokens.space4),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withValues(alpha: 0.65),
+              Colors.transparent,
+            ],
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _ActionPill(
+              icon: Icons.download_rounded,
+              label: 'Save',
+              loading: _isSaving,
+              onTap: _save,
+            ),
+            if (!_autoUpload && !_isShared)
+              _ActionPill(
+                icon: Icons.share_rounded,
+                label: 'Share',
+                loading: _isSharing,
+                onTap: _share,
+              ),
+            if (!_autoUpload && _isShared)
+              _ActionPill(
+                icon: Icons.check_circle_rounded,
+                label: 'Shared',
+                loading: false,
+                onTap: null,
+                accent: cs.secondary,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _lastPromptCard() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space4),
+      borderRadius: VSDesignTokens.radiusL,
+      color: cs.surfaceContainerLow,
+      border: Border.all(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history_rounded, size: VSDesignTokens.iconS, color: cs.primary),
+              const SizedBox(width: VSDesignTokens.space2),
+              Text(
+                'Last prompt',
+                style: tt.titleSmall?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: VSTypography.weightSemiBold,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Reuse',
+                onPressed: () {
+                  _prompt.text = _lastPrompt;
+                  _promptFocus.requestFocus();
+                },
+                icon: Icon(Icons.refresh_rounded, color: cs.onSurfaceVariant),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: VSDesignTokens.space2),
+          SelectableText(
+            _lastPrompt,
+            maxLines: 3,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  final int limit;
+  final int remaining;
+  final bool isLoading;
+  final String? error;
+  final String resetText;
+  const _StatusCard({
+    required this.limit,
+    required this.remaining,
+    required this.isLoading,
+    required this.error,
+    required this.resetText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    if (isLoading) {
+      return VSCard(
+        padding: const EdgeInsets.all(VSDesignTokens.space5),
+        borderRadius: VSDesignTokens.radiusXL,
+        color: cs.surfaceContainer,
+        child: Center(
+          child: VSLoadingIndicator(message: 'Loading status…'),
+        ),
+      );
+    }
+
+    if (error != null) {
+      return VSCard(
+        padding: const EdgeInsets.all(VSDesignTokens.space5),
+        borderRadius: VSDesignTokens.radiusXL,
+        color: cs.errorContainer,
+        child: Row(
+          children: [
+            Icon(Icons.error_outline_rounded, color: cs.onErrorContainer),
+            const SizedBox(width: VSDesignTokens.space3),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'AI Image Generator',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Create stunning images with AI',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+              child: Text(
+                error!,
+                style: tt.bodyMedium?.copyWith(color: cs.onErrorContainer),
               ),
             ),
           ],
         ),
-      ],
-    );
-  }
+      );
+    }
 
-  Widget _buildPromptSection(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final unlimited = limit == -1;
+    final progress = unlimited ? 1.0 : (remaining / limit.toDouble()).clamp(0.0, 1.0);
+    final low = !unlimited && remaining <= 1;
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: colorScheme.outline.withValues(alpha: 0.2),
-          width: 1,
-        ),
+    return VSCard(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(
+        color: low ? cs.error.withValues(alpha: 0.4) : cs.outlineVariant,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                Icons.edit_outlined,
-                color: colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: VSDesignTokens.space3),
-              Text(
-                'Describe Your Image',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildPromptInput(context),
-          const SizedBox(height: 12),
-          _buildPromptActions(context),
-          const SizedBox(height: 8),
-          _buildCharacterCount(context),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    int remaining = _generationLimit == -1 ? 999 : _generationLimit - _generationsToday;
-    final canGenerate = (remaining > 0 || _generationLimit == -1) &&
-                       !_isLoading && !_isFetchingRandomPrompt && !_isImproving &&
-                       _promptController.text.trim().isNotEmpty;
-
-    return Scaffold(
-      backgroundColor: colorScheme.surface,
-      body: VSResponsiveLayout(
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: CustomScrollView(
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(
-                      VSDesignTokens.space6,
-                      VSDesignTokens.space4,
-                      VSDesignTokens.space6,
-                      0,
-                    ),
-                    sliver: SliverToBoxAdapter(
-                      child: _buildHeader(context),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: VSResponsive.getResponsivePadding(context),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const VSResponsiveSpacing(),
-                          _buildGenerationStatus(context, remaining, _generationLimit),
-                          const VSResponsiveSpacing(desktop: VSDesignTokens.space10),
-                          _buildPromptSection(context),
-                          const VSResponsiveSpacing(),
-                          _buildAdvancedOptionsToggle(context),
-                          if (_showAdvancedOptions) ...[
-                            const VSResponsiveSpacing(mobile: VSDesignTokens.space4),
-                            _buildAdvancedOptions(context),
-                          ],
-                          const VSResponsiveSpacing(desktop: VSDesignTokens.space10),
-                          _buildResultSection(context),
-                          const VSResponsiveSpacing(),
-                          _buildLastPromptDisplay(context),
-                          const VSResponsiveSpacing(desktop: VSDesignTokens.space10),
-                          _buildGenerateButton(context, canGenerate),
-                          const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPromptActions(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: VSButton(
-            text: _isImproving ? 'Improving...' : 'Improve',
-            icon: _isImproving ? null : const Icon(Icons.auto_awesome),
-            onPressed: _isImproving || _isLoading ? null : _improvePrompt,
-            isLoading: _isImproving,
-            variant: VSButtonVariant.outline,
-            size: VSButtonSize.medium,
-          ),
-        ),
-        const SizedBox(width: VSDesignTokens.space3),
-        Expanded(
-          child: VSButton(
-            text: _isFetchingRandomPrompt ? 'Loading...' : 'Surprise Me',
-            icon: _isFetchingRandomPrompt ? null : const Icon(Icons.casino),
-            onPressed: _isFetchingRandomPrompt || _isLoading ? null : _fetchRandomPrompt,
-            isLoading: _isFetchingRandomPrompt,
-            variant: VSButtonVariant.outline,
-            size: VSButtonSize.medium,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCharacterCount(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final currentLength = _promptController.text.length;
-    const maxLength = 4000;
-    final isNearLimit = currentLength > maxLength * 0.8;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'Be specific and descriptive for best results',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-          ),
-        ),
-        Text(
-          '$currentLength/$maxLength',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: isNearLimit ? colorScheme.error : colorScheme.onSurfaceVariant,
-            fontWeight: isNearLimit ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAdvancedOptionsToggle(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _showAdvancedOptions = !_showAdvancedOptions;
-        });
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.3),
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.tune,
-              color: colorScheme.primary,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Advanced Options',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            AnimatedRotation(
-              turns: _showAdvancedOptions ? 0.5 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                Icons.keyboard_arrow_down,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAdvancedOptions(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      child: Column(
-        children: [
-          _buildAspectRatioSelector(context),
-          const SizedBox(height: 20),
-          _buildStyleSelector(context),
-          const SizedBox(height: 20),
-          _buildNegativePromptInput(context),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGenerationStatus(BuildContext context, int remaining, int limit) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    if (_isLoadingStatus) {
-      return VSCard(
-        padding: const EdgeInsets.all(VSDesignTokens.space6),
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: VSDesignTokens.radiusXL,
-        child: Center(
-          child: VSLoadingIndicator(
-            message: 'Loading status...',
-            size: VSDesignTokens.iconL,
-          ),
-        ),
-      );
-    }
-
-    if (_statusErrorMessage != null) {
-      return VSCard(
-        padding: const EdgeInsets.all(VSDesignTokens.space5),
-        color: colorScheme.errorContainer,
-        borderRadius: VSDesignTokens.radiusL,
-        child: Row(
-          children: [
-            Icon(
-              Icons.error_outline,
-              color: colorScheme.onErrorContainer,
-              size: VSDesignTokens.iconM,
-            ),
-            const SizedBox(width: VSDesignTokens.space3),
-            Expanded(
-              child: Text(
-                _statusErrorMessage!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onErrorContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final progress = limit == -1 ? 1.0 : (remaining / limit.toDouble()).clamp(0.0, 1.0);
-    final isLowRemaining = remaining <= 1 && limit != -1;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isLowRemaining
-              ? colorScheme.error.withValues(alpha: 0.3)
-              : colorScheme.outline.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(VSDesignTokens.space2),
                 decoration: BoxDecoration(
-                  color: isLowRemaining
-                      ? colorScheme.errorContainer
-                      : colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  color: low
+                      ? cs.errorContainer
+                      : cs.primaryContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusS),
                 ),
                 child: Icon(
-                  limit == -1 ? Icons.all_inclusive : Icons.bolt,
-                  color: isLowRemaining
-                      ? colorScheme.onErrorContainer
-                      : colorScheme.onPrimaryContainer,
-                  size: 20,
+                  unlimited ? Icons.all_inclusive_rounded : Icons.bolt_rounded,
+                  color: low ? cs.onErrorContainer : cs.primary,
+                  size: VSDesignTokens.iconM,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: VSDesignTokens.space3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Generations Available',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
+                      'Generations',
+                      style: tt.titleSmall?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: VSTypography.weightSemiBold,
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      limit == -1 ? 'Unlimited' : '$remaining of $limit remaining',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      unlimited ? 'Unlimited' : '$remaining of $limit remaining',
+                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          if (limit != -1) ...[
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              borderRadius: BorderRadius.circular(3),
-              backgroundColor: colorScheme.surfaceContainerHighest,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                isLowRemaining ? colorScheme.error : colorScheme.primary,
+          if (!unlimited) ...[
+            const SizedBox(height: VSDesignTokens.space4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(VSDesignTokens.radiusXS),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: cs.surfaceContainerHigh,
+                valueColor:
+                    AlwaysStoppedAnimation(low ? cs.error : cs.primary),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: VSDesignTokens.space3),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  isLowRemaining ? 'Almost out!' : 'Resets daily',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isLowRemaining
-                        ? colorScheme.error
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: isLowRemaining ? FontWeight.w600 : FontWeight.normal,
+                  low ? 'Almost out' : 'Resets daily',
+                  style: tt.bodySmall?.copyWith(
+                    color: low ? cs.error : cs.onSurfaceVariant,
+                    fontWeight: low ? VSTypography.weightSemiBold : VSTypography.weightRegular,
                   ),
                 ),
                 Text(
-                  _timeUntilReset,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+                  resetText,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
             ),
@@ -937,525 +1016,104 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
       ),
     );
   }
+}
 
-  Widget _buildLastPromptDisplay(BuildContext context) {
-    if (_lastSuccessfulPrompt.isEmpty) {
-      return const SizedBox.shrink();
-    }
+class _ChipChoice extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _ChipChoice({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outline.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = selected ? cs.onPrimary : cs.onSurface;
+    final bg = selected ? cs.primary : cs.surfaceContainerHigh;
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space4,
+            vertical: VSDesignTokens.space3,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  Icons.history,
-                  color: colorScheme.onPrimaryContainer,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: VSDesignTokens.space3),
+              Icon(icon, size: VSDesignTokens.iconS, color: fg),
+              const SizedBox(width: VSDesignTokens.space2),
               Text(
-                'Last Generated',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () {
-                  _promptController.text = _lastSuccessfulPrompt;
-                  _promptFocusNode.requestFocus();
-                },
-                icon: Icon(
-                  Icons.content_copy,
-                  size: 18,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                tooltip: 'Copy to prompt',
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontWeight: selected
+                      ? VSTypography.weightSemiBold
+                      : VSTypography.weightMedium,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          SelectableText(
-            _lastSuccessfulPrompt,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-            maxLines: 3,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAspectRatioSelector(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.aspect_ratio,
-              color: colorScheme.primary,
-              size: 20,
-            ),
-            const SizedBox(width: VSDesignTokens.space3),
-            Text(
-              'Aspect Ratio',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: _aspectRatioOptions.map((option) {
-            final isSelected = _selectedAspectRatioValue == option.value;
-            return FilterChip(
-              selected: isSelected,
-              onSelected: (_isLoading || _isImproving || _isFetchingRandomPrompt)
-                  ? null
-                  : (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedAspectRatioValue = option.value;
-                        });
-                      }
-                    },
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    option.icon,
-                    size: 16,
-                    color: isSelected
-                        ? colorScheme.onSecondaryContainer
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    option.label,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: isSelected
-                          ? colorScheme.onSecondaryContainer
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: colorScheme.surface,
-              selectedColor: colorScheme.secondaryContainer,
-              checkmarkColor: colorScheme.onSecondaryContainer,
-              side: BorderSide(
-                color: isSelected
-                    ? colorScheme.secondary
-                    : colorScheme.outline.withValues(alpha: 0.5),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNegativePromptInput(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.block,
-              color: colorScheme.primary,
-              size: 20,
-            ),
-            const SizedBox(width: VSDesignTokens.space3),
-            Text(
-              'Negative Prompt (Optional)',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _negativePromptController,
-          focusNode: _negativePromptFocusNode,
-          minLines: 2,
-          maxLines: 3,
-          maxLength: 1000,
-          decoration: InputDecoration(
-            hintText: 'What you don\'t want to see (e.g., "blurry, low quality, text, watermark")',
-            hintStyle: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: colorScheme.primary, width: 2),
-            ),
-            filled: true,
-            fillColor: colorScheme.surface,
-            counterText: '', // Hide default counter
-          ),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Helps avoid unwanted elements in your image',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStyleSelector(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.palette,
-              color: colorScheme.primary,
-              size: 20,
-            ),
-            const SizedBox(width: VSDesignTokens.space3),
-            Text(
-              'Image Style',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: _styleOptions.entries.map((entry) {
-            final option = entry.value;
-            final isSelected = _selectedStyle == entry.key;
-            return FilterChip(
-              selected: isSelected,
-              onSelected: (_isLoading || _isImproving || _isFetchingRandomPrompt)
-                  ? null
-                  : (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedStyle = entry.key;
-                        });
-                      }
-                    },
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    option.icon,
-                    size: 16,
-                    color: isSelected
-                        ? colorScheme.onSecondaryContainer
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    option.displayName,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: isSelected
-                          ? colorScheme.onSecondaryContainer
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: colorScheme.surface,
-              selectedColor: colorScheme.secondaryContainer,
-              checkmarkColor: colorScheme.onSecondaryContainer,
-              side: BorderSide(
-                color: isSelected
-                    ? colorScheme.secondary
-                    : colorScheme.outline.withValues(alpha: 0.5),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPromptInput(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Semantics(
-      label: 'Image description prompt',
-      hint: 'Enter a detailed description of the image you want to create',
-      child: TextField(
-        controller: _promptController,
-        focusNode: _promptFocusNode,
-        minLines: 3,
-        maxLines: 5,
-        maxLength: 4000,
-        onChanged: (value) {
-          setState(() {}); // Trigger rebuild for character count
-        },
-        decoration: InputDecoration(
-          hintText: 'Describe the image you want to create in detail...',
-          hintStyle: theme.textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: colorScheme.primary, width: 2),
-          ),
-          filled: true,
-          fillColor: colorScheme.surface,
-          counterText: '', // Hide default counter
-        ),
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: colorScheme.onSurface,
         ),
       ),
     );
   }
+}
 
-  Widget _buildGenerateButton(BuildContext context, bool canGenerate) {
-    return VSButton(
-      text: 'Generate Image',
-      icon: _isLoading ? null : const Icon(Icons.auto_awesome),
-      onPressed: canGenerate ? _generateImage : null,
-      isLoading: _isLoading,
-      isFullWidth: true,
-      size: VSButtonSize.large,
-      variant: VSButtonVariant.primary,
-    );
-  }
+class _ActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool loading;
+  final VoidCallback? onTap;
+  final Color? accent;
+  const _ActionPill({
+    required this.icon,
+    required this.label,
+    required this.loading,
+    required this.onTap,
+    this.accent,
+  });
 
-  Widget _buildResultSection(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    // Get aspect ratio from selected option
-    final selectedOption = _aspectRatioOptions.firstWhere(
-      (option) => option.value == _selectedAspectRatioValue,
-      orElse: () => _aspectRatioOptions.first,
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = accent ?? cs.primary;
+    return Material(
+      color: Colors.white.withValues(alpha: 0.95),
+      borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+      child: InkWell(
+        onTap: loading ? null : onTap,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space4,
+            vertical: VSDesignTokens.space3,
           ),
-        ],
-      ),
-      child: AspectRatio(
-        aspectRatio: selectedOption.ratio,
-        child: Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: colorScheme.outline.withValues(alpha: 0.2),
-              width: 1,
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Placeholder state
-              if (_generatedImageUrl == null && !_isLoading)
-                _buildPlaceholderState(context, selectedOption),
-
-              // Generated image
-              if (_generatedImageUrl != null)
-                _buildGeneratedImage(context),
-
-              // Loading state
-              if (_isLoading)
-                _buildLoadingState(context),
-
-              // Action buttons overlay
-              if (_generatedImageUrl != null && !_isLoading)
-                _buildActionButtonsOverlay(context),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderState(BuildContext context, AspectRatioOption option) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return SizedBox(
-      width: double.infinity,
-      height: double.infinity,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              option.icon,
-              size: 48,
-              color: colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Your ${option.label.toLowerCase()} image will appear here',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Enter a prompt and tap Generate to create',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGeneratedImage(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Hero(
-      tag: 'generated_image',
-      child: Image.network(
-        _generatedImageUrl!,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                      : null,
-                  color: colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Loading image...',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) => Container(
-          width: double.infinity,
-          height: double.infinity,
-          color: colorScheme.errorContainer,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.broken_image_outlined,
-                size: 48,
-                color: colorScheme.onErrorContainer,
-              ),
-              const SizedBox(height: 16),
+              if (loading)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: color),
+                )
+              else
+                Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
               Text(
-                'Failed to load image',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onErrorContainer,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Tap to retry',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onErrorContainer.withValues(alpha: 0.7),
+                label,
+                style: TextStyle(
+                  color: VSColors.ink,
+                  fontWeight: VSTypography.weightSemiBold,
                 ),
               ),
             ],
@@ -1464,176 +1122,4 @@ class _ImageGeneratorScreenState extends State<ImageGeneratorScreen>
       ),
     );
   }
-
-  Widget _buildLoadingState(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primary.withValues(alpha: 0.1),
-            colorScheme.secondary.withValues(alpha: 0.1),
-          ],
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colorScheme.surface.withValues(alpha: 0.9),
-              shape: BoxShape.circle,
-            ),
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: VSDesignTokens.space6),
-          Text(
-            'Creating your image...',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: VSDesignTokens.space3),
-          Text(
-            'This may take a few moments',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButtonsOverlay(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              colorScheme.scrim.withValues(alpha: 0.8),
-              colorScheme.scrim.withValues(alpha: 0.0),
-            ],
-            stops: const [0.0, 1.0],
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildModernActionButton(
-              context,
-              'Save',
-              Icons.download_rounded,
-              _isSavingImage,
-              _saveImage,
-            ),
-            // Share button logic based on auto-upload setting and share state
-            if (!_autoUploadToGallery && !_isSharedToGallery)
-              // Show share button when auto-upload is OFF and image hasn't been shared
-              _buildModernActionButton(
-                context,
-                'Share',
-                Icons.share_rounded,
-                _isSharingToGallery,
-                _shareToGallery,
-              ),
-            if (!_autoUploadToGallery && _isSharedToGallery)
-              // Show "Shared" indicator when auto-upload is OFF and image has been shared
-              _buildModernActionButton(
-                context,
-                'Shared',
-                Icons.check_circle_rounded,
-                false,
-                null, // No action - just an indicator
-              ),
-            // When auto-upload is ON, no share button is shown since it's automatically shared
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModernActionButton(
-    BuildContext context,
-    String label,
-    IconData icon,
-    bool isLoading,
-    VoidCallback? onPressed,
-  ) {
-    final theme = Theme.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isLoading ? null : onPressed,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isLoading)
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: theme.colorScheme.primary,
-                    ),
-                  )
-                else
-                  Icon(
-                    icon,
-                    size: 18,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                const SizedBox(width: VSDesignTokens.space3),
-                Text(
-                  isLoading ? 'Loading...' : label,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-
 }

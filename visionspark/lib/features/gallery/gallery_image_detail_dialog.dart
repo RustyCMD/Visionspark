@@ -1,35 +1,32 @@
 import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import './gallery_screen.dart'; // Contains GalleryImage
 import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
+
 import '../../shared/design_system/design_system.dart';
 import '../../shared/utils/snackbar_utils.dart';
+import 'gallery_screen.dart';
 
 class GalleryImageDetailDialog extends StatefulWidget {
   final GalleryImage galleryItem;
-
   const GalleryImageDetailDialog({super.key, required this.galleryItem});
 
-  static Future<void> show(BuildContext context, GalleryImage galleryItem) {
+  static Future<void> show(BuildContext context, GalleryImage item) {
     return showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       barrierColor: Colors.black,
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, animation, secondaryAnimation) {
+      transitionDuration: VSDesignTokens.durationMedium,
+      pageBuilder: (_, animation, __) {
         return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          )),
-          child: GalleryImageDetailDialog(galleryItem: galleryItem),
+          position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          ),
+          child: GalleryImageDetailDialog(galleryItem: item),
         );
       },
     );
@@ -39,488 +36,380 @@ class GalleryImageDetailDialog extends StatefulWidget {
   State<GalleryImageDetailDialog> createState() => _GalleryImageDetailDialogState();
 }
 
-class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> 
-    with TickerProviderStateMixin {
-  bool _isSaving = false;
-  bool _showDetails = false;
-  static const MethodChannel _channel = MethodChannel('com.visionspark.app/media');
-  
-  late AnimationController _detailsAnimationController;
-  late Animation<double> _detailsAnimation;
+class _GalleryImageDetailDialogState extends State<GalleryImageDetailDialog> {
+  static const _channel = MethodChannel('com.visionspark.app/media');
+  bool _saving = false;
+  bool _detailsOpen = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _detailsAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _detailsAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _detailsAnimationController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _detailsAnimationController.dispose();
-    super.dispose();
-  }
-
-  void _toggleDetails() {
-    setState(() {
-      _showDetails = !_showDetails;
-    });
-    if (_showDetails) {
-      _detailsAnimationController.forward();
-    } else {
-      _detailsAnimationController.reverse();
-    }
-  }
-
-  Future<void> _saveImageFromUrl() async {
-    if (!mounted || _isSaving) return;
-    setState(() => _isSaving = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
     try {
-      final photosPermission = Platform.isAndroid 
-          ? (await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33 ? Permission.photos : Permission.storage
+      final perm = Platform.isAndroid
+          ? ((await DeviceInfoPlugin().androidInfo).version.sdkInt >= 33
+              ? Permission.photos
+              : Permission.storage)
           : Permission.photos;
-
-      PermissionStatus status = await photosPermission.status;
-      if (!status.isGranted) status = await photosPermission.request();
-
-      if (status.isGranted) {
-        final http.Response response = await http.get(Uri.parse(widget.galleryItem.imageUrl));
-        if (response.statusCode != 200) throw Exception('Failed to download image.');
-        
-        final filename = 'Visionspark_${DateTime.now().millisecondsSinceEpoch}.png';
-        await _channel.invokeMethod('saveImageToGallery', {
-          'imageBytes': response.bodyBytes, 'filename': filename, 'albumName': 'Visionspark'
-        });
-        VSSnackbar.showSuccess(context, 'Image saved to Gallery: $filename');
-      } else {
-        VSSnackbar.showError(context, 'Storage permission denied.');
+      var status = await perm.status;
+      if (!status.isGranted) status = await perm.request();
+      if (!status.isGranted) {
+        if (mounted) VSSnackbar.showError(context, 'Storage permission denied.');
+        return;
       }
+      final url = widget.galleryItem.imageUrl;
+      if (url == null) throw Exception('No URL');
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode != 200) throw Exception('Download failed');
+      final filename = 'Visionspark_${DateTime.now().millisecondsSinceEpoch}.png';
+      await _channel.invokeMethod('saveImageToGallery', {
+        'imageBytes': res.bodyBytes,
+        'filename': filename,
+        'albumName': 'Visionspark',
+      });
+      if (mounted) VSSnackbar.showSuccess(context, 'Saved: $filename');
     } catch (e) {
-      VSSnackbar.showError(context, 'Failed to save image: ${e.toString()}');
+      if (mounted) VSSnackbar.showError(context, 'Could not save: $e');
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   void _copyPrompt() {
-    if (widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: widget.galleryItem.prompt!));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.white),
-              const SizedBox(width: 12),
-              Text('Prompt copied to clipboard!'),
-            ],
-          ),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-    }
+    final p = widget.galleryItem.prompt;
+    if (p == null || p.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: p));
+    VSSnackbar.showSuccess(context, 'Prompt copied.');
   }
 
-  void _shareImage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.share, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(child: Text('Sharing image URL: ${widget.galleryItem.imageUrl}')),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+  void _shareUrl() {
+    final url = widget.galleryItem.imageUrl ?? '';
+    Clipboard.setData(ClipboardData(text: url));
+    VSSnackbar.showInfo(context, 'Image URL copied to clipboard.');
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
     final size = MediaQuery.of(context).size;
-
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: Container(
-          margin: const EdgeInsets.all(VSDesignTokens.space2),
-          decoration: BoxDecoration(
-            color: VSColors.black38,
-            shape: BoxShape.circle,
-          ),
-          child: VSAccessibleButton(
-            onPressed: () => Navigator.of(context).pop(),
-            semanticLabel: 'Close image viewer',
-            tooltip: 'Close',
-            child: const Icon(Icons.close_rounded, color: Colors.white),
-          ),
+        leading: _circleButton(
+          icon: Icons.close_rounded,
+          tooltip: 'Close',
+          onTap: () => Navigator.of(context).pop(),
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.all(VSDesignTokens.space2),
-            decoration: BoxDecoration(
-              color: VSColors.black38,
-              shape: BoxShape.circle,
-            ),
-            child: VSAccessibleButton(
-              onPressed: _toggleDetails,
-              semanticLabel: _showDetails ? 'Hide image details' : 'Show image details',
-              tooltip: _showDetails ? 'Hide details' : 'Show details',
-              child: Icon(
-                _showDetails ? Icons.info : Icons.info_outline,
-                color: Colors.white,
-              ),
-            ),
+          _circleButton(
+            icon: _detailsOpen ? Icons.info : Icons.info_outline,
+            tooltip: _detailsOpen ? 'Hide details' : 'Show details',
+            onTap: () => setState(() => _detailsOpen = !_detailsOpen),
           ),
+          const SizedBox(width: VSDesignTokens.space2),
         ],
       ),
       body: Stack(
         children: [
-          // Main image
           Center(
             child: Hero(
               tag: widget.galleryItem.id,
               child: InteractiveViewer(
                 minScale: 0.5,
-                maxScale: 3.0,
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: size.width,
-                    maxHeight: size.height,
-                  ),
-                  child: Image.network(
-                    widget.galleryItem.imageUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return Container(
-                        width: size.width * 0.8,
-                        height: size.height * 0.6,
-                        decoration: BoxDecoration(
-                          color: VSColors.gray900,
-                          borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
-                        ),
-                        child: Center(
-                          child: VSLoadingIndicator(
-                            message: 'Loading image...',
-                            size: VSDesignTokens.iconXL,
-                            color: colorScheme.primary,
+                maxScale: 4,
+                child: widget.galleryItem.imageUrl == null
+                    ? const SizedBox.shrink()
+                    : Image.network(
+                        widget.galleryItem.imageUrl!,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (_, child, p) => p == null
+                            ? child
+                            : Center(
+                                child: VSLoadingIndicator(
+                                  message: 'Loading image…',
+                                  color: cs.primary,
+                                ),
+                              ),
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: VSEmptyState(
+                            icon: Icons.broken_image_outlined,
+                            title: 'Failed to load',
+                            subtitle: 'Check your connection and try again.',
                           ),
                         ),
-                      );
-                    },
-                    errorBuilder: (context, error, stack) => Container(
-                      width: size.width * 0.8,
-                      height: size.height * 0.6,
-                      decoration: BoxDecoration(
-                        color: VSColors.gray900,
-                        borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
                       ),
-                      child: Center(
-                        child: VSEmptyState(
-                          icon: Icons.broken_image_rounded,
-                          title: 'Failed to load image',
-                          subtitle: 'Please check your connection and try again',
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
-
-          // Action buttons (positioned first so details overlay can push them up)
-          AnimatedBuilder(
-            animation: _detailsAnimation,
-            builder: (context, child) {
-              // Calculate dynamic bottom position based on details overlay state
-              // Push action buttons up by the height of the details overlay when shown
-              final detailsOverlayHeight = size.height * 0.4 + 72; // Max height + margins/padding
-              final actionButtonsBottom = size.height * 0.05 + (detailsOverlayHeight * _detailsAnimation.value);
-
-              return Positioned(
-                bottom: actionButtonsBottom,
-                left: 0,
-                right: 0,
-                child: _buildActionButtons(colorScheme, textTheme, size),
-              );
-            },
+          AnimatedPositioned(
+            duration: VSDesignTokens.durationMedium,
+            curve: Curves.easeOutCubic,
+            left: 16,
+            right: 16,
+            bottom: _detailsOpen ? size.height * 0.4 + 24 : 24,
+            child: _actions(),
           ),
-
-          // Details overlay
-          AnimatedBuilder(
-            animation: _detailsAnimation,
-            builder: (context, child) {
-              return Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Transform.translate(
-                  offset: Offset(0, (1 - _detailsAnimation.value) * (size.height * 0.4 + 72)),
-                  child: Opacity(
-                    opacity: _detailsAnimation.value,
-                    child: _buildDetailsOverlay(colorScheme, textTheme, size),
-                  ),
-                ),
-              );
-            },
+          AnimatedPositioned(
+            duration: VSDesignTokens.durationMedium,
+            curve: Curves.easeOutCubic,
+            left: 16,
+            right: 16,
+            bottom: _detailsOpen ? 24 : -size.height * 0.5,
+            child: _details(size),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDetailsOverlay(ColorScheme colorScheme, TextTheme textTheme, Size size) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      constraints: BoxConstraints(
-        maxHeight: size.height * 0.4, // Limit height to 40% of screen
-      ),
-      decoration: BoxDecoration(
-        color: VSColors.black87,
-        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
-        border: Border.all(
-          color: VSColors.white12,
-          width: 1,
+  Widget _circleButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(VSDesignTokens.space2),
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.45),
+        shape: const CircleBorder(),
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onTap,
+          icon: Icon(icon, color: Colors.white),
         ),
+      ),
+    );
+  }
+
+  Widget _actions() {
+    final cs = Theme.of(context).colorScheme;
+    final hasPrompt = (widget.galleryItem.prompt ?? '').isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(VSDesignTokens.space3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _ActionTile(
+            icon: Icons.download_rounded,
+            label: 'Save',
+            loading: _saving,
+            onTap: _save,
+            accent: cs.primary,
+          ),
+          _ActionTile(
+            icon: Icons.share_rounded,
+            label: 'Share',
+            onTap: _shareUrl,
+            accent: cs.primary,
+          ),
+          _ActionTile(
+            icon: Icons.copy_all_rounded,
+            label: 'Copy',
+            onTap: hasPrompt ? _copyPrompt : null,
+            accent: cs.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _details(Size size) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final p = widget.galleryItem.prompt ?? '';
+    return Container(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      constraints: BoxConstraints(maxHeight: size.height * 0.4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusS),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(VSDesignTokens.space2),
+                  decoration: BoxDecoration(
+                    color: cs.primary.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusS),
+                  ),
+                  child: Icon(Icons.auto_awesome, color: cs.primary, size: 20),
                 ),
-                child: Icon(
-                  Icons.auto_awesome,
-                  color: colorScheme.primary,
-                  size: 20,
+                const SizedBox(width: VSDesignTokens.space3),
+                Text(
+                  'Image details',
+                  style: tt.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: VSTypography.weightBold,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
+              ],
+            ),
+            if (p.isNotEmpty) ...[
+              const SizedBox(height: VSDesignTokens.space5),
               Text(
-                'Image Details',
-                style: textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                'Prompt',
+                style: tt.titleSmall?.copyWith(
+                  color: Colors.white70,
+                  fontWeight: VSTypography.weightSemiBold,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: VSDesignTokens.space2),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(VSDesignTokens.space4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: SelectableText(
+                  p,
+                  style: tt.bodyLarge?.copyWith(color: Colors.white, height: 1.5),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 20),
-          if (widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty) ...[
-            Text(
-              'Prompt',
-              style: textTheme.titleSmall?.copyWith(
-                color: Colors.white70,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: VSColors.white12.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-                border: Border.all(
-                  color: VSColors.white12,
-                  width: 1,
+            const SizedBox(height: VSDesignTokens.space4),
+            Row(
+              children: [
+                _Chip(
+                  icon: Icons.favorite_rounded,
+                  text: '${widget.galleryItem.likeCount} likes',
+                  iconColor: cs.primary,
                 ),
-              ),
-              child: SelectableText(
-                widget.galleryItem.prompt!,
-                style: textTheme.bodyLarge?.copyWith(
-                  color: Colors.white,
-                  height: 1.5,
+                const SizedBox(width: VSDesignTokens.space2),
+                _Chip(
+                  icon: Icons.schedule_rounded,
+                  text: _format(widget.galleryItem.createdAt),
+                  iconColor: Colors.white70,
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 16),
-          ],
-          Row(
-            children: [
-              _buildInfoChip(
-                Icons.favorite,
-                '${widget.galleryItem.likeCount} likes',
-                colorScheme.primary,
-              ),
-              const SizedBox(width: 12),
-              _buildInfoChip(
-                Icons.schedule,
-                _formatDate(widget.galleryItem.createdAt),
-                Colors.white70,
-              ),
-            ],
-          ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String text, Color color) {
+  String _format(DateTime d) {
+    final diff = DateTime.now().difference(d);
+    if (diff.inDays == 0) {
+      if (diff.inHours == 0) return '${diff.inMinutes}m ago';
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    }
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[d.month - 1]} ${d.day}';
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool loading;
+  final VoidCallback? onTap;
+  final Color accent;
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    this.loading = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Expanded(
+      child: Material(
+        color: enabled ? accent.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
+        child: InkWell(
+          onTap: enabled && !loading ? onTap : null,
+          borderRadius: BorderRadius.circular(VSDesignTokens.radiusL),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: VSDesignTokens.space3,
+              vertical: VSDesignTokens.space4,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (loading)
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                  )
+                else
+                  Icon(icon, color: enabled ? accent : Colors.white38, size: 22),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: enabled ? Colors.white : Colors.white38,
+                    fontSize: 12,
+                    fontWeight: VSTypography.weightSemiBold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color iconColor;
+  const _Chip({required this.icon, required this.text, required this.iconColor});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: VSDesignTokens.space3,
+        vertical: 6,
+      ),
       decoration: BoxDecoration(
-        color: VSColors.white12,
-        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusRound),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: color),
+          Icon(icon, size: 14, color: iconColor),
           const SizedBox(width: 6),
           Text(
             text,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
-              fontWeight: FontWeight.w500,
+              fontWeight: VSTypography.weightMedium,
             ),
           ),
         ],
       ),
     );
-  }
-
-  Widget _buildActionButtons(ColorScheme colorScheme, TextTheme textTheme, Size size) {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: size.width * 0.08),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: VSColors.black87.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
-        border: Border.all(
-          color: VSColors.white12,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildActionButton(
-            icon: Icons.save_alt_rounded,
-            label: 'Save',
-            onPressed: _isSaving ? null : _saveImageFromUrl,
-            isLoading: _isSaving,
-            colorScheme: colorScheme,
-          ),
-          _buildActionButton(
-            icon: Icons.share_rounded,
-            label: 'Share',
-            onPressed: _shareImage,
-            colorScheme: colorScheme,
-          ),
-          _buildActionButton(
-            icon: Icons.copy_all_rounded,
-            label: 'Copy',
-            onPressed: widget.galleryItem.prompt != null && widget.galleryItem.prompt!.isNotEmpty 
-                ? _copyPrompt 
-                : null,
-            colorScheme: colorScheme,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onPressed,
-    required ColorScheme colorScheme,
-    bool isLoading = false,
-  }) {
-    final isEnabled = onPressed != null;
-
-    return Expanded(
-      child: VSAccessibleButton(
-        onPressed: onPressed,
-        semanticLabel: '$label button',
-        tooltip: label,
-        backgroundColor: isEnabled
-          ? colorScheme.primary.withValues(alpha: 0.15)
-          : VSColors.white12.withValues(alpha: 0.05),
-        borderRadius: VSDesignTokens.radiusL,
-        padding: const EdgeInsets.symmetric(
-          vertical: VSDesignTokens.space4,
-          horizontal: VSDesignTokens.space3,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isLoading)
-              SizedBox(
-                width: VSDesignTokens.iconM,
-                height: VSDesignTokens.iconM,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: isEnabled ? colorScheme.primary : Colors.white38,
-                ),
-              )
-            else
-              Icon(
-                icon,
-                size: VSDesignTokens.iconM,
-                color: isEnabled ? colorScheme.primary : Colors.white38,
-              ),
-            const SizedBox(height: VSDesignTokens.space2),
-            Text(
-              label,
-              style: TextStyle(
-                color: isEnabled ? Colors.white : Colors.white38,
-                fontSize: VSTypography.fontSize12,
-                fontWeight: VSTypography.weightSemiBold,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[date.month - 1]} ${date.day}';
-    }
   }
 }
