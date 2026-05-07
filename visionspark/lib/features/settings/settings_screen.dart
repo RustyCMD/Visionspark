@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
-import '../../main.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../shared/notifiers/subscription_status_notifier.dart';
-import '../../shared/design_system/design_system.dart';
-import '../../shared/utils/snackbar_utils.dart';
-import '../../shared/services/retry_service.dart';
-import '../../shared/widgets/standardized_loading_widget.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../../main.dart';
+import '../../shared/design_system/design_system.dart';
+import '../../shared/notifiers/subscription_status_notifier.dart';
+import '../../shared/services/retry_service.dart';
+import '../../shared/utils/snackbar_utils.dart';
+import '../../shared/widgets/standardized_loading_widget.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,515 +24,319 @@ class _SettingsScreenState extends State<SettingsScreen> with StandardizedRetryM
   String _version = '';
   bool _autoUpload = false;
   String? _activeSubscription;
-  bool _isLoadingSubscription = true;
-  SubscriptionStatusNotifier? _subscriptionStatusNotifier;
+  bool _loadingSub = true;
+  SubscriptionStatusNotifier? _notifier;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
     _loadAutoUpload();
-    _fetchSubscriptionStatus();
+    _fetchSubscription();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final notifier = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
-    if (_subscriptionStatusNotifier != notifier) {
-      _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
-      _subscriptionStatusNotifier = notifier;
-      _subscriptionStatusNotifier?.addListener(_onSubscriptionChanged);
+    final n = Provider.of<SubscriptionStatusNotifier>(context, listen: false);
+    if (_notifier != n) {
+      _notifier?.removeListener(_fetchSubscription);
+      _notifier = n;
+      _notifier?.addListener(_fetchSubscription);
     }
   }
 
-  // Helper function to launch URLs
-  Future<void> _launchURL(String urlString) async {
-    final Uri url = Uri.parse(urlString);
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        if (mounted) {
-          VSSnackbar.showError(context, 'Could not launch $urlString');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error launching URL: $e');
-      if (mounted) {
-        VSSnackbar.showError(context, 'Error launching URL: An unexpected error occurred.');
-      }
-    }
-  }
-
-  Future<void> _clearImageCache() async {
-    bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Clear Cache'),
-          content: const Text('Are you sure you want to clear all cached images? This action cannot be undone.'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(dialogContext).pop(false);
-              },
-            ),
-            TextButton(
-              child: Text('Clear Cache', style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
-              onPressed: () {
-                Navigator.of(dialogContext).pop(true);
-              },
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        await DefaultCacheManager().emptyCache();
-        if (mounted) {
-          VSSnackbar.showSuccess(context, 'Image cache cleared successfully!');
-        }
-      } catch (e) {
-        debugPrint("Error clearing cache: $e");
-        if (mounted) {
-          VSSnackbar.showError(context, 'Error clearing cache: An unexpected error occurred.');
-        }
-      }
-    }
-  }
-
-  void _onSubscriptionChanged() {
-    _fetchSubscriptionStatus();
-  }
-
-  Future<void> _fetchSubscriptionStatus() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoadingSubscription = true;
-    });
-
-    final result = await executeWithRetry<Map<String, dynamic>>(
-      operation: () async {
-        final response = await Supabase.instance.client.functions.invoke('get-generation-status');
-        if (response.data == null) {
-          throw Exception('No data received from subscription status API');
-        }
-
-        final data = response.data as Map<String, dynamic>;
-        if (data['error'] != null) {
-          throw Exception(data['error'].toString());
-        }
-
-        return data;
-      },
-      operationType: RetryOperationType.subscriptionStatus,
-      operationName: 'Settings Subscription Status Check',
-    );
-
-    if (mounted) {
-      setState(() {
-        _isLoadingSubscription = false;
-      });
-
-      if (result.success && result.data != null) {
-        final subType = result.data!['active_subscription_type'];
-        final limit = result.data!['generation_limit'] ?? result.data!['limit'];
-        String subText = 'No Active Subscription';
-
-        if (subType == 'monthly_unlimited_generations' || subType == 'monthly_unlimited') {
-          subText = 'Unlimited Monthly';
-          if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
-        } else if (subType != null) {
-          subText = subType.toString().replaceAll('_', ' ').split(' ').map((e) => e[0].toUpperCase() + e.substring(1)).join(' ');
-          if (limit != null) subText += ' (Limit: ${limit == -1 ? "∞" : limit})';
-        }
-
-        setState(() {
-          _activeSubscription = subText;
-        });
-      } else {
-        setState(() {
-          _activeSubscription = 'Error: ${result.error ?? 'Failed to fetch subscription status'}';
-        });
-      }
-    }
+  @override
+  void dispose() {
+    _notifier?.removeListener(_fetchSubscription);
+    super.dispose();
   }
 
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
-    setState(() {
-      _version = info.version;
-    });
+    if (mounted) setState(() => _version = info.version);
   }
 
   Future<void> _loadAutoUpload() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _autoUpload = prefs.getBool('auto_upload_to_gallery') ?? false;
-    });
+    final p = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _autoUpload = p.getBool('auto_upload_to_gallery') ?? false);
   }
 
-  Future<void> _setAutoUpload(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('auto_upload_to_gallery', value);
-    setState(() {
-      _autoUpload = value;
-    });
-    // Optionally show a snackbar confirmation
+  Future<void> _setAutoUpload(bool v) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('auto_upload_to_gallery', v);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auto-upload set to ${value ? 'On' : 'Off'}')),
-      );
+      setState(() => _autoUpload = v);
+      VSSnackbar.showInfo(context, 'Auto-upload ${v ? 'on' : 'off'}.');
+    }
+  }
+
+  Future<void> _fetchSubscription() async {
+    if (!mounted) return;
+    setState(() => _loadingSub = true);
+    final result = await executeWithRetry<Map<String, dynamic>>(
+      operation: () async {
+        final resp = await Supabase.instance.client.functions
+            .invoke('get-generation-status');
+        if (resp.data == null) throw Exception('No data');
+        final data = resp.data as Map<String, dynamic>;
+        if (data['error'] != null) throw Exception(data['error']);
+        return data;
+      },
+      operationType: RetryOperationType.subscriptionStatus,
+      operationName: 'Settings subscription status',
+    );
+    if (!mounted) return;
+    setState(() => _loadingSub = false);
+    if (result.success && result.data != null) {
+      final type = result.data!['active_subscription_type'];
+      final limit = result.data!['generation_limit'] ?? result.data!['limit'];
+      String label = 'No active subscription';
+      if (type == 'monthly_unlimited_generations' || type == 'monthly_unlimited') {
+        label = 'Monthly unlimited';
+        if (limit != null) label += ' • limit ${limit == -1 ? "∞" : limit}';
+      } else if (type != null) {
+        label = type
+            .toString()
+            .replaceAll('_', ' ')
+            .split(' ')
+            .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
+            .join(' ');
+        if (limit != null) label += ' • limit ${limit == -1 ? "∞" : limit}';
+      }
+      setState(() => _activeSubscription = label);
+    } else {
+      setState(() => _activeSubscription =
+          'Could not load subscription: ${result.error ?? "unknown error"}');
+    }
+  }
+
+  Future<void> _launch(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) VSSnackbar.showError(context, 'Could not open $url');
+    } catch (_) {
+      if (mounted) VSSnackbar.showError(context, 'Could not open $url');
+    }
+  }
+
+  Future<void> _clearCache() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Clear cache?'),
+        content: const Text(
+          'This removes locally cached images. They\'ll re-download as needed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await DefaultCacheManager().emptyCache();
+      if (mounted) VSSnackbar.showSuccess(context, 'Cache cleared.');
+    } catch (_) {
+      if (mounted) VSSnackbar.showError(context, 'Could not clear cache.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Provider.of<ThemeController>(context);
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-
+    final theme = context.watch<ThemeController>();
     return Scaffold(
       body: VSResponsiveLayout(
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: ListView(
             padding: VSResponsive.getResponsivePadding(context),
-            child: Column(
-              children: [
-                _buildAppearanceSection(context, themeController, colorScheme, textTheme),
-                const VSResponsiveSpacing(),
-                _buildDataSection(context, colorScheme, textTheme),
-                const VSResponsiveSpacing(),
-                _buildSubscriptionSection(context, colorScheme, textTheme),
-                const VSResponsiveSpacing(),
-                _buildAboutSection(context, colorScheme, textTheme),
-                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
-              ],
-            ),
+            children: [
+              _appearance(theme),
+              const SizedBox(height: VSDesignTokens.space5),
+              _data(),
+              const SizedBox(height: VSDesignTokens.space5),
+              _subscription(),
+              const SizedBox(height: VSDesignTokens.space5),
+              _about(),
+              const SizedBox(height: VSDesignTokens.space12),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildAppearanceSection(BuildContext context, ThemeController themeController, ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _section({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+  }) {
+    final cs = Theme.of(context).colorScheme;
     return VSCard(
-      elevation: VSDesignTokens.elevation2,
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.palette_outlined,
-                  color: colorScheme.primary,
-                  size: VSDesignTokens.iconM,
-                ),
-                const SizedBox(width: VSDesignTokens.space3),
-                VSResponsiveText(
-                  text: 'Appearance',
-                  baseStyle: textTheme.titleLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SwitchListTile(
-            title: Text(
-              'Dark Mode',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
+      padding: EdgeInsets.zero,
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(VSDesignTokens.space5),
+              child: VSSectionHeader(
+                icon: icon,
+                title: title,
+                subtitle: subtitle,
               ),
             ),
-            subtitle: Text(
-              'Enable or disable dark theme',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            value: themeController.isDarkMode,
-            onChanged: (value) => themeController.setDarkMode(value),
-            activeColor: colorScheme.primary,
-            activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
-            inactiveThumbColor: colorScheme.outline,
-            inactiveTrackColor: colorScheme.surfaceContainerHighest,
-          ),
-        ],
+            ...children,
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildDataSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
-    return VSCard(
-      elevation: VSDesignTokens.elevation2,
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.storage_outlined,
-                  color: colorScheme.primary,
-                  size: VSDesignTokens.iconM,
-                ),
-                const SizedBox(width: VSDesignTokens.space3),
-                VSResponsiveText(
-                  text: 'Data & Storage',
-                  baseStyle: textTheme.titleLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-              ],
-            ),
+  Widget _appearance(ThemeController theme) {
+    final cs = Theme.of(context).colorScheme;
+    return _section(
+      icon: Icons.palette_outlined,
+      title: 'Appearance',
+      subtitle: 'Tune how VisionSpark looks.',
+      children: [
+        SwitchListTile(
+          title: const Text('Dark mode'),
+          subtitle: Text(
+            theme.isDarkMode ? 'Enabled' : 'Disabled',
+            style: TextStyle(color: cs.onSurfaceVariant),
           ),
-          SwitchListTile(
-            title: Text(
-              'Auto-upload generated images to gallery',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
-              ),
-            ),
-            subtitle: Text(
-              'Automatically share new images to the public gallery',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            value: _autoUpload,
-            onChanged: _setAutoUpload,
-            activeColor: colorScheme.primary,
-            activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
-            inactiveThumbColor: colorScheme.outline,
-            inactiveTrackColor: colorScheme.surfaceContainerHighest,
+          value: theme.isDarkMode,
+          onChanged: theme.setDarkMode,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
           ),
-          ListTile(
-            leading: Icon(
-              Icons.delete_sweep_outlined,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconM,
-            ),
-            title: Text(
-              'Clear Image Cache',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
-              ),
-            ),
-            subtitle: Text(
-              'Remove cached images from gallery and network',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            onTap: _clearImageCache,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+      ],
     );
   }
 
-  Widget _buildSubscriptionSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
-    return VSCard(
-      elevation: VSDesignTokens.elevation2,
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.card_membership_outlined,
-                  color: colorScheme.primary,
-                  size: VSDesignTokens.iconM,
-                ),
-                const SizedBox(width: VSDesignTokens.space3),
-                VSResponsiveText(
-                  text: 'Subscription',
-                  baseStyle: textTheme.titleLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-              ],
-            ),
+  Widget _data() {
+    return _section(
+      icon: Icons.storage_outlined,
+      title: 'Data & storage',
+      subtitle: 'Auto-upload and local cache.',
+      children: [
+        SwitchListTile(
+          title: const Text('Auto-upload to gallery'),
+          subtitle: const Text(
+            'Share generated/enhanced images automatically.',
           ),
-          ListTile(
-            title: Text(
-              'Active Subscription',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightSemiBold,
-              ),
-            ),
-            subtitle: _isLoadingSubscription
-                ? Row(
-                    children: [
-                      SizedBox(
-                        width: VSDesignTokens.iconS,
-                        height: VSDesignTokens.iconS,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: VSDesignTokens.space2),
-                      Text(
-                        'Loading...',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  )
-                : Text(
-                    _activeSubscription ?? 'N/A',
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+          value: _autoUpload,
+          onChanged: _setAutoUpload,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          leading: const Icon(Icons.delete_sweep_outlined),
+          title: const Text('Clear image cache'),
+          subtitle: const Text('Frees up local storage.'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: _clearCache,
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+      ],
+    );
+  }
+
+  Widget _subscription() {
+    final cs = Theme.of(context).colorScheme;
+    return _section(
+      icon: Icons.card_membership_outlined,
+      title: 'Subscription',
+      subtitle: 'Your current plan.',
+      children: [
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          title: const Text('Active subscription'),
+          subtitle: _loadingSub
+              ? Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
                     ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _buildAboutSection(BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
-    return VSCard(
-      elevation: VSDesignTokens.elevation2,
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
-      margin: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      padding: const EdgeInsets.symmetric(vertical: VSDesignTokens.space2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: colorScheme.primary,
-                  size: VSDesignTokens.iconM,
-                ),
-                const SizedBox(width: VSDesignTokens.space3),
-                VSResponsiveText(
-                  text: 'About & Legal',
-                  baseStyle: textTheme.titleLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ListTile(
-            title: Text(
-              'App Version',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightSemiBold,
-              ),
-            ),
-            subtitle: Text(
-              _version.isEmpty ? 'Loading...' : _version,
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const Divider(indent: VSDesignTokens.space4, endIndent: VSDesignTokens.space4),
-          ListTile(
-            leading: Icon(
-              Icons.privacy_tip_outlined,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconM,
-            ),
-            title: Text(
-              'Privacy Policy',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
-              ),
-            ),
-            onTap: () => _launchURL('https://visionspark.app/privacy-policy.html'),
-            trailing: Icon(
-              Icons.open_in_new,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconS,
-            ),
-          ),
-          ListTile(
-            leading: Icon(
-              Icons.description_outlined,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconM,
-            ),
-            title: Text(
-              'Terms of Service',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
-              ),
-            ),
-            onTap: () => _launchURL('https://visionspark.app/terms-of-service.html'),
-            trailing: Icon(
-              Icons.open_in_new,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconS,
-            ),
-          ),
-          ListTile(
-            leading: Icon(
-              Icons.subscriptions_outlined,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconM,
-            ),
-            title: Text(
-              'Manage Subscription',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: VSTypography.weightMedium,
-              ),
-            ),
-            onTap: () => _launchURL('https://play.google.com/store/account/subscriptions'),
-            trailing: Icon(
-              Icons.open_in_new,
-              color: colorScheme.onSurfaceVariant,
-              size: VSDesignTokens.iconS,
-            ),
-          ),
-        ],
-      ),
+                    const SizedBox(width: VSDesignTokens.space2),
+                    const Text('Loading…'),
+                  ],
+                )
+              : Text(_activeSubscription ?? 'N/A'),
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+      ],
     );
   }
 
-  @override
-  void dispose() {
-    _subscriptionStatusNotifier?.removeListener(_onSubscriptionChanged);
-    super.dispose();
+  Widget _about() {
+    return _section(
+      icon: Icons.info_outline_rounded,
+      title: 'About & legal',
+      subtitle: 'Version, policies, manage subscription.',
+      children: [
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          title: const Text('App version'),
+          subtitle: Text(_version.isEmpty ? 'Loading…' : _version),
+        ),
+        const Divider(indent: VSDesignTokens.space5, endIndent: VSDesignTokens.space5, height: 1),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('Privacy policy'),
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _launch('https://visionspark.app/privacy-policy.html'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Terms of service'),
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _launch('https://visionspark.app/terms-of-service.html'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: VSDesignTokens.space5,
+          ),
+          leading: const Icon(Icons.subscriptions_outlined),
+          title: const Text('Manage subscription'),
+          subtitle: const Text('Opens Google Play.'),
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _launch('https://play.google.com/store/account/subscriptions'),
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+      ],
+    );
   }
 }

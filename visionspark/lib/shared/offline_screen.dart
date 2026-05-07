@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'design_system/design_system.dart';
 
 class OfflineScreen extends StatelessWidget {
   final VoidCallback onRetry;
@@ -6,44 +7,56 @@ class OfflineScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Scaffold(
-      backgroundColor: colorScheme.background,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.wifi_off, size: 64, color: colorScheme.onSurface.withOpacity(0.6)),
-              const SizedBox(height: 24),
-              Text(
-                'No internet connection.\nPlease turn on WiFi or mobile data.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
+      body: VSAuroraBackground(
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(VSDesignTokens.space8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(VSDesignTokens.space6),
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer.withValues(alpha: 0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.wifi_off_rounded,
+                      size: VSDesignTokens.iconXL,
+                      color: cs.primary,
+                    ),
+                  ),
+                  const SizedBox(height: VSDesignTokens.space6),
+                  Text(
+                    'You\'re offline',
+                    style: tt.headlineSmall?.copyWith(
+                      color: cs.onSurface,
+                      fontWeight: VSTypography.weightBold,
+                    ),
+                  ),
+                  const SizedBox(height: VSDesignTokens.space2),
+                  Text(
+                    'Check your Wi-Fi or mobile data and try again.',
+                    style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: VSDesignTokens.space8),
+                  VSButton(
+                    text: 'Retry',
+                    icon: const Icon(Icons.refresh_rounded),
+                    onPressed: onRetry,
+                    size: VSButtonSize.large,
+                  ),
+                ],
               ),
-              const SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
-} 
+}

@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../shared/utils/snackbar_utils.dart';
-import '../../shared/design_system/design_system.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+
 import '../../auth/firebase_auth_service.dart';
+import '../../shared/design_system/design_system.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
 class AccountSection extends StatefulWidget {
   const AccountSection({super.key});
@@ -17,638 +19,266 @@ class AccountSection extends StatefulWidget {
   State<AccountSection> createState() => _AccountSectionState();
 }
 
-class _AccountSectionState extends State<AccountSection> with TickerProviderStateMixin {
-  final ImagePicker _picker = ImagePicker();
-  bool _isUploading = false;
-  String? _profileImageUrl; // Custom uploaded profile picture
-  String? _googleProfilePictureUrl; // Google account profile picture
-  DateTime? _joinDate;
-  String? _username;
-  String? _userEmail; // Add email state variable
-  final TextEditingController _usernameController = TextEditingController();
-  bool _isSavingUsername = false;
-  bool _isDeleting = false;
+class _AccountSectionState extends State<AccountSection> {
+  final _picker = ImagePicker();
+  final _username = TextEditingController();
+  final _auth = FirebaseAuthService();
 
-  // Firebase Auth service instance
-  final _firebaseAuthService = FirebaseAuthService();
+  String? _profileImageUrl;
+  String? _googleProfilePictureUrl;
+  String? _userEmail;
+  String? _name;
+  DateTime? _joined;
 
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  bool _uploading = false;
+  bool _savingUsername = false;
+  bool _deleting = false;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
-    );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
-    );
-    _loadProfileData();
-    _animationController.forward();
+    _loadAll();
   }
-  
+
   @override
   void dispose() {
-    _usernameController.dispose();
-    _animationController.dispose();
+    _username.dispose();
     super.dispose();
   }
 
-  Future<void> _loadProfileData() async {
+  Future<void> _loadAll() async {
     await _fetchProfile();
-    await _fetchUserEmail();
-    await _loadGoogleProfilePicture();
-    await _loadProfileImage();
+    await _fetchEmail();
+    await _loadGoogleAvatar();
+    await _loadAvatar();
   }
 
   Future<void> _fetchProfile() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      final response = await Supabase.instance.client
+      final r = await Supabase.instance.client
           .from('profiles')
           .select('created_at, username')
           .eq('id', user.id)
           .single();
-      if (mounted) {
-        setState(() {
-          if (response['created_at'] != null) {
-            _joinDate = DateTime.parse(response['created_at']);
-          }
-          _username = response['username'];
-          _usernameController.text = _username ?? '';
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        if (r['created_at'] != null) _joined = DateTime.parse(r['created_at']);
+        _name = r['username'] as String?;
+        _username.text = _name ?? '';
+      });
     } catch (e) {
-      if(mounted) showErrorSnackbar(context, 'Could not fetch profile.');
-      debugPrint('Error fetching profile: $e');
+      if (mounted) showErrorSnackbar(context, 'Could not fetch profile.');
     }
   }
 
-  Future<void> _fetchUserEmail() async {
-    try {
-      debugPrint('[AccountSection] Fetching user email using Firebase Auth...');
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final email = currentUser?.email;
-      debugPrint('[AccountSection] Email retrieved: ${email ?? 'NULL'}');
-
-      if (mounted) {
-        setState(() {
-          _userEmail = email;
-        });
-      }
-    } catch (e) {
-      debugPrint('[AccountSection] Error fetching user email: $e');
-      if (mounted) {
-        showErrorSnackbar(context, 'Could not fetch user email.');
-      }
-    }
+  Future<void> _fetchEmail() async {
+    if (!mounted) return;
+    setState(() => _userEmail = FirebaseAuth.instance.currentUser?.email);
   }
 
-  Future<void> _loadGoogleProfilePicture() async {
-    try {
-      debugPrint('[AccountSection] Fetching profile picture from Firebase Auth...');
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final profilePictureUrl = currentUser?.photoURL;
-      debugPrint('[AccountSection] Profile picture URL retrieved: ${profilePictureUrl ?? 'NULL'}');
-
-      if (mounted) {
-        setState(() {
-          _googleProfilePictureUrl = profilePictureUrl;
-        });
-      }
-    } catch (e) {
-      debugPrint('[AccountSection] Error fetching Google profile picture: $e');
-      // Don't show error to user for profile picture - it's not critical
-    }
+  Future<void> _loadGoogleAvatar() async {
+    if (!mounted) return;
+    setState(() => _googleProfilePictureUrl = FirebaseAuth.instance.currentUser?.photoURL);
   }
 
-  Future<void> _loadProfileImage() async {
+  Future<void> _loadAvatar() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     for (final ext in ['png', 'jpg']) {
-      final storagePath = '${user.id}/profile.$ext';
       try {
-        final urlResponse = await Supabase.instance.client.storage
+        final url = await Supabase.instance.client.storage
             .from('profilepictures')
-            .createSignedUrl(storagePath, 60 * 60);
-        if (mounted) {
-          setState(() {
-            _profileImageUrl = urlResponse;
-          });
-        }
+            .createSignedUrl('${user.id}/profile.$ext', 60 * 60);
+        if (mounted) setState(() => _profileImageUrl = url);
         return;
-      } catch (_) {
-        // Continue to next extension
-      }
+      } catch (_) {/* try next */}
     }
   }
 
-  Future<void> _pickAndUploadProfilePicture() async {
+  Future<void> _pickAndUploadAvatar() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-      if (pickedFile == null) return;
-      if(mounted) setState(() => _isUploading = true);
-      final file = File(pickedFile.path);
-      final ext = pickedFile.path.split('.').last;
-      final storagePath = '${user.id}/profile.$ext';
-      final bytes = await file.readAsBytes();
-      await Supabase.instance.client.storage
-          .from('profilepictures')
-          .uploadBinary(storagePath, bytes, fileOptions: const FileOptions(upsert: true));
-      
-      await _loadProfileImage();
-
+      final picked =
+          await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (picked == null) return;
+      if (!mounted) return;
+      setState(() => _uploading = true);
+      final ext = picked.path.split('.').last;
+      final bytes = await File(picked.path).readAsBytes();
+      await Supabase.instance.client.storage.from('profilepictures').uploadBinary(
+            '${user.id}/profile.$ext',
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
+      await _loadAvatar();
     } catch (e) {
-      if(mounted) showErrorSnackbar(context, 'Failed to upload profile picture: $e');
+      if (mounted) showErrorSnackbar(context, 'Failed to upload: $e');
     } finally {
-      if(mounted) setState(() => _isUploading = false);
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
   Future<void> _saveUsername(BuildContext dialogContext) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-    final newUsername = _usernameController.text.trim();
-
-    if (newUsername.isEmpty) {
+    final next = _username.text.trim();
+    if (next.isEmpty) {
       showErrorSnackbar(context, 'Username cannot be empty.');
       return;
     }
-    if (newUsername == _username) {
+    if (next == _name) {
       Navigator.of(dialogContext).pop();
       return;
     }
-
-    (dialogContext as Element).markNeedsBuild();
-    setState(() => _isSavingUsername = true);
-
+    setState(() => _savingUsername = true);
     try {
       await Supabase.instance.client
           .from('profiles')
-          .update({'username': newUsername}).eq('id', user.id);
-      if (mounted) {
-        setState(() {
-          _username = newUsername;
-        });
-        showSuccessSnackbar(context, 'Username updated successfully.');
-        Navigator.of(dialogContext).pop();
-      }
+          .update({'username': next}).eq('id', user.id);
+      if (!mounted) return;
+      setState(() => _name = next);
+      showSuccessSnackbar(context, 'Username updated.');
+      Navigator.of(dialogContext).pop();
     } on PostgrestException catch (e) {
-      if(mounted) showErrorSnackbar(context, 'Error: ${e.message}');
-    } catch (e) {
-      if(mounted) showErrorSnackbar(context, 'An unexpected error occurred.');
+      if (mounted) showErrorSnackbar(context, e.message);
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Could not update username.');
     } finally {
-      if (mounted) setState(() => _isSavingUsername = false);
+      if (mounted) setState(() => _savingUsername = false);
     }
   }
 
   Future<void> _signOut() async {
     try {
-      debugPrint('[AccountSection] Starting logout process...');
-      await _firebaseAuthService.signOut();
-      debugPrint('[AccountSection] Logout completed successfully');
-
-      // Show success message briefly before navigation
-      if (mounted) {
-        showSuccessSnackbar(context, 'Signed out successfully');
-      }
+      await _auth.signOut();
+      if (mounted) showSuccessSnackbar(context, 'Signed out.');
     } on AuthException catch (e) {
-      debugPrint('[AccountSection] AuthException during logout: ${e.message}');
-      if (mounted) {
-        showErrorSnackbar(context, 'Sign out error: ${e.message}');
-      }
-    } catch (e) {
-      debugPrint('[AccountSection] Unexpected error during logout: $e');
-      if (mounted) {
-        // Even if there's an error, the user should still be logged out
-        // because the Auth0Service handles the critical parts (Supabase + credentials)
-        showSuccessSnackbar(context, 'Signed out (some cleanup may have failed)');
-      }
+      if (mounted) showErrorSnackbar(context, 'Sign out error: ${e.message}');
+    } catch (_) {
+      if (mounted) showSuccessSnackbar(context, 'Signed out (with warnings).');
     }
   }
-
-
 
   Future<void> _deleteAccount() async {
     final user = Supabase.instance.client.auth.currentUser;
     final jwt = Supabase.instance.client.auth.currentSession?.accessToken;
     if (user == null || jwt == null) return;
-    
-    if(mounted) setState(() => _isDeleting = true);
-
+    setState(() => _deleting = true);
     try {
-      final projectUrl = dotenv.env['SUPABASE_URL']!;
-      final response = await http.post(
-        Uri.parse('$projectUrl/functions/v1/delete-account'),
-        headers: {'Authorization': 'Bearer $jwt', 'Content-Type': 'application/json'},
+      final url = dotenv.env['SUPABASE_URL']!;
+      final res = await http.post(
+        Uri.parse('$url/functions/v1/delete-account'),
+        headers: {
+          'Authorization': 'Bearer $jwt',
+          'Content-Type': 'application/json',
+        },
       );
-
-      if (response.statusCode == 200) {
-        if(mounted) await Supabase.instance.client.auth.signOut();
-      } else {
-        if(mounted) showErrorSnackbar(context, 'Failed to delete account: ${response.body}');
+      if (res.statusCode == 200 && mounted) {
+        await Supabase.instance.client.auth.signOut();
+      } else if (mounted) {
+        showErrorSnackbar(context, 'Could not delete account: ${res.body}');
       }
     } catch (e) {
-      if(mounted) showErrorSnackbar(context, 'Failed to delete account: $e');
+      if (mounted) showErrorSnackbar(context, 'Could not delete: $e');
     } finally {
-      if(mounted) setState(() => _isDeleting = false);
+      if (mounted) setState(() => _deleting = false);
     }
   }
+
+  // ── UI ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    if (_isDeleting) {
+    if (_deleting) {
       return Scaffold(
-        body: Center(
-          child: VSLoadingIndicator(
-            message: 'Deleting account...',
-            size: VSDesignTokens.iconXL,
-          ),
-        ),
+        body: Center(child: VSLoadingIndicator(message: 'Deleting account…')),
       );
     }
-
     return Scaffold(
       body: VSResponsiveLayout(
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: CustomScrollView(
-                  slivers: [
-                    _buildHeroSection(),
-                    SliverPadding(
-                      padding: VSResponsive.getResponsivePadding(context),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          const VSResponsiveSpacing(),
-                          _buildAccountManagementCard(),
-                          const VSResponsiveSpacing(),
-                          _buildDangerZoneCard(),
-                          const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
-                        ]),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroSection() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final user = Supabase.instance.client.auth.currentUser;
-    final size = MediaQuery.of(context).size;
-
-    if (user == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
-
-    String getInitials(String? name, String? email) {
-      if (name != null && name.isNotEmpty) {
-        final parts = name.split(' ').where((e) => e.isNotEmpty).toList();
-        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-        if (parts.isNotEmpty) return parts[0].substring(0, 1).toUpperCase();
-      }
-      if (email != null && email.isNotEmpty) {
-        return email.substring(0, 1).toUpperCase();
-      }
-      return '';
-    }
-
-    final initials = getInitials(_username, _userEmail);
-
-    return SliverToBoxAdapter(
-      child: VSResponsiveBuilder(
-        builder: (context, breakpoint) {
-          final heroHeight = breakpoint == VSBreakpoint.mobile
-            ? size.height * 0.45
-            : size.height * 0.35;
-
-          return Container(
-            height: heroHeight,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  colorScheme.surface,
-                ],
-                stops: const [0.0, 0.8],
-              ),
-            ),
-            child: Stack(
-              children: [
-                // Background decoration
-                Positioned(
-                  top: -size.height * 0.1,
-                  right: -size.width * 0.2,
-                  child: Container(
-                    width: size.width * 0.6,
-                    height: size.width * 0.6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          colorScheme.primary.withValues(alpha: 0.1),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: -size.height * 0.05,
-                  left: -size.width * 0.15,
-                  child: Container(
-                    width: size.width * 0.4,
-                    height: size.width * 0.4,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          colorScheme.secondary.withValues(alpha: 0.08),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Profile content
-                Positioned.fill(
-                  child: SafeArea(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: VSResponsive.isMobile(context)
-                            ? size.width - (VSDesignTokens.space6 * 2)
-                            : 500,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: VSDesignTokens.space6,
-                            vertical: VSDesignTokens.space4,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Profile picture with edit button
-                              Flexible(
-                                child: _buildProfilePicture(size, colorScheme, textTheme, initials),
-                              ),
-
-                              SizedBox(height: VSDesignTokens.space4),
-
-                              // User info card
-                              Flexible(
-                                child: _buildUserInfoCard(colorScheme, textTheme),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildProfilePicture(Size size, ColorScheme colorScheme, TextTheme textTheme, String initials) {
-    final profileSize = VSResponsive.isMobile(context)
-      ? size.width * 0.32
-      : VSDesignTokens.iconXXL * 2;
-
-    return Center(
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.2),
-              blurRadius: VSDesignTokens.space6,
-              offset: const Offset(0, VSDesignTokens.space2),
-            ),
+        child: ListView(
+          padding: VSResponsive.getResponsivePadding(context),
+          children: [
+            _hero(),
+            const SizedBox(height: VSDesignTokens.space5),
+            _accountCard(),
+            const SizedBox(height: VSDesignTokens.space5),
+            _dangerCard(),
+            const SizedBox(height: VSDesignTokens.space12),
           ],
         ),
-        child: Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-          // Profile picture container
-          VSAccessibleButton(
-            onPressed: _isUploading ? null : _pickAndUploadProfilePicture,
-            semanticLabel: 'Profile picture. Tap to change.',
-            child: Container(
-              width: profileSize,
-              height: profileSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outline.withValues(alpha: 0.2),
-                  width: 3,
-                ),
-              ),
-              child: _isUploading
-                ? VSLoadingIndicator(
-                    size: VSDesignTokens.iconL,
-                  )
-                : _profileImageUrl != null
-                  ? ClipOval(
-                      child: CachedNetworkImage(
-                        imageUrl: _profileImageUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (context, url) => VSLoadingIndicator(
-                          size: VSDesignTokens.iconM,
-                        ),
-                        errorWidget: (context, url, error) {
-                          // If custom profile picture fails, try Google profile picture
-                          return _googleProfilePictureUrl != null
-                            ? ClipOval(
-                                child: CachedNetworkImage(
-                                  imageUrl: _googleProfilePictureUrl!,
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  placeholder: (context, url) => VSLoadingIndicator(
-                                    size: VSDesignTokens.iconM,
-                                  ),
-                                  errorWidget: (context, url, error) {
-                                    return _buildInitialsAvatar(colorScheme, textTheme, initials);
-                                  },
-                                ),
-                              )
-                            : _buildInitialsAvatar(colorScheme, textTheme, initials);
-                        },
-                      ),
-                    )
-                  : _googleProfilePictureUrl != null
-                    ? ClipOval(
-                        child: CachedNetworkImage(
-                          imageUrl: _googleProfilePictureUrl!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          placeholder: (context, url) => VSLoadingIndicator(
-                            size: VSDesignTokens.iconM,
-                          ),
-                          errorWidget: (context, url, error) {
-                            return _buildInitialsAvatar(colorScheme, textTheme, initials);
-                          },
-                        ),
-                      )
-                    : _buildInitialsAvatar(colorScheme, textTheme, initials),
-            ),
-          ),
-
-          // Edit button
-          if (!_isUploading)
-            Container(
-              width: VSDesignTokens.touchTargetMin * 0.7,
-              height: VSDesignTokens.touchTargetMin * 0.7,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colorScheme.surface,
-                border: Border.all(
-                  color: colorScheme.outline.withValues(alpha: 0.3),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.15),
-                    blurRadius: VSDesignTokens.space2,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: VSAccessibleButton(
-                onPressed: _pickAndUploadProfilePicture,
-                semanticLabel: 'Change profile picture',
-                tooltip: 'Change profile picture',
-                child: Icon(
-                  Icons.camera_alt_rounded,
-                  size: VSDesignTokens.iconS,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ),
-        ],
-        ),
       ),
     );
   }
 
-  Widget _buildInitialsAvatar(ColorScheme colorScheme, TextTheme textTheme, String initials) {
+  Widget _hero() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    final initials = _initials(_name, _userEmail);
+
     return Container(
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            colorScheme.primary,
-            colorScheme.secondary,
+            cs.primary.withValues(alpha: 0.25),
+            cs.secondary.withValues(alpha: 0.15),
           ],
         ),
+        border: Border.all(color: cs.outlineVariant),
       ),
-      child: Center(
-        child: Text(
-          initials,
-          style: textTheme.displaySmall?.copyWith(
-            color: colorScheme.onPrimary,
-            fontWeight: VSTypography.weightBold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUserInfoCard(ColorScheme colorScheme, TextTheme textTheme) {
-    return VSCard(
-      padding: const EdgeInsets.all(VSDesignTokens.space6),
-      color: colorScheme.surface.withValues(alpha: 0.8),
-      borderRadius: VSDesignTokens.radiusXXL,
-      border: Border.all(
-        color: colorScheme.outline.withValues(alpha: 0.15),
-        width: 1,
-      ),
-      elevation: VSDesignTokens.elevation2,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          VSResponsiveText(
-            text: _username ?? _userEmail ?? 'VisionSpark User',
-            baseStyle: textTheme.headlineSmall?.copyWith(
+          _Avatar(
+            size: 108,
+            googleUrl: _googleProfilePictureUrl,
+            customUrl: _profileImageUrl,
+            initials: initials,
+            uploading: _uploading,
+            onTap: _pickAndUploadAvatar,
+          ),
+          const SizedBox(height: VSDesignTokens.space4),
+          Text(
+            _name ?? _userEmail ?? 'VisionSpark User',
+            style: tt.headlineSmall?.copyWith(
+              color: cs.onSurface,
               fontWeight: VSTypography.weightBold,
-              color: colorScheme.onSurface,
             ),
-            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          if (_username != null && _userEmail != null) ...[
-            const SizedBox(height: VSDesignTokens.space1),
-            Flexible(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: VSDesignTokens.space2),
-                child: Text(
-                  _userEmail!,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 13, // Smaller font size to fit better
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  softWrap: false,
-                ),
-              ),
+          if (_userEmail != null && _name != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              _userEmail!,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
-          if (_joinDate != null) ...[
+          if (_joined != null) ...[
             const SizedBox(height: VSDesignTokens.space3),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: VSDesignTokens.space3,
-                  vertical: VSDesignTokens.space1,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-                ),
-                child: Text(
-                  'Member since ${_formatJoinDate(_joinDate!)}',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onPrimaryContainer,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                  textAlign: TextAlign.center,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: VSDesignTokens.space3,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+              ),
+              child: Text(
+                'Member since ${_formatJoin(_joined!)}',
+                style: tt.bodySmall?.copyWith(
+                  color: cs.onPrimaryContainer,
+                  fontWeight: VSTypography.weightSemiBold,
                 ),
               ),
             ),
@@ -658,266 +288,364 @@ class _AccountSectionState extends State<AccountSection> with TickerProviderStat
     );
   }
 
-  Widget _buildAccountManagementCard() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
+  Widget _accountCard() {
+    final cs = Theme.of(context).colorScheme;
     return VSCard(
-      color: colorScheme.surface,
-      borderRadius: VSDesignTokens.radiusXXL,
-      border: Border.all(
-        color: colorScheme.outline.withValues(alpha: 0.15),
-        width: 1,
-      ),
-      elevation: VSDesignTokens.elevation2,
       padding: EdgeInsets.zero,
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space6),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(VSDesignTokens.space3),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-                  ),
-                  child: Icon(
-                    Icons.manage_accounts_rounded,
-                    color: colorScheme.onPrimaryContainer,
-                    size: VSDesignTokens.iconM,
-                  ),
-                ),
-                const SizedBox(width: VSDesignTokens.space4),
-                Text(
-                  'Account Management',
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: VSTypography.weightBold,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.all(VSDesignTokens.space5),
+              child: const VSSectionHeader(
+                icon: Icons.manage_accounts_rounded,
+                title: 'Account',
+                subtitle: 'Update your display name and avatar.',
+              ),
             ),
-          ),
-
-          // Settings tiles
-          _buildSettingsTile(
-            icon: Icons.edit_rounded,
-            title: 'Edit Username',
-            subtitle: _username ?? 'Set your display name',
-            onTap: () => _showEditUsernameDialog(context),
-          ),
+            _SettingTile(
+              icon: Icons.edit_rounded,
+              title: 'Edit username',
+              subtitle: _name ?? 'Choose a display name',
+              onTap: _showUsernameDialog,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDangerZoneCard() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
+  Widget _dangerCard() {
+    final cs = Theme.of(context).colorScheme;
     return VSCard(
-      color: colorScheme.surface,
-      borderRadius: VSDesignTokens.radiusXXL,
-      border: Border.all(
-        color: colorScheme.error.withValues(alpha: 0.2),
-        width: 1,
-      ),
-      elevation: VSDesignTokens.elevation2,
       padding: EdgeInsets.zero,
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.error.withValues(alpha: 0.4)),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXXL),
+        borderRadius: BorderRadius.circular(VSDesignTokens.radiusXL),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(VSDesignTokens.space6),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(VSDesignTokens.space3),
+            Padding(
+              padding: const EdgeInsets.all(VSDesignTokens.space5),
+              child: VSSectionHeader(
+                icon: Icons.warning_amber_rounded,
+                title: 'Danger zone',
+                subtitle: 'Sign out or permanently delete your account.',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: colorScheme.errorContainer.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+                    color: cs.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(VSDesignTokens.radiusS),
                   ),
-                  child: Icon(
-                    Icons.warning_rounded,
-                    color: colorScheme.onErrorContainer,
-                    size: VSDesignTokens.iconM,
-                  ),
-                ),
-                const SizedBox(width: VSDesignTokens.space4),
-                Text(
-                  'Danger Zone',
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: VSTypography.weightBold,
-                    color: colorScheme.error,
+                  child: Text(
+                    'Care',
+                    style: TextStyle(
+                      color: cs.error,
+                      fontSize: 11,
+                      fontWeight: VSTypography.weightBold,
+                      letterSpacing: 0.6,
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-
-          // Settings tiles
-          _buildSettingsTile(
-            icon: Icons.logout_rounded,
-            title: 'Sign Out',
-            subtitle: 'Sign out of your account',
-            onTap: _signOut,
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: VSDesignTokens.space6),
-            child: Divider(
-              color: colorScheme.outline.withValues(alpha: 0.2),
+            _SettingTile(
+              icon: Icons.logout_rounded,
+              title: 'Sign out',
+              subtitle: 'You\'ll need to sign in again to use the app.',
+              onTap: _signOut,
+            ),
+            Divider(
               height: 1,
+              indent: VSDesignTokens.space5,
+              endIndent: VSDesignTokens.space5,
             ),
-          ),
-          _buildSettingsTile(
-            icon: Icons.delete_forever_rounded,
-            title: 'Delete Account',
-            subtitle: 'Permanently delete your account and all data',
-            onTap: _showDeleteAccountConfirmation,
-            textColor: colorScheme.error,
-            isDestructive: true,
-          ),
+            _SettingTile(
+              icon: Icons.delete_forever_rounded,
+              title: 'Delete account',
+              subtitle: 'Erase your data permanently. This cannot be undone.',
+              onTap: _confirmDelete,
+              destructive: true,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSettingsTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    Color? textColor,
-    bool isDestructive = false,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return VSAccessibleCard(
-      onTap: onTap,
-      semanticLabel: '$title. $subtitle',
-      semanticHint: 'Tap to ${title.toLowerCase()}',
-      padding: const EdgeInsets.all(VSDesignTokens.space6),
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(VSDesignTokens.space3),
-            decoration: BoxDecoration(
-              color: isDestructive
-                ? colorScheme.errorContainer.withValues(alpha: 0.2)
-                : colorScheme.surfaceContainer.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
-            ),
-            child: Icon(
-              icon,
-              color: textColor ?? (isDestructive
-                ? colorScheme.onErrorContainer
-                : colorScheme.onSurfaceVariant),
-              size: VSDesignTokens.iconS,
-            ),
-          ),
-          const SizedBox(width: VSDesignTokens.space4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: textColor ?? colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-                const SizedBox(height: VSDesignTokens.space1),
-                Text(
-                  subtitle,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-            size: VSDesignTokens.iconS,
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _showEditUsernameDialog(BuildContext context) {
+  void _showUsernameDialog() {
     showDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Edit Username'),
-              content: TextField(
-                controller: _usernameController,
-                autofocus: true,
-                decoration: const InputDecoration(hintText: 'Enter new username'),
+          builder: (_, setLocal) => AlertDialog(
+            title: const Text('Edit username'),
+            content: TextField(
+              controller: _username,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'Choose a display name'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: _isSavingUsername ? null : () async {
-                    setDialogState(() { _isSavingUsername = true; });
-                    await _saveUsername(dialogContext);
-                    if(mounted) setDialogState(() { _isSavingUsername = false; });
-                  },
-                  child: _isSavingUsername ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
-                ),
-              ],
-            );
-          },
+              FilledButton(
+                onPressed: _savingUsername
+                    ? null
+                    : () async {
+                        setLocal(() {});
+                        await _saveUsername(dialogContext);
+                        setLocal(() {});
+                      },
+                child: _savingUsername
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
+              ),
+            ],
+          ),
         );
       },
     );
   }
-  
-  void _showDeleteAccountConfirmation() async {
-    final confirmed = await showDialog<bool>(
+
+  Future<void> _confirmDelete() async {
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text('Are you sure you want to delete your account? This action is permanent and cannot be undone.'),
+      builder: (_) => AlertDialog(
+        title: const Text('Delete account'),
+        content: const Text(
+          'This will permanently erase your data. This action cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error, foregroundColor: Theme.of(context).colorScheme.onError),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-    if (confirmed == true) {
-      await _deleteAccount();
-    }
+    if (ok == true) await _deleteAccount();
   }
 
-  String _formatJoinDate(DateTime date) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  static String _initials(String? name, String? email) {
+    if (name != null && name.isNotEmpty) {
+      final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return parts[0].substring(0, 1).toUpperCase();
+    }
+    if (email != null && email.isNotEmpty) return email[0].toUpperCase();
+    return 'V';
+  }
+
+  static String _formatJoin(DateTime d) {
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${m[d.month - 1]} ${d.day}, ${d.year}';
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  final double size;
+  final String? googleUrl;
+  final String? customUrl;
+  final String initials;
+  final bool uploading;
+  final VoidCallback onTap;
+  const _Avatar({
+    required this.size,
+    required this.googleUrl,
+    required this.customUrl,
+    required this.initials,
+    required this.uploading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    Widget initialsWidget() => Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [cs.primary, cs.secondary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              initials,
+              style: tt.headlineMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: VSTypography.weightBold,
+              ),
+            ),
+          ),
+        );
+
+    Widget body;
+    if (uploading) {
+      body = Container(
+        decoration: BoxDecoration(color: cs.surfaceContainerHigh, shape: BoxShape.circle),
+        child: Center(child: CircularProgressIndicator(color: cs.primary)),
+      );
+    } else if (customUrl != null) {
+      body = ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: customUrl!,
+          fit: BoxFit.cover,
+          width: size,
+          height: size,
+          placeholder: (_, __) => initialsWidget(),
+          errorWidget: (_, __, ___) => googleUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: googleUrl!,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => initialsWidget(),
+                )
+              : initialsWidget(),
+        ),
+      );
+    } else if (googleUrl != null) {
+      body = ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: googleUrl!,
+          fit: BoxFit.cover,
+          width: size,
+          height: size,
+          placeholder: (_, __) => initialsWidget(),
+          errorWidget: (_, __, ___) => initialsWidget(),
+        ),
+      );
+    } else {
+      body = initialsWidget();
+    }
+
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: cs.outlineVariant, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: cs.primary.withValues(alpha: 0.3),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipOval(child: body),
+          ),
+        ),
+        if (!uploading)
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: cs.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: cs.outlineVariant, width: 2),
+            ),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: 'Change avatar',
+              icon: Icon(Icons.camera_alt_rounded, color: cs.primary, size: 18),
+              onPressed: onTap,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SettingTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool destructive;
+  const _SettingTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final color = destructive ? cs.error : cs.onSurface;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(VSDesignTokens.space5),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(VSDesignTokens.space3),
+              decoration: BoxDecoration(
+                color: destructive
+                    ? cs.error.withValues(alpha: 0.12)
+                    : cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(VSDesignTokens.radiusM),
+              ),
+              child: Icon(icon, color: destructive ? cs.error : cs.onSurfaceVariant, size: 20),
+            ),
+            const SizedBox(width: VSDesignTokens.space4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: tt.titleMedium?.copyWith(
+                      color: color,
+                      fontWeight: VSTypography.weightSemiBold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: tt.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,8 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../shared/utils/snackbar_utils.dart';
+
 import '../../shared/design_system/design_system.dart';
+import '../../shared/utils/snackbar_utils.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -13,174 +14,150 @@ class SupportScreen extends StatefulWidget {
 
 class _SupportScreenState extends State<SupportScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _contentController = TextEditingController();
-  bool _isLoading = false;
-
-
-  Future<void> _submitSupport() async {
-    // Validate form before proceeding
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final title = _titleController.text.trim();
-      final content = _contentController.text.trim();
-
-      debugPrint('[SupportScreen] ========== SUPPORT TICKET SUBMISSION STARTED ==========');
-      debugPrint('[SupportScreen] Title: $title');
-      debugPrint('[SupportScreen] Content length: ${content.length}');
-
-      // Get current user email from Firebase Auth
-      debugPrint('[SupportScreen] Attempting to retrieve user email...');
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final userEmail = currentUser?.email;
-      debugPrint('[SupportScreen] Email retrieval result: ${userEmail ?? 'NULL/EMPTY'}');
-
-      if (userEmail == null || userEmail.isEmpty) {
-        debugPrint('[SupportScreen] ❌ Email retrieval failed - showing error to user');
-        if (mounted) {
-          showErrorSnackbar(context, 'Could not submit report: User email not found. Please ensure you are logged in and try again.');
-        }
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      debugPrint('[SupportScreen] ✅ Email retrieved successfully: $userEmail');
-      
-      await Supabase.instance.client.functions.invoke(
-        'report-support-issue',
-        body: {
-          'title': title,
-          'content': content,
-          'email': userEmail,
-        },
-      );
-
-      if (mounted) {
-        showSuccessSnackbar(context, 'Your report has been submitted successfully.');
-        _titleController.clear();
-        _contentController.clear();
-        FocusScope.of(context).unfocus(); // Hide keyboard on success
-      }
-    } catch (e) {
-      if (mounted) {
-        // Corrected line: Use e.toString() to avoid the undefined 'FunctionsException' type.
-        // This is consistent with error handling in other parts of the app.
-        showErrorSnackbar(context, 'Failed to submit: ${e.toString()}');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
+  final _title = TextEditingController();
+  final _content = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _contentController.dispose();
+    _title.dispose();
+    _content.dispose();
     super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final email = FirebaseAuth.instance.currentUser?.email;
+    if (email == null || email.isEmpty) {
+      showErrorSnackbar(context,
+          'Could not submit: no email on this account. Please sign in again.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'report-support-issue',
+        body: {
+          'title': _title.text.trim(),
+          'content': _content.text.trim(),
+          'email': email,
+        },
+      );
+      if (!mounted) return;
+      showSuccessSnackbar(context, 'Report submitted.');
+      _title.clear();
+      _content.clear();
+      FocusScope.of(context).unfocus();
+    } catch (e) {
+      if (mounted) showErrorSnackbar(context, 'Could not submit: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
     return Scaffold(
       body: VSResponsiveLayout(
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: ListView(
             padding: VSResponsive.getResponsivePadding(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(context),
-                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
-                _buildContactForm(context),
-                const VSResponsiveSpacing(),
-                _buildDisclaimer(context),
-                const VSResponsiveSpacing(desktop: VSDesignTokens.space12),
-              ],
-            ),
+            children: [
+              _hero(cs, tt),
+              const SizedBox(height: VSDesignTokens.space6),
+              _form(cs, tt),
+              const SizedBox(height: VSDesignTokens.space5),
+              _disclaimer(cs, tt),
+              const SizedBox(height: VSDesignTokens.space12),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildContactForm(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _hero(ColorScheme cs, TextTheme tt) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cs.primaryContainer.withValues(alpha: 0.4),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.support_agent_rounded,
+              color: cs.primary, size: VSDesignTokens.iconL),
+        ),
+        const SizedBox(height: VSDesignTokens.space4),
+        Text(
+          'Support & feedback',
+          style: tt.headlineMedium?.copyWith(
+            color: cs.onSurface,
+            fontWeight: VSTypography.weightBold,
+            letterSpacing: -0.3,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: VSDesignTokens.space2),
+        Text(
+          'Send us bugs, ideas, or anything in between.',
+          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
 
+  Widget _form(ColorScheme cs, TextTheme tt) {
     return VSCard(
-      padding: const EdgeInsets.all(VSDesignTokens.space6),
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: VSDesignTokens.radiusL,
+      padding: const EdgeInsets.all(VSDesignTokens.space5),
+      borderRadius: VSDesignTokens.radiusXL,
+      color: cs.surfaceContainer,
+      border: Border.all(color: cs.outlineVariant),
       child: Form(
         key: _formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.contact_support,
-                  color: colorScheme.primary,
-                  size: VSDesignTokens.iconM,
-                ),
-                const SizedBox(width: VSDesignTokens.space3),
-                VSResponsiveText(
-                  text: 'Contact Support',
-                  baseStyle: textTheme.titleLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: VSTypography.weightSemiBold,
-                  ),
-                ),
-              ],
+            const VSSectionHeader(
+              icon: Icons.contact_support_outlined,
+              title: 'New ticket',
+              subtitle: 'A short subject and clear details help us help you.',
             ),
-            const SizedBox(height: VSDesignTokens.space6),
+            const SizedBox(height: VSDesignTokens.space5),
             VSAccessibleTextField(
-              controller: _titleController,
+              controller: _title,
               labelText: 'Subject',
-              hintText: 'Brief description of your issue',
-              semanticLabel: 'Support request subject',
+              hintText: 'What\'s this about?',
               prefixIcon: const Icon(Icons.title_rounded),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a subject.';
-                }
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Please enter a subject.' : null,
+            ),
+            const SizedBox(height: VSDesignTokens.space4),
+            VSAccessibleTextField(
+              controller: _content,
+              labelText: 'Message',
+              hintText: 'Describe your issue or feedback…',
+              prefixIcon: const Icon(Icons.article_outlined),
+              maxLines: 6,
+              textAlignVertical: TextAlignVertical.top,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Please write a message.';
+                if (v.trim().length < 10) return 'At least 10 characters please.';
                 return null;
               },
             ),
             const SizedBox(height: VSDesignTokens.space5),
-            VSAccessibleTextField(
-              controller: _contentController,
-              labelText: 'Message',
-              hintText: 'Describe your issue or feedback in detail...',
-              semanticLabel: 'Support request message',
-              prefixIcon: const Icon(Icons.article_outlined),
-              maxLines: 6,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please provide a message.';
-                }
-                if (value.trim().length < 10) {
-                  return 'Please provide at least 10 characters.';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: VSDesignTokens.space6),
             VSButton(
-              text: 'Submit Request',
-              icon: _isLoading ? null : const Icon(Icons.send_rounded),
-              onPressed: _isLoading ? null : _submitSupport,
-              isLoading: _isLoading,
+              text: 'Submit ticket',
+              icon: _busy ? null : const Icon(Icons.send_rounded),
+              onPressed: _busy ? null : _submit,
+              isLoading: _busy,
               isFullWidth: true,
               size: VSButtonSize.large,
-              variant: VSButtonVariant.primary,
             ),
           ],
         ),
@@ -188,88 +165,49 @@ class _SupportScreenState extends State<SupportScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      children: [
-        Icon(
-          Icons.support_agent_outlined,
-          size: VSDesignTokens.iconXXL,
-          color: colorScheme.primary,
-        ),
-        const SizedBox(height: VSDesignTokens.space4),
-        VSResponsiveText(
-          text: 'Support & Feedback',
-          baseStyle: textTheme.headlineMedium?.copyWith(
-            fontWeight: VSTypography.weightBold,
-            color: colorScheme.onSurface,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: VSDesignTokens.space2),
-        VSResponsiveText(
-          text: 'Get help with VisionSpark or share your feedback with our team',
-          baseStyle: textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurface.withValues(alpha: 0.7),
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDisclaimer(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
+  Widget _disclaimer(ColorScheme cs, TextTheme tt) {
     return VSCard(
       padding: const EdgeInsets.all(VSDesignTokens.space5),
-      color: colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-      borderRadius: VSDesignTokens.radiusM,
-      border: Border.all(
-        color: colorScheme.outline.withValues(alpha: 0.2),
-        width: 1,
-      ),
+      borderRadius: VSDesignTokens.radiusL,
+      color: cs.surfaceContainerLow,
+      border: Border.all(color: cs.outlineVariant),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.info_outline,
-            color: colorScheme.primary,
-            size: VSDesignTokens.iconM,
-          ),
+          Icon(Icons.info_outline_rounded,
+              color: cs.primary, size: VSDesignTokens.iconM),
           const SizedBox(width: VSDesignTokens.space3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Disclaimer',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colorScheme.onSurface,
+                  'How we reply',
+                  style: tt.titleSmall?.copyWith(
+                    color: cs.onSurface,
                     fontWeight: VSTypography.weightSemiBold,
                   ),
                 ),
-                const SizedBox(height: VSDesignTokens.space2),
+                const SizedBox(height: 6),
                 RichText(
                   text: TextSpan(
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                    style: tt.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
                       height: 1.4,
                     ),
                     children: [
                       const TextSpan(
-                        text: 'If we need more information from you, we will contact you by email from ',
+                        text:
+                            'If we need more info, we\'ll reach out from ',
                       ),
                       TextSpan(
                         text: 'visionsparkai@gmail.com',
                         style: TextStyle(
-                          color: colorScheme.primary,
+                          color: cs.primary,
                           fontWeight: VSTypography.weightSemiBold,
                         ),
                       ),
+                      const TextSpan(text: '.'),
                     ],
                   ),
                 ),
@@ -280,5 +218,4 @@ class _SupportScreenState extends State<SupportScreen> {
       ),
     );
   }
-
 }

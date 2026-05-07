@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import '../shared/design_system/design_system.dart';
+import '../shared/utils/snackbar_utils.dart';
 import 'firebase_auth_service.dart';
 import 'form_validators.dart';
-import '../shared/utils/snackbar_utils.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -11,357 +13,224 @@ class RegistrationScreen extends StatefulWidget {
   State<RegistrationScreen> createState() => _RegistrationScreenState();
 }
 
-class _RegistrationScreenState extends State<RegistrationScreen>
-    with TickerProviderStateMixin {
+class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  final _displayNameController = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  final _name = TextEditingController();
+  final _auth = FirebaseAuthService();
 
-  final FirebaseAuthService _authService = FirebaseAuthService();
-
-  bool _isLoading = false;
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-  int _passwordStrength = 0;
-
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  bool _busy = false;
+  bool _obscure = true;
+  bool _obscureConfirm = true;
+  int _strength = 0;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutCubic,
-    ));
-
-    _animationController.forward();
-
-    // Listen to password changes for strength indicator
-    _passwordController.addListener(() {
-      setState(() {
-        _passwordStrength = FormValidators.getPasswordStrength(_passwordController.text);
-      });
+    _password.addListener(() {
+      setState(() => _strength = FormValidators.getPasswordStrength(_password.text));
     });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _displayNameController.dispose();
+    _email.dispose();
+    _password.dispose();
+    _confirm.dispose();
+    _name.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
+    setState(() => _busy = true);
     try {
-      final user = await _authService.registerWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        displayName: _displayNameController.text.trim(),
+      final user = await _auth.registerWithEmailAndPassword(
+        email: _email.text.trim(),
+        password: _password.text,
+        displayName: _name.text.trim(),
       );
-
       if (user != null && mounted) {
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Registration successful! Please check your email for verification.'),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        
-        // Navigate back to login
+        showSuccessSnackbar(context, 'Account created. Check your email to verify.');
         Navigator.of(context).pop();
       }
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        showErrorSnackbar(context, FirebaseAuthService.getErrorMessage(e));
-      }
-    } catch (e) {
-      if (mounted) {
-        showErrorSnackbar(context, 'Registration failed. Please try again.');
-      }
-    }
-
-    if (mounted) {
-      setState(() => _isLoading = false);
+      if (mounted) showErrorSnackbar(context, FirebaseAuthService.getErrorMessage(e));
+    } catch (_) {
+      if (mounted) showErrorSnackbar(context, 'Registration failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-    final size = MediaQuery.of(context).size;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
       ),
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: size.width * 0.08,
-                    vertical: size.height * 0.02,
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(textTheme, colorScheme),
-                        SizedBox(height: size.height * 0.04),
-                        _buildFormFields(colorScheme, textTheme),
-                        SizedBox(height: size.height * 0.04),
-                        _buildRegisterButton(colorScheme, textTheme),
-                        SizedBox(height: size.height * 0.02),
-                        _buildLoginLink(colorScheme, textTheme),
+      body: VSAuroraBackground(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: VSDesignTokens.space6,
+                vertical: VSDesignTokens.space5,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Create your account',
+                        style: tt.headlineMedium?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: VSTypography.weightBold,
+                        ),
+                      ),
+                      const SizedBox(height: VSDesignTokens.space2),
+                      Text(
+                        'Join VisionSpark and start generating.',
+                        style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: VSDesignTokens.space6),
+                      VSAccessibleTextField(
+                        controller: _name,
+                        labelText: 'Display name',
+                        hintText: 'How should we call you?',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        validator: FormValidators.validateDisplayName,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: VSDesignTokens.space4),
+                      VSAccessibleTextField(
+                        controller: _email,
+                        labelText: 'Email',
+                        hintText: 'you@example.com',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        validator: FormValidators.validateEmail,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: VSDesignTokens.space4),
+                      VSAccessibleTextField(
+                        controller: _password,
+                        labelText: 'Password',
+                        hintText: 'Choose a strong password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscure
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                        obscureText: _obscure,
+                        validator: FormValidators.validatePassword,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      if (_password.text.isNotEmpty) ...[
+                        const SizedBox(height: VSDesignTokens.space2),
+                        _StrengthMeter(level: _strength),
                       ],
-                    ),
+                      const SizedBox(height: VSDesignTokens.space4),
+                      VSAccessibleTextField(
+                        controller: _confirm,
+                        labelText: 'Confirm password',
+                        hintText: 'Repeat your password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureConfirm
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined),
+                          onPressed: () =>
+                              setState(() => _obscureConfirm = !_obscureConfirm),
+                        ),
+                        obscureText: _obscureConfirm,
+                        validator: (v) => FormValidators.validatePasswordConfirmation(
+                          v,
+                          _password.text,
+                        ),
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _register(),
+                      ),
+                      const SizedBox(height: VSDesignTokens.space6),
+                      VSButton(
+                        text: 'Create account',
+                        onPressed: _busy ? null : _register,
+                        isLoading: _busy,
+                        isFullWidth: true,
+                        size: VSButtonSize.large,
+                      ),
+                      const SizedBox(height: VSDesignTokens.space3),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Already have an account?',
+                            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Sign in'),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildHeader(TextTheme textTheme, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Create Account',
-          style: textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Join VisionSpark and start creating amazing AI-generated images',
-          style: textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
+class _StrengthMeter extends StatelessWidget {
+  final int level;
+  const _StrengthMeter({required this.level});
 
-  Widget _buildFormFields(ColorScheme colorScheme, TextTheme textTheme) {
-    return Column(
-      children: [
-        // Display Name Field
-        TextFormField(
-          controller: _displayNameController,
-          decoration: InputDecoration(
-            labelText: 'Display Name',
-            hintText: 'Enter your display name',
-            prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          validator: FormValidators.validateDisplayName,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 16),
-
-        // Email Field
-        TextFormField(
-          controller: _emailController,
-          decoration: InputDecoration(
-            labelText: 'Email',
-            hintText: 'Enter your email address',
-            prefixIcon: Icon(Icons.email_outlined, color: colorScheme.primary),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          validator: FormValidators.validateEmail,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 16),
-
-        // Password Field
-        TextFormField(
-          controller: _passwordController,
-          decoration: InputDecoration(
-            labelText: 'Password',
-            hintText: 'Enter your password',
-            prefixIcon: Icon(Icons.lock_outline, color: colorScheme.primary),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          validator: FormValidators.validatePassword,
-          obscureText: _obscurePassword,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 8),
-
-        // Password Strength Indicator
-        if (_passwordController.text.isNotEmpty) _buildPasswordStrengthIndicator(),
-        const SizedBox(height: 16),
-
-        // Confirm Password Field
-        TextFormField(
-          controller: _confirmPasswordController,
-          decoration: InputDecoration(
-            labelText: 'Confirm Password',
-            hintText: 'Confirm your password',
-            prefixIcon: Icon(Icons.lock_outline, color: colorScheme.primary),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          validator: (value) => FormValidators.validatePasswordConfirmation(
-            value,
-            _passwordController.text,
-          ),
-          obscureText: _obscureConfirmPassword,
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _register(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPasswordStrengthIndicator() {
-    final strengthText = FormValidators.getPasswordStrengthText(_passwordStrength);
-    final strengthColor = Color(FormValidators.getPasswordStrengthColor(_passwordStrength));
-
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final color = Color(FormValidators.getPasswordStrengthColor(level));
+    final label = FormValidators.getPasswordStrengthText(level);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text(
-              'Password Strength: ',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            Text(
-              strengthText,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: strengthColor,
-                fontWeight: FontWeight.bold,
+            for (var i = 0; i < 4; i++)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: i < 3 ? 4 : 0),
+                  child: Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: i < level
+                          ? color
+                          : Theme.of(context).colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
         ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(
-          value: _passwordStrength / 4,
-          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
-          valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegisterButton(ColorScheme colorScheme, TextTheme textTheme) {
-    return FilledButton(
-      onPressed: _isLoading ? null : _register,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-      child: _isLoading
-          ? SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
-              ),
-            )
-          : Text(
-              'Create Account',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onPrimary,
-              ),
-            ),
-    );
-  }
-
-  Widget _buildLoginLink(ColorScheme colorScheme, TextTheme textTheme) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
+        const SizedBox(height: 6),
         Text(
-          'Already have an account? ',
-          style: textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Sign In',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          'Password strength: $label',
+          style: tt.bodySmall?.copyWith(color: color, fontWeight: VSTypography.weightSemiBold),
         ),
       ],
     );
